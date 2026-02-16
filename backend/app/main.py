@@ -3,7 +3,7 @@ from sqlalchemy import text
 
 from app.db.base import Base
 from app.db.session import engine
-from app.models import Planning  # force import du modèle (important)
+from app.models.planning import Planning
 
 app = FastAPI(title="Oraux Platform")
 
