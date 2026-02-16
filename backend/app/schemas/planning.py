@@ -1,5 +1,7 @@
 from datetime import date, datetime
 from pydantic import BaseModel, Field, field_validator
+from typing import Optional
+
 
 ALLOWED_STATUS = {"BROUILLON", "OUVERT", "CLOS"}
 
@@ -49,3 +51,21 @@ class PlanningOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class PlanningUpdate(BaseModel):
+    nom: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    date_debut: Optional[date] = None
+    date_fin: Optional[date] = None
+    date_ouverture_inscriptions: Optional[datetime] = None
+    date_fermeture_inscriptions: Optional[datetime] = None
+    statut: Optional[str] = None
+
+    @field_validator("statut")
+    @classmethod
+    def validate_statut(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        if v not in ALLOWED_STATUS:
+            raise ValueError(f"statut must be one of {sorted(ALLOWED_STATUS)}")
+        return v
