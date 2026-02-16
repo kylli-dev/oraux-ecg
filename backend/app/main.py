@@ -25,6 +25,12 @@ from typing import List
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
+from app.models.epreuve import Epreuve
+from app.schemas.epreuve import EpreuveCreate, EpreuveOut
+
+from sqlalchemy import and_
+
+
 
 app = FastAPI(title="Oraux Platform")
 
@@ -206,6 +212,35 @@ def delete_demi_journee(demi_id: int, db: Session = Depends(get_db)):
     db.delete(demi)
     db.commit()
     return
+
+@app.post("/admin/epreuves", response_model=EpreuveOut, dependencies=[Depends(require_admin)])
+def create_epreuve(payload: EpreuveCreate, db: Session = Depends(get_db)):
+
+    # Vérifier chevauchement dans la même demi-journée
+    overlap = db.query(Epreuve).filter(
+        Epreuve.demi_journee_id == payload.demi_journee_id,
+        and_(
+            Epreuve.heure_debut < payload.heure_fin,
+            Epreuve.heure_fin > payload.heure_debut
+        )
+    ).first()
+
+    if overlap:
+        raise HTTPException(status_code=409, detail="Time slot overlaps with existing epreuve")
+
+    epreuve = Epreuve(**payload.model_dump())
+    db.add(epreuve)
+    db.commit()
+    db.refresh(epreuve)
+    return epreuve
+
+
+@app.get("/admin/epreuves", response_model=list[EpreuveOut], dependencies=[Depends(require_admin)])
+def list_epreuves(demi_journee_id: int | None = None, db: Session = Depends(get_db)):
+    q = db.query(Epreuve)
+    if demi_journee_id is not None:
+        q = q.filter(Epreuve.demi_journee_id == demi_journee_id)
+    return q.all()
 
 
 
