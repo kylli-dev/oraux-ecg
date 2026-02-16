@@ -64,3 +64,14 @@ def create_planning(payload: PlanningCreate, db: Session = Depends(get_db)):
 def list_plannings(db: Session = Depends(get_db)):
     return db.query(Planning).order_by(Planning.id.desc()).all()
 
+import os
+
+@app.get("/env-check", include_in_schema=False)
+def env_check():
+    return {
+        "has_ADMIN_API_KEY": "ADMIN_API_KEY" in os.environ,
+        "has_DATABASE_URL": "DATABASE_URL" in os.environ,
+        "admin_key_len": len(os.environ.get("ADMIN_API_KEY", "")),
+    }
+
+
