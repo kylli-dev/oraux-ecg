@@ -15,6 +15,17 @@ from app.db.deps import get_db
 from app.models.planning import Planning
 from app.schemas.planning import PlanningCreate, PlanningOut
 
+from app.models.demi_journee import DemiJournee
+
+from app.models.demi_journee import DemiJournee
+from app.schemas.demi_journee import DemiJourneeCreate, DemiJourneeOut, DemiJourneeUpdate
+from app.models.planning import Planning
+
+from typing import List
+from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
+
+
 app = FastAPI(title="Oraux Platform")
 
 
@@ -116,5 +127,85 @@ def delete_planning(planning_id: int, db: Session = Depends(get_db)):
     db.delete(planning)
     db.commit()
     return
+
+from typing import List
+from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
+
+
+@app.post("/admin/demi-journees", response_model=DemiJourneeOut, dependencies=[Depends(require_admin)])
+def create_demi_journee(payload: DemiJourneeCreate, db: Session = Depends(get_db)):
+    planning = db.get(Planning, payload.planning_id)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning not found")
+
+    # Validation métier : date dans le planning
+    if not (planning.date_debut <= payload.date <= planning.date_fin):
+        raise HTTPException(status_code=422, detail="date must be within planning range")
+
+    demi = DemiJournee(**payload.model_dump())
+    db.add(demi)
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Demi-journee already exists for this planning/date/type")
+
+    db.refresh(demi)
+    return demi
+
+
+@app.get("/admin/demi-journees", response_model=List[DemiJourneeOut], dependencies=[Depends(require_admin)])
+def list_demi_journees(planning_id: int | None = None, db: Session = Depends(get_db)):
+    q = db.query(DemiJournee)
+    if planning_id is not None:
+        q = q.filter(DemiJournee.planning_id == planning_id)
+    return q.order_by(DemiJournee.date.asc(), DemiJournee.type.asc()).all()
+
+
+@app.patch("/admin/demi-journees/{demi_id}", response_model=DemiJourneeOut, dependencies=[Depends(require_admin)])
+def update_demi_journee(demi_id: int, payload: DemiJourneeUpdate, db: Session = Depends(get_db)):
+    demi = db.get(DemiJournee, demi_id)
+    if demi is None:
+        raise HTTPException(status_code=404, detail="Demi-journee not found")
+
+    data = payload.model_dump(exclude_unset=True)
+
+    # Re-valider heures si partiellement modifiées
+    new_start = data.get("heure_debut", demi.heure_debut)
+    new_end = data.get("heure_fin", demi.heure_fin)
+    if not (new_start < new_end):
+        raise HTTPException(status_code=422, detail="heure_debut must be < heure_fin")
+
+    # Re-valider date dans planning si date modifiée
+    if "date" in data:
+        planning = db.get(Planning, demi.planning_id)
+        if not (planning.date_debut <= data["date"] <= planning.date_fin):
+            raise HTTPException(status_code=422, detail="date must be within planning range")
+
+    for k, v in data.items():
+        setattr(demi, k, v)
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Demi-journee already exists for this planning/date/type")
+
+    db.refresh(demi)
+    return demi
+
+
+@app.delete("/admin/demi-journees/{demi_id}", status_code=204, dependencies=[Depends(require_admin)])
+def delete_demi_journee(demi_id: int, db: Session = Depends(get_db)):
+    demi = db.get(DemiJournee, demi_id)
+    if demi is None:
+        raise HTTPException(status_code=404, detail="Demi-journee not found")
+
+    db.delete(demi)
+    db.commit()
+    return
+
 
 
