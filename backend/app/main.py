@@ -39,6 +39,9 @@ from app.models.demi_journee import DemiJournee
 from app.models.journee_type import JourneeType
 from app.models.journee_type_bloc import JourneeTypeBloc
 
+from app.schemas.journee_type import JourneeTypeCreate, JourneeTypeOut
+
+
 
 
 app = FastAPI(title="Oraux Platform")
@@ -373,5 +376,14 @@ def jt_check():
         r1 = conn.execute(text("SELECT to_regclass('public.journee_type')")).scalar()
         r2 = conn.execute(text("SELECT to_regclass('public.journee_type_bloc')")).scalar()
     return {"journee_type": r1, "journee_type_bloc": r2}
+
+
+@app.post("/admin/journees-types", response_model=JourneeTypeOut, dependencies=[Depends(require_admin)])
+def create_journee_type(payload: JourneeTypeCreate, db: Session = Depends(get_db)):
+    jt = JourneeType(**payload.model_dump())
+    db.add(jt)
+    db.commit()
+    db.refresh(jt)
+    return jt
 
 
