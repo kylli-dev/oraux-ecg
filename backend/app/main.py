@@ -410,3 +410,16 @@ def create_journee_type_bloc(jt_id: int, payload: JourneeTypeBlocCreate, db: Ses
     db.refresh(bloc)
     return bloc
 
+@app.get("/admin/journees-types/{jt_id}/blocs", response_model=list[JourneeTypeBlocOut], dependencies=[Depends(require_admin)])
+def list_journee_type_blocs(jt_id: int, db: Session = Depends(get_db)):
+    jt = db.get(JourneeType, jt_id)
+    if jt is None:
+        raise HTTPException(status_code=404, detail="JourneeType not found")
+
+    return (
+        db.query(JourneeTypeBloc)
+        .filter(JourneeTypeBloc.journee_type_id == jt_id)
+        .order_by(JourneeTypeBloc.ordre.asc())
+        .all()
+    )
+
