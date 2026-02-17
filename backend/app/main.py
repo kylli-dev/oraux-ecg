@@ -43,6 +43,13 @@ from app.schemas.journee_type import JourneeTypeCreate, JourneeTypeOut
 
 from app.schemas.journee_type_bloc import JourneeTypeBlocCreate, JourneeTypeBlocOut
 
+from datetime import datetime, timedelta
+import json
+from app.schemas.apply_journee_type import ApplyJourneeTypeIn
+from app.models.journee_type import JourneeType
+from app.models.journee_type_bloc import JourneeTypeBloc
+
+
 
 app = FastAPI(title="Oraux Platform")
 
@@ -422,4 +429,106 @@ def list_journee_type_blocs(jt_id: int, db: Session = Depends(get_db)):
         .order_by(JourneeTypeBloc.ordre.asc())
         .all()
     )
+
+
+@app.post("/admin/plannings/{planning_id}/apply-journee-type", dependencies=[Depends(require_admin)])
+def apply_journee_type(planning_id: int, payload: ApplyJourneeTypeIn, db: Session = Depends(get_db)):
+    planning = db.get(Planning, planning_id)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning not found")
+
+    # date doit être dans le planning
+    if not (planning.date_debut <= payload.date <= planning.date_fin):
+        raise HTTPException(status_code=422, detail="date must be within planning range")
+
+    jt = db.get(JourneeType, payload.journee_type_id)
+    if jt is None:
+        raise HTTPException(status_code=404, detail="JourneeType not found")
+
+    blocs = (
+        db.query(JourneeTypeBloc)
+        .filter(JourneeTypeBloc.journee_type_id == jt.id)
+        .order_by(JourneeTypeBloc.ordre.asc())
+        .all()
+    )
+    if not blocs:
+        raise HTTPException(status_code=422, detail="JourneeType has no blocs")
+
+    # helper: obtenir / créer une demi-journée (MATIN ou APRES_MIDI) selon l'heure
+    def get_or_create_demi(type_demi: str, heure_debut, heure_fin):
+        demi = (
+            db.query(DemiJournee)
+            .filter(
+                DemiJournee.planning_id == planning_id,
+                DemiJournee.date == payload.date,
+                DemiJournee.type == type_demi
+            )
+            .first()
+        )
+        if demi:
+            return demi
+
+        demi = DemiJournee(
+            planning_id=planning_id,
+            date=payload.date,
+            type=type_demi,
+            heure_debut=heure_debut,
+            heure_fin=heure_fin
+        )
+        db.add(demi)
+        db.flush()  # récupère demi.id sans commit
+        return demi
+
+    created_demi = 0
+    created_epreuves = 0
+
+    for bloc in blocs:
+        # déterminer matin/aprem (simple règle)
+        type_demi = "MATIN" if bloc.heure_debut < datetime.strptime("12:00:00", "%H:%M:%S").time() else "APRES_MIDI"
+
+        demi = get_or_create_demi(type_demi, bloc.heure_debut, bloc.heure_fin)
+
+        # si on vient de le créer
+        # (flush l'a créé, mais on ne peut pas compter facilement sans flag, donc on check existence avant)
+        # => on compte via existence initiale
+        # plus simple: si aucune demi n'existait avant création
+        # (on le gère hors helper)
+        # Ici : on ne compte pas précisément, ce n'est pas critique. Optionnel.
+
+        if bloc.type_bloc == "PAUSE":
+            continue
+
+        # paramètres par bloc (override sinon défaut)
+        duree = bloc.duree_minutes if bloc.duree_minutes is not None else jt.duree_defaut_minutes
+        pause = bloc.pause_minutes if bloc.pause_minutes is not None else jt.pause_defaut_minutes
+        matieres = bloc.matieres  # via property JSON
+
+        # garde-fou: pas de génération si déjà des épreuves sur ce demi
+        existing = db.query(Epreuve).filter(Epreuve.demi_journee_id == demi.id).first()
+        if existing:
+            raise HTTPException(status_code=409, detail=f"Epreuves already exist for demi_journee {demi.id}")
+
+        start_dt = datetime.combine(payload.date, bloc.heure_debut)
+        end_dt = datetime.combine(payload.date, bloc.heure_fin)
+
+        slot = timedelta(minutes=duree)
+        pause_td = timedelta(minutes=pause)
+
+        t = start_dt
+        i = 0
+        while t + slot <= end_dt:
+            epreuve = Epreuve(
+                demi_journee_id=demi.id,
+                matiere=matieres[i % len(matieres)],
+                heure_debut=t.time(),
+                heure_fin=(t + slot).time(),
+                statut=jt.statut_initial
+            )
+            db.add(epreuve)
+            created_epreuves += 1
+            i += 1
+            t = t + slot + pause_td
+
+    db.commit()
+    return {"planning_id": planning_id, "date": str(payload.date), "journee_type_id": jt.id, "created_epreuves": created_epreuves}
 
