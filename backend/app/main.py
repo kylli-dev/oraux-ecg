@@ -49,6 +49,10 @@ from app.schemas.apply_journee_type import ApplyJourneeTypeIn
 from app.models.journee_type import JourneeType
 from app.models.journee_type_bloc import JourneeTypeBloc
 
+from datetime import date as date_type
+from app.schemas.day_view import DayViewOut, DayDemiJourneeOut, DayEpreuveOut
+
+
 
 
 app = FastAPI(title="Oraux Platform")
@@ -531,4 +535,45 @@ def apply_journee_type(planning_id: int, payload: ApplyJourneeTypeIn, db: Sessio
 
     db.commit()
     return {"planning_id": planning_id, "date": str(payload.date), "journee_type_id": jt.id, "created_epreuves": created_epreuves}
+
+
+
+
+@app.get("/admin/plannings/{planning_id}/day", response_model=DayViewOut, dependencies=[Depends(require_admin)])
+def get_planning_day(planning_id: int, date: date_type, db: Session = Depends(get_db)):
+    planning = db.get(Planning, planning_id)
+    if planning is None:
+        raise HTTPException(status_code=404, detail="Planning not found")
+
+    # date doit être dans le planning
+    if not (planning.date_debut <= date <= planning.date_fin):
+        raise HTTPException(status_code=422, detail="date must be within planning range")
+
+    demis = (
+        db.query(DemiJournee)
+        .filter(DemiJournee.planning_id == planning_id, DemiJournee.date == date)
+        .order_by(DemiJournee.type.asc(), DemiJournee.heure_debut.asc())
+        .all()
+    )
+
+    demi_out = []
+    for d in demis:
+        epreuves = (
+            db.query(Epreuve)
+            .filter(Epreuve.demi_journee_id == d.id)
+            .order_by(Epreuve.heure_debut.asc())
+            .all()
+        )
+        demi_out.append(
+            DayDemiJourneeOut(
+                id=d.id,
+                type=d.type,
+                heure_debut=d.heure_debut,
+                heure_fin=d.heure_fin,
+                epreuves=[DayEpreuveOut.model_validate(e) for e in epreuves],
+            )
+        )
+
+    return DayViewOut(planning_id=planning_id, date=date, demi_journees=demi_out)
+
 
