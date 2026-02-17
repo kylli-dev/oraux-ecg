@@ -285,36 +285,71 @@ def generate_epreuves(demi_id: int, payload: GenerateEpreuvesIn, db: Session = D
     if demi is None:
         raise HTTPException(status_code=404, detail="Demi-journee not found")
 
-    # construire des datetime pour itérer
     start_dt = datetime.combine(demi.date, demi.heure_debut)
     end_dt = datetime.combine(demi.date, demi.heure_fin)
 
     slot = timedelta(minutes=payload.duree_minutes)
     pause = timedelta(minutes=payload.pause_minutes)
 
+    # convert skip ranges to datetime intervals
+    skips: list[tuple[datetime, datetime]] = []
+    for r in payload.skip_ranges:
+        s = datetime.combine(demi.date, r.start)
+        e = datetime.combine(demi.date, r.end)
+        # si un skip range est hors de la demi-journée, on le tronque
+        s = max(s, start_dt)
+        e = min(e, end_dt)
+        if s < e:
+            skips.append((s, e))
+
+    def in_skip(t: datetime) -> datetime | None:
+        """Return end of skip interval if t is inside one, else None."""
+        for s, e in skips:
+            if s <= t < e:
+                return e
+        return None
+
+    # index rotation matières
+    i = 0
     created = 0
     t = start_dt
 
+    # garde-fou: si des épreuves existent déjà, on empêche la génération (évite collisions)
+    existing = db.query(Epreuve).filter(Epreuve.demi_journee_id == demi_id).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Epreuves already exist for this demi-journee")
+
     while t + slot <= end_dt:
-        heure_debut = (t.time())
-        heure_fin = ((t + slot).time())
+        # sauter la pause si on est dedans
+        skip_end = in_skip(t)
+        if skip_end:
+            t = skip_end
+            continue
 
-        # anti-chevauchement (normalement inutile si on génère proprement, mais safe)
-        overlap = db.query(Epreuve).filter(
-            Epreuve.demi_journee_id == demi_id,
-            Epreuve.heure_debut < heure_fin,
-            Epreuve.heure_fin > heure_debut
-        ).first()
+        heure_debut = t.time()
+        heure_fin = (t + slot).time()
 
-        if overlap:
-            raise HTTPException(status_code=409, detail="Generation would overlap existing epreuves")
+        # si le slot chevauche une pause (ex: commence avant 12:00 et finit après 12:00)
+        # on avance à la fin de la pause
+        slot_end = t + slot
+        crossed = False
+        for s, e in skips:
+            if t < e and slot_end > s:  # overlap with skip
+                t = e
+                crossed = True
+                break
+        if crossed:
+            continue
+
+        matiere = payload.matieres[i % len(payload.matieres)]
+        i += 1
 
         epreuve = Epreuve(
             demi_journee_id=demi_id,
-            matiere=payload.matiere,
+            matiere=matiere,
             heure_debut=heure_debut,
             heure_fin=heure_fin,
-            statut=payload.statut_initial
+            statut=payload.statut_initial,
         )
         db.add(epreuve)
         created += 1
@@ -322,8 +357,7 @@ def generate_epreuves(demi_id: int, payload: GenerateEpreuvesIn, db: Session = D
         t = t + slot + pause
 
     db.commit()
-    return {"demi_journee_id": demi_id, "created_epreuves": created}
-
+    return {"demi_journee_id": demi_id, "created_epreuves": created, "matieres_rotation": payload.matieres}
 
 
 
