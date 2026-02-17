@@ -487,13 +487,24 @@ def apply_journee_type(planning_id: int, payload: ApplyJourneeTypeIn, db: Sessio
     created_epreuves = 0
 
     for bloc in blocs:
-    	# ✅ Si c'est une pause, on ne crée rien (pas de demi-journée, pas d'épreuve)
-    	if bloc.type_bloc == "PAUSE":
-        continue
 
-    	type_demi = "MATIN" if bloc.heure_debut < datetime.strptime("12:00:00", "%H:%M:%S").time() else "APRES_MIDI"
-    	demi = get_or_create_demi(type_demi, bloc.heure_debut, bloc.heure_fin)
+	if bloc.type_bloc == "PAUSE":
+            continue
 
+        # déterminer matin/aprem (simple règle)
+        type_demi = "MATIN" if bloc.heure_debut < datetime.strptime("12:00:00", "%H:%M:%S").time() else "APRES_MIDI"
+
+        demi = get_or_create_demi(type_demi, bloc.heure_debut, bloc.heure_fin)
+
+        # si on vient de le créer
+        # (flush l'a créé, mais on ne peut pas compter facilement sans flag, donc on check existence avant)
+        # => on compte via existence initiale
+        # plus simple: si aucune demi n'existait avant création
+        # (on le gère hors helper)
+        # Ici : on ne compte pas précisément, ce n'est pas critique. Optionnel.
+
+        if bloc.type_bloc == "PAUSE":
+            continue
 
         # paramètres par bloc (override sinon défaut)
         duree = bloc.duree_minutes if bloc.duree_minutes is not None else jt.duree_defaut_minutes
