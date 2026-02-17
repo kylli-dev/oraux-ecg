@@ -30,6 +30,7 @@ from app.schemas.epreuve import EpreuveCreate, EpreuveOut
 
 from sqlalchemy import and_
 
+from app.schemas.epreuve import ALLOWED_STATUT 
 
 
 app = FastAPI(title="Oraux Platform")
@@ -241,6 +242,36 @@ def list_epreuves(demi_journee_id: int | None = None, db: Session = Depends(get_
     if demi_journee_id is not None:
         q = q.filter(Epreuve.demi_journee_id == demi_journee_id)
     return q.all()
+
+
+ALLOWED_TRANSITIONS = {
+    "CREE": {"LIBRE", "ANNULEE"},
+    "LIBRE": {"ATTRIBUEE", "ANNULEE"},
+    "ATTRIBUEE": {"EN_EVALUATION", "LIBRE", "ANNULEE"},
+    "EN_EVALUATION": {"FINALISEE"},
+    "FINALISEE": set(),
+    "ANNULEE": set(),
+}
+
+ALLOWED_STATUT = {"CREE", "LIBRE", "ATTRIBUEE", "EN_EVALUATION", "FINALISEE", "ANNULEE"}
+
+@app.patch("/admin/epreuves/{epreuve_id}/statut", response_model=EpreuveOut, dependencies=[Depends(require_admin)])
+def update_epreuve_statut(epreuve_id: int, new_statut: str, db: Session = Depends(get_db)):
+
+    epreuve = db.get(Epreuve, epreuve_id)
+    if not epreuve:
+        raise HTTPException(status_code=404, detail="Epreuve not found")
+
+    if new_statut not in ALLOWED_STATUT:
+        raise HTTPException(status_code=422, detail="Invalid statut")
+
+    if new_statut not in ALLOWED_TRANSITIONS.get(epreuve.statut, set()):
+        raise HTTPException(status_code=409, detail="Transition not allowed")
+
+    epreuve.statut = new_statut
+    db.commit()
+    db.refresh(epreuve)
+    return epreuve
 
 
 
