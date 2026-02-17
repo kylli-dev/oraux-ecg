@@ -36,6 +36,9 @@ from datetime import datetime, date, timedelta
 from app.schemas.generation import GenerateEpreuvesIn
 from app.models.demi_journee import DemiJournee
 
+from app.models.journee_type import JourneeType
+from app.models.journee_type_bloc import JourneeTypeBloc
+
 
 
 app = FastAPI(title="Oraux Platform")
@@ -285,6 +288,9 @@ def generate_epreuves(demi_id: int, payload: GenerateEpreuvesIn, db: Session = D
     if demi is None:
         raise HTTPException(status_code=404, detail="Demi-journee not found")
 
+    matieres = payload.resolved_matieres()
+
+
     start_dt = datetime.combine(demi.date, demi.heure_debut)
     end_dt = datetime.combine(demi.date, demi.heure_fin)
 
@@ -341,7 +347,7 @@ def generate_epreuves(demi_id: int, payload: GenerateEpreuvesIn, db: Session = D
         if crossed:
             continue
 
-        matiere = payload.matieres[i % len(payload.matieres)]
+        matiere = matieres[i % len(matieres)]
         i += 1
 
         epreuve = Epreuve(
@@ -357,7 +363,15 @@ def generate_epreuves(demi_id: int, payload: GenerateEpreuvesIn, db: Session = D
         t = t + slot + pause
 
     db.commit()
-    return {"demi_journee_id": demi_id, "created_epreuves": created, "matieres_rotation": payload.matieres}
+    return {"demi_journee_id": demi_id, "created_epreuves": created, "matieres_rotation": matieres}
 
+
+
+@app.get("/jt-check")
+def jt_check():
+    with engine.connect() as conn:
+        r1 = conn.execute(text("SELECT to_regclass('public.journee_type')")).scalar()
+        r2 = conn.execute(text("SELECT to_regclass('public.journee_type_bloc')")).scalar()
+    return {"journee_type": r1, "journee_type_bloc": r2}
 
 
