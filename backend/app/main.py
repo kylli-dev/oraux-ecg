@@ -41,7 +41,7 @@ from app.models.journee_type_bloc import JourneeTypeBloc
 
 from app.schemas.journee_type import JourneeTypeCreate, JourneeTypeOut
 
-
+from app.schemas.journee_type_bloc import JourneeTypeBlocCreate, JourneeTypeBlocOut
 
 
 app = FastAPI(title="Oraux Platform")
@@ -386,4 +386,27 @@ def create_journee_type(payload: JourneeTypeCreate, db: Session = Depends(get_db
     db.refresh(jt)
     return jt
 
+
+@app.post("/admin/journees-types/{jt_id}/blocs", response_model=JourneeTypeBlocOut, dependencies=[Depends(require_admin)])
+def create_journee_type_bloc(jt_id: int, payload: JourneeTypeBlocCreate, db: Session = Depends(get_db)):
+    jt = db.get(JourneeType, jt_id)
+    if jt is None:
+        raise HTTPException(status_code=404, detail="JourneeType not found")
+
+    bloc = JourneeTypeBloc(
+        journee_type_id=jt_id,
+        ordre=payload.ordre,
+        type_bloc=payload.type_bloc,
+        heure_debut=payload.heure_debut,
+        heure_fin=payload.heure_fin,
+        duree_minutes=payload.duree_minutes,
+        pause_minutes=payload.pause_minutes,
+    )
+    # stocker la liste dans matieres_json via le setter .matieres
+    bloc.matieres = payload.matieres or []
+
+    db.add(bloc)
+    db.commit()
+    db.refresh(bloc)
+    return bloc
 
