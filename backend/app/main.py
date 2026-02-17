@@ -552,7 +552,7 @@ def get_planning_day(planning_id: int, date: date_type, db: Session = Depends(ge
     demis = (
         db.query(DemiJournee)
         .filter(DemiJournee.planning_id == planning_id, DemiJournee.date == date)
-        .order_by(DemiJournee.type.asc(), DemiJournee.heure_debut.asc())
+        .order_by(DemiJournee.heure_debut.asc())
         .all()
     )
 
