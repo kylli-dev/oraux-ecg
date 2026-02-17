@@ -32,6 +32,11 @@ from sqlalchemy import and_
 
 from app.schemas.epreuve import ALLOWED_STATUT 
 
+from datetime import datetime, date, timedelta
+from app.schemas.generation import GenerateEpreuvesIn
+from app.models.demi_journee import DemiJournee
+
+
 
 app = FastAPI(title="Oraux Platform")
 
@@ -272,6 +277,53 @@ def update_epreuve_statut(epreuve_id: int, new_statut: str, db: Session = Depend
     db.commit()
     db.refresh(epreuve)
     return epreuve
+
+
+@app.post("/admin/demi-journees/{demi_id}/generate-epreuves", dependencies=[Depends(require_admin)])
+def generate_epreuves(demi_id: int, payload: GenerateEpreuvesIn, db: Session = Depends(get_db)):
+    demi = db.get(DemiJournee, demi_id)
+    if demi is None:
+        raise HTTPException(status_code=404, detail="Demi-journee not found")
+
+    # construire des datetime pour itérer
+    start_dt = datetime.combine(demi.date, demi.heure_debut)
+    end_dt = datetime.combine(demi.date, demi.heure_fin)
+
+    slot = timedelta(minutes=payload.duree_minutes)
+    pause = timedelta(minutes=payload.pause_minutes)
+
+    created = 0
+    t = start_dt
+
+    while t + slot <= end_dt:
+        heure_debut = (t.time())
+        heure_fin = ((t + slot).time())
+
+        # anti-chevauchement (normalement inutile si on génère proprement, mais safe)
+        overlap = db.query(Epreuve).filter(
+            Epreuve.demi_journee_id == demi_id,
+            Epreuve.heure_debut < heure_fin,
+            Epreuve.heure_fin > heure_debut
+        ).first()
+
+        if overlap:
+            raise HTTPException(status_code=409, detail="Generation would overlap existing epreuves")
+
+        epreuve = Epreuve(
+            demi_journee_id=demi_id,
+            matiere=payload.matiere,
+            heure_debut=heure_debut,
+            heure_fin=heure_fin,
+            statut=payload.statut_initial
+        )
+        db.add(epreuve)
+        created += 1
+
+        t = t + slot + pause
+
+    db.commit()
+    return {"demi_journee_id": demi_id, "created_epreuves": created}
+
 
 
 
