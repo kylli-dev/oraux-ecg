@@ -1,0 +1,24 @@
+# Production overrides — gunicorn, SSL, stricter settings
+# Usage: docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  backend:
+    command: >
+      gunicorn app.main:app
+      -w 4
+      -k uvicorn.workers.UvicornWorker
+      --bind 0.0.0.0:8000
+      --access-logfile -
+      --error-logfile -
+      --log-level warning
+    environment:
+      ENVIRONMENT: production
+
+  frontend:
+    environment:
+      NODE_ENV: production
+
+  nginx:
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro

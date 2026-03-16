@@ -1,5 +1,6 @@
-from sqlalchemy import Date, DateTime, String, CheckConstraint, func
+from sqlalchemy import Date, DateTime, Time, String, CheckConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
+import datetime
 
 from app.db.base import Base
 
@@ -15,6 +16,11 @@ class Planning(Base):
 
     date_ouverture_inscriptions: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
     date_fermeture_inscriptions: Mapped[DateTime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    # Heure limite d'inscription/désinscription pour le lendemain (défaut 16h00)
+    heure_previs: Mapped[datetime.time] = mapped_column(
+        Time, nullable=False, default=datetime.time(16, 0)
+    )
 
     statut: Mapped[str] = mapped_column(String(20), nullable=False, default="BROUILLON")
 

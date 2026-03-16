@@ -1,9 +1,10 @@
-﻿fastapi
+fastapi
 uvicorn
 python-dotenv
 SQLAlchemy
 psycopg2-binary
 alembic
-SQLAlchemy
-psycopg2-binary
-alembic
+openpyxl
+python-multipart
+bcrypt
+python-jose[cryptography]

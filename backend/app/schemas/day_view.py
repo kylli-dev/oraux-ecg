@@ -1,5 +1,5 @@
 from datetime import date, time
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 
 
@@ -9,6 +9,12 @@ class DayEpreuveOut(BaseModel):
     heure_debut: time
     heure_fin: time
     statut: str
+    candidat_id: Optional[int] = None
+    candidat_nom: Optional[str] = None
+    candidat_prenom: Optional[str] = None
+    examinateur_id: Optional[int] = None
+    examinateur_nom: Optional[str] = None
+    examinateur_prenom: Optional[str] = None
 
     class Config:
         from_attributes = True

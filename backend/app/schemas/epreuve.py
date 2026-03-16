@@ -35,6 +35,20 @@ class EpreuveCreate(BaseModel):
         return heure_fin
 
 
+class EpreuveUpdate(BaseModel):
+    statut: Optional[str] = None
+    matiere: Optional[str] = Field(default=None, min_length=1, max_length=100)
+
+    @field_validator("statut")
+    @classmethod
+    def validate_statut(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        if v not in ALLOWED_STATUT:
+            raise ValueError(f"statut must be one of {sorted(ALLOWED_STATUT)}")
+        return v
+
+
 class EpreuveOut(BaseModel):
     id: int
     demi_journee_id: int
@@ -42,6 +56,12 @@ class EpreuveOut(BaseModel):
     heure_debut: time
     heure_fin: time
     statut: str
+    candidat_id: Optional[int] = None
+    candidat_nom: Optional[str] = None
+    candidat_prenom: Optional[str] = None
+    examinateur_id: Optional[int] = None
+    examinateur_nom: Optional[str] = None
+    examinateur_prenom: Optional[str] = None
 
     class Config:
         from_attributes = True

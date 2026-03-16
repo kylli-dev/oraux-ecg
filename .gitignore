@@ -1,0 +1,28 @@
+# Environment files
+.env
+.env.dev
+.env.preprod
+.env.prod
+!.env.*.example
+!.env.dev.example
+
+# Database
+*.db
+*.sqlite
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Node
+node_modules/
+.next/
+out/
+
+# Certs
+nginx/certs/
+
+# Logs
+*.log
