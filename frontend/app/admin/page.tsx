@@ -164,7 +164,13 @@ async function apiCall<T = unknown>(
   });
   if (res.status === 204) return null as T;
   const data = await res.json();
-  if (!res.ok) throw new Error(data.detail ?? JSON.stringify(data));
+  if (!res.ok) {
+    const detail = data.detail;
+    const msg = Array.isArray(detail)
+      ? detail.map((e: any) => `${e.loc?.slice(-1)[0] ?? ""}: ${e.msg}`).join(" | ")
+      : (detail ?? JSON.stringify(data));
+    throw new Error(msg);
+  }
   return data;
 }
 
@@ -894,6 +900,10 @@ function CreatePlanningForm({ onSuccess }: { onSuccess: () => void }) {
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   const submit = async () => {
+    if (!form.date_ouverture_inscriptions || !form.date_fermeture_inscriptions) {
+      setError("Veuillez renseigner les dates d'ouverture et fermeture des inscriptions.");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
