@@ -21,6 +21,8 @@ import {
   GripVertical,
   User,
   Loader2,
+  Sun,
+  Sunset,
 } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -117,30 +119,14 @@ function formatDate(dateStr: string): string {
   }
 }
 
-// ── Statut color maps ─────────────────────────────────────────────────────────
-const STATUT_BG: Record<string, string> = {
-  LIBRE: "#DBEAFE",
-  ATTRIBUEE: "#DCFCE7",
-  ANNULEE: "#FEE2E2",
-  CREE: "#F3E8FF",
-  EN_EVALUATION: "#FEF9C3",
-  FINALISEE: "#CFFAFE",
-};
-const STATUT_BORDER: Record<string, string> = {
-  LIBRE: "#BFDBFE",
-  ATTRIBUEE: "#BBF7D0",
-  ANNULEE: "#FCA5A5",
-  CREE: "#DDD6FE",
-  EN_EVALUATION: "#FDE68A",
-  FINALISEE: "#A5F3FC",
-};
-const STATUT_TEXT: Record<string, string> = {
-  LIBRE: "#1D4ED8",
-  ATTRIBUEE: "#15803D",
-  ANNULEE: "#DC2626",
-  CREE: "#7C3AED",
-  EN_EVALUATION: "#B45309",
-  FINALISEE: "#0E7490",
+// ── Statut styles ─────────────────────────────────────────────────────────────
+const STATUT_STYLE: Record<string, { bg: string; border: string; text: string }> = {
+  LIBRE:         { bg: "#EFF6FF", border: "#BFDBFE", text: "#1D4ED8" },
+  ATTRIBUEE:     { bg: "#F0FDF4", border: "#BBF7D0", text: "#15803D" },
+  ANNULEE:       { bg: "#FEF2F2", border: "#FCA5A5", text: "#DC2626" },
+  CREE:          { bg: "#FAF5FF", border: "#DDD6FE", text: "#7C3AED" },
+  EN_EVALUATION: { bg: "#FEFCE8", border: "#FDE68A", text: "#B45309" },
+  FINALISEE:     { bg: "#ECFEFF", border: "#A5F3FC", text: "#0E7490" },
 };
 
 // ── Draggable candidat chip ───────────────────────────────────────────────────
@@ -151,49 +137,44 @@ function DraggableCandidatChip({ candidat }: { candidat: Candidat }) {
       data: { type: "candidat", candidat },
     });
 
-  const style = {
-    transform: CSS.Translate.toString(transform),
-    opacity: isDragging ? 0.4 : 1,
-    cursor: isDragging ? "grabbing" : "grab",
-  };
-
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      style={{
+        transform: CSS.Translate.toString(transform),
+        opacity: isDragging ? 0.4 : 1,
+        cursor: isDragging ? "grabbing" : "grab",
+      }}
       {...listeners}
       {...attributes}
-      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-black/10 bg-white hover:border-black/20 hover:shadow-sm text-sm font-medium select-none transition"
+      className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-black/10 bg-white hover:border-black/20 hover:shadow-sm text-xs font-medium select-none transition"
     >
-      <GripVertical className="h-3.5 w-3.5 text-black/20 shrink-0" />
-      <User className="h-3.5 w-3.5 text-black/40 shrink-0" />
-      <span className="truncate">
-        {candidat.nom} {candidat.prenom}
-      </span>
+      <GripVertical className="h-3 w-3 text-black/20 shrink-0" />
+      <User className="h-3 w-3 text-black/40 shrink-0" />
+      <span className="truncate">{candidat.nom} {candidat.prenom}</span>
     </div>
   );
 }
 
-// Ghost shown while dragging
 function CandidatChipGhost({ candidat }: { candidat: Candidat }) {
   return (
-    <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-400 bg-blue-50 text-sm font-medium shadow-xl opacity-90 pointer-events-none">
-      <GripVertical className="h-3.5 w-3.5 text-blue-400 shrink-0" />
-      <User className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-      <span>
-        {candidat.nom} {candidat.prenom}
-      </span>
+    <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-blue-400 bg-blue-50 text-xs font-medium shadow-xl opacity-90 pointer-events-none">
+      <GripVertical className="h-3 w-3 text-blue-400 shrink-0" />
+      <User className="h-3 w-3 text-blue-500 shrink-0" />
+      <span>{candidat.nom} {candidat.prenom}</span>
     </div>
   );
 }
 
-// ── Droppable épreuve card ────────────────────────────────────────────────────
-function DroppableEpreuveCard({
+// ── Droppable cell (grid) ─────────────────────────────────────────────────────
+function DroppableEpreuveCell({
   epreuve,
   onUnassign,
+  pending,
 }: {
   epreuve: EpreuveCard;
-  onUnassign: (epreuveId: number) => void;
+  onUnassign: (id: number) => void;
+  pending: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: `epreuve-${epreuve.id}`,
@@ -201,140 +182,188 @@ function DroppableEpreuveCard({
     disabled: epreuve.statut === "ANNULEE",
   });
 
-  const bg = STATUT_BG[epreuve.statut] ?? "#F9FAFB";
-  const border = STATUT_BORDER[epreuve.statut] ?? "#E5E7EB";
-  const textColor = STATUT_TEXT[epreuve.statut] ?? "#374151";
+  const s = STATUT_STYLE[epreuve.statut] ?? { bg: "#F9FAFB", border: "#E5E7EB", text: "#374151" };
 
   return (
     <div
       ref={setNodeRef}
-      className="relative rounded-xl border-2 p-3 transition-all duration-150"
+      className="relative rounded-lg border-2 p-2 h-full min-h-[56px] flex flex-col justify-between transition-all duration-150"
       style={{
-        backgroundColor: isOver ? "#EFF6FF" : bg,
-        borderColor: isOver ? "#3B82F6" : border,
+        backgroundColor: isOver ? "#EFF6FF" : s.bg,
+        borderColor: isOver ? "#3B82F6" : s.border,
         boxShadow: isOver ? "0 0 0 3px rgba(59,130,246,0.15)" : undefined,
       }}
     >
-      {/* Time */}
-      <div className="flex items-center justify-between mb-1.5">
-        <span className="text-[11px] font-mono font-semibold text-black/40">
-          {hm(epreuve.heure_debut)} – {hm(epreuve.heure_fin)}
-        </span>
-        <span
-          className="text-[10px] font-semibold rounded-full px-2 py-0.5"
-          style={{
-            color: textColor,
-            backgroundColor: bg,
-            border: `1px solid ${border}`,
-          }}
-        >
-          {epreuve.statut}
-        </span>
-      </div>
+      {pending && (
+        <div className="absolute inset-0 z-10 bg-white/70 rounded-lg grid place-items-center">
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-black/30" />
+        </div>
+      )}
 
-      {/* Matière */}
-      <div className="font-semibold text-sm text-black/80 mb-2">
-        {epreuve.matiere}
-      </div>
-
-      {/* Candidat assigned */}
       {epreuve.candidat_nom ? (
-        <div className="flex items-center gap-1.5 bg-white/70 rounded-lg px-2.5 py-1.5">
-          <User className="h-3 w-3 text-green-600 shrink-0" />
-          <span className="text-xs font-medium text-green-800 flex-1 truncate">
-            {epreuve.candidat_nom} {epreuve.candidat_prenom}
-          </span>
+        <div className="flex items-start justify-between gap-1">
+          <div className="flex items-center gap-1 min-w-0">
+            <User className="h-3 w-3 shrink-0" style={{ color: s.text }} />
+            <span className="text-xs font-semibold truncate" style={{ color: s.text }}>
+              {epreuve.candidat_nom} {epreuve.candidat_prenom}
+            </span>
+          </div>
           <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onUnassign(epreuve.id);
-            }}
-            className="shrink-0 text-black/20 hover:text-red-500 transition"
+            onClick={() => onUnassign(epreuve.id)}
+            className="shrink-0 text-black/20 hover:text-red-500 transition mt-0.5"
           >
             <X className="h-3 w-3" />
           </button>
         </div>
       ) : (
         <div
-          className={`flex items-center justify-center h-7 rounded-lg border border-dashed text-[11px] transition ${
+          className={`flex-1 flex items-center justify-center rounded border border-dashed text-[10px] transition min-h-[32px] ${
             isOver
               ? "border-blue-400 text-blue-500 bg-blue-50"
-              : "border-black/15 text-black/30"
+              : "border-black/15 text-black/25"
           }`}
         >
-          {isOver ? "Assigner ce candidat" : "Déposer un candidat ici"}
+          {isOver ? "Déposer ici" : "—"}
         </div>
       )}
 
-      {/* Examinateur (display only) */}
       {epreuve.examinateur_nom && (
-        <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-black/40">
-          <span className="truncate">
-            Exam.: {epreuve.examinateur_nom} {epreuve.examinateur_prenom}
-          </span>
+        <div className="text-[10px] text-black/35 truncate mt-1">
+          {epreuve.examinateur_nom} {epreuve.examinateur_prenom}
         </div>
       )}
     </div>
   );
 }
 
-// ── Droppable demi-journée column ─────────────────────────────────────────────
-function DemiJourneeColumn({
+// ── Empty cell (no épreuve for this matière at this time) ─────────────────────
+function EmptyCell() {
+  return (
+    <div className="rounded-lg h-full min-h-[56px] bg-black/[0.02] border border-dashed border-black/10" />
+  );
+}
+
+// ── Timeline grid for one demi-journée ────────────────────────────────────────
+function DemiJourneeGrid({
   dj,
-  children,
+  matieres,
+  pendingEpreuveId,
+  onUnassign,
 }: {
   dj: DemiJournee;
-  children: React.ReactNode;
+  matieres: string[];
+  pendingEpreuveId: number | null;
+  onUnassign: (id: number) => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({
-    id: `dj-${dj.id}`,
-    data: { type: "dj", dj },
-  });
+  const isMatin = dj.type === "MATIN";
+  const accentColor = isMatin ? "#F59E0B" : "#6366F1";
+  const accentBg = isMatin ? "#FFFBEB" : "#EEF2FF";
 
-  const typeLabel = dj.type === "MATIN" ? "Matin" : "Après-midi";
-  const typeColor = dj.type === "MATIN" ? "#F59E0B" : "#6366F1";
+  const timeSlots = [...new Set(dj.epreuves.map((e) => e.heure_debut))].sort();
+  const assigned = dj.epreuves.filter((e) => e.candidat_nom).length;
 
   return (
-    <div className="flex flex-col min-h-0">
-      {/* Column header */}
+    <div className="mb-6">
+      {/* Section header */}
       <div
-        className="sticky top-0 z-10 rounded-xl mb-3 px-4 py-3 flex items-center justify-between"
-        style={{
-          backgroundColor: typeColor + "18",
-          borderBottom: `2px solid ${typeColor}30`,
-        }}
+        className="flex items-center gap-3 px-4 py-2.5 rounded-xl mb-2"
+        style={{ backgroundColor: accentBg, borderLeft: `4px solid ${accentColor}` }}
       >
-        <div>
-          <div className="font-semibold text-sm" style={{ color: typeColor }}>
-            {typeLabel}
-          </div>
-          <div className="text-xs text-black/40">
-            {hm(dj.heure_debut)} – {hm(dj.heure_fin)} · {dj.epreuves.length}{" "}
-            créneaux
-          </div>
+        {isMatin ? (
+          <Sun className="h-4 w-4 shrink-0" style={{ color: accentColor }} />
+        ) : (
+          <Sunset className="h-4 w-4 shrink-0" style={{ color: accentColor }} />
+        )}
+        <div className="flex-1">
+          <span className="font-semibold text-sm" style={{ color: accentColor }}>
+            {isMatin ? "Matin" : "Après-midi"}
+          </span>
+          <span className="text-xs text-black/40 ml-2">
+            {hm(dj.heure_debut)} – {hm(dj.heure_fin)}
+          </span>
         </div>
-        <div
-          className="h-7 w-7 rounded-full grid place-items-center text-xs font-bold"
-          style={{
-            backgroundColor: typeColor + "30",
-            color: typeColor,
-          }}
+        <span
+          className="text-xs font-semibold px-2.5 py-0.5 rounded-full"
+          style={{ backgroundColor: accentColor + "20", color: accentColor }}
         >
-          {dj.epreuves.filter((e) => e.candidat_nom).length}/
-          {dj.epreuves.length}
-        </div>
+          {assigned}/{dj.epreuves.length} attribués
+        </span>
       </div>
 
-      {/* Epreuves */}
-      <div
-        ref={setNodeRef}
-        className={`flex-1 space-y-2.5 rounded-xl p-3 transition-colors min-h-[120px] ${
-          isOver
-            ? "bg-blue-50/50 ring-2 ring-blue-200 ring-dashed"
-            : "bg-black/[0.02]"
-        }`}
-      >
-        {children}
+      {/* Grid table */}
+      <div className="overflow-x-auto rounded-xl border border-black/8 bg-white">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr style={{ backgroundColor: accentColor + "10" }}>
+              <th
+                className="text-left px-3 py-2 text-xs font-semibold text-black/50 border-b border-black/8 w-[90px]"
+              >
+                Horaire
+              </th>
+              {matieres.map((m) => (
+                <th
+                  key={m}
+                  className="px-3 py-2 text-xs font-semibold border-b border-black/8 text-center"
+                  style={{ color: accentColor }}
+                >
+                  {m}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {timeSlots.map((slot, idx) => {
+              const rowEpreuves = dj.epreuves.filter((e) => e.heure_debut === slot);
+              const finExam = rowEpreuves[0]?.heure_fin ?? "";
+              return (
+                <tr
+                  key={slot}
+                  className={idx % 2 === 0 ? "bg-white" : "bg-black/[0.015]"}
+                >
+                  {/* Time column */}
+                  <td className="px-3 py-2 border-b border-black/5 whitespace-nowrap">
+                    <span className="font-mono text-xs font-semibold text-black/60">
+                      {hm(slot)}
+                    </span>
+                    {finExam && (
+                      <span className="font-mono text-[10px] text-black/30 block">
+                        → {hm(finExam)}
+                      </span>
+                    )}
+                  </td>
+
+                  {/* Matière cells */}
+                  {matieres.map((matiere) => {
+                    const epreuve = rowEpreuves.find((e) => e.matiere === matiere);
+                    return (
+                      <td key={matiere} className="px-2 py-1.5 border-b border-black/5">
+                        {epreuve ? (
+                          <DroppableEpreuveCell
+                            epreuve={epreuve}
+                            onUnassign={onUnassign}
+                            pending={pendingEpreuveId === epreuve.id}
+                          />
+                        ) : (
+                          <EmptyCell />
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+            {timeSlots.length === 0 && (
+              <tr>
+                <td
+                  colSpan={matieres.length + 1}
+                  className="text-center text-xs text-black/30 py-6"
+                >
+                  Aucun créneau
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -377,9 +406,7 @@ export default function PlanificationView({
     }
   }, [planning.id, date]);
 
-  useEffect(() => {
-    loadDay();
-  }, [loadDay]);
+  useEffect(() => { loadDay(); }, [loadDay]);
 
   useEffect(() => {
     apiFetch<Candidat[]>("GET", `candidats/?planning_id=${planning.id}`)
@@ -387,7 +414,6 @@ export default function PlanificationView({
       .catch(() => {});
   }, [planning.id]);
 
-  // Candidats already assigned to any épreuve on this day
   const assignedCandidatIds = new Set(
     (dayData?.demi_journees
       .flatMap((dj) => dj.epreuves)
@@ -398,11 +424,7 @@ export default function PlanificationView({
   async function assignCandidat(candidatId: number, epreuveId: number) {
     setPendingEpreuveId(epreuveId);
     try {
-      await apiFetch(
-        "POST",
-        `candidats/epreuves/${epreuveId}/assigner`,
-        { candidat_id: candidatId }
-      );
+      await apiFetch("POST", `candidats/epreuves/${epreuveId}/assigner`, { candidat_id: candidatId });
       await loadDay();
     } catch (err) {
       alert((err as Error).message);
@@ -414,11 +436,7 @@ export default function PlanificationView({
   async function unassignCandidat(epreuveId: number) {
     setPendingEpreuveId(epreuveId);
     try {
-      await apiFetch(
-        "POST",
-        `candidats/epreuves/${epreuveId}/assigner`,
-        { candidat_id: null }
-      );
+      await apiFetch("POST", `candidats/epreuves/${epreuveId}/assigner`, { candidat_id: null });
       await loadDay();
     } catch (err) {
       alert((err as Error).message);
@@ -429,26 +447,28 @@ export default function PlanificationView({
 
   function handleDragStart(event: DragStartEvent) {
     const d = event.active.data.current;
-    if (d?.type === "candidat") {
-      setActiveDragData({ type: "candidat", candidat: d.candidat });
-    }
+    if (d?.type === "candidat") setActiveDragData({ type: "candidat", candidat: d.candidat });
   }
 
   function handleDragEnd(event: DragEndEvent) {
     setActiveDragData(null);
     const { active, over } = event;
     if (!over) return;
-
     const activeData = active.data.current;
     const overData = over.data.current;
-
     if (activeData?.type === "candidat" && overData?.type === "epreuve") {
-      const candidat: Candidat = activeData.candidat;
       const epreuve: EpreuveCard = overData.epreuve;
       if (epreuve.statut === "ANNULEE") return;
-      assignCandidat(candidat.id, epreuve.id);
+      assignCandidat(activeData.candidat.id, epreuve.id);
     }
   }
+
+  // All unique matieres across the day, sorted
+  const allMatieres = [
+    ...new Set(
+      (dayData?.demi_journees ?? []).flatMap((dj) => dj.epreuves.map((e) => e.matiere))
+    ),
+  ].sort();
 
   const unassigned = candidats.filter((c) => !assignedCandidatIds.has(c.id));
   const assigned = candidats.filter((c) => assignedCandidatIds.has(c.id));
@@ -456,7 +476,7 @@ export default function PlanificationView({
   return (
     <div className="h-screen flex flex-col">
       {/* Top bar */}
-      <div className="shrink-0 flex flex-wrap items-center gap-3 px-4 py-3 border-b bg-white/80 backdrop-blur sticky top-0 z-20">
+      <div className="shrink-0 flex flex-wrap items-center gap-3 px-4 py-3 border-b bg-white/90 backdrop-blur sticky top-0 z-20">
         <button
           onClick={onBack}
           className="h-9 w-9 rounded-lg border bg-white shadow-sm grid place-items-center hover:bg-black/[0.02] transition shrink-0"
@@ -465,14 +485,12 @@ export default function PlanificationView({
         </button>
 
         <div className="flex-1 min-w-0">
-          <div className="text-xs text-black/40 uppercase tracking-wide">
-            Planification DnD
-          </div>
+          <div className="text-[10px] text-black/40 uppercase tracking-widest font-medium">Planification</div>
           <div className="font-semibold text-sm truncate">{planning.nom}</div>
         </div>
 
         {/* Date nav */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <button
             onClick={() => setDate(addDays(date, -1))}
             disabled={date <= planning.date_debut}
@@ -497,42 +515,35 @@ export default function PlanificationView({
           </button>
         </div>
 
-        <span className="text-sm text-black/40 hidden md:block">
-          {formatDate(date)}
-        </span>
+        <span className="text-sm text-black/50 hidden md:block capitalize">{formatDate(date)}</span>
 
         <button
           onClick={loadDay}
           className="h-8 w-8 rounded-lg border bg-white shadow-sm grid place-items-center hover:bg-black/[0.02] transition"
         >
-          <RefreshCw
-            className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
-          />
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
         </button>
       </div>
 
       {/* Body */}
-      <DndContext
-        sensors={sensors}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-      >
+      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div className="flex-1 flex min-h-0 overflow-hidden">
+
           {/* Left panel: candidats */}
-          <div className="w-[220px] shrink-0 flex flex-col border-r bg-gray-50 overflow-y-auto">
+          <div className="w-[200px] shrink-0 flex flex-col border-r bg-gray-50/80 overflow-y-auto">
             <div className="p-3 border-b bg-white sticky top-0 z-10">
-              <div className="text-xs font-semibold text-black/50 uppercase tracking-wide mb-0.5">
+              <div className="text-[10px] font-semibold text-black/50 uppercase tracking-widest mb-0.5">
                 Candidats
               </div>
-              <div className="text-[11px] text-black/30">
+              <div className="text-[11px] text-black/35">
                 {unassigned.length} non assigné(s)
               </div>
             </div>
 
-            <div className="p-3 space-y-1.5 flex-1">
+            <div className="p-2.5 space-y-1.5 flex-1">
               {unassigned.length === 0 && (
                 <div className="text-xs text-black/30 text-center py-6">
-                  Tous les candidats sont assignés
+                  Tous assignés ✓
                 </div>
               )}
               {unassigned.map((c) => (
@@ -541,18 +552,16 @@ export default function PlanificationView({
 
               {assigned.length > 0 && (
                 <>
-                  <div className="pt-3 pb-1 text-[10px] font-semibold text-black/30 uppercase tracking-wide">
-                    Assignés
+                  <div className="pt-3 pb-1 text-[10px] font-semibold text-black/30 uppercase tracking-widest">
+                    Assignés ({assigned.length})
                   </div>
                   {assigned.map((c) => (
                     <div
                       key={c.id}
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-black/40 bg-black/[0.03]"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-black/40 bg-black/[0.03]"
                     >
-                      <User className="h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">
-                        {c.nom} {c.prenom}
-                      </span>
+                      <User className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{c.nom} {c.prenom}</span>
                     </div>
                   ))}
                 </>
@@ -560,8 +569,8 @@ export default function PlanificationView({
             </div>
           </div>
 
-          {/* Main: demi-journées grid */}
-          <div className="flex-1 overflow-auto p-4">
+          {/* Main: timeline grid */}
+          <div className="flex-1 overflow-auto p-4 bg-gray-50/50">
             {loading ? (
               <div className="flex items-center justify-center h-full">
                 <Loader2 className="h-8 w-8 animate-spin text-black/20" />
@@ -573,39 +582,32 @@ export default function PlanificationView({
                   Aucune demi-journée pour cette date
                 </div>
                 <div className="text-xs text-black/30 mt-1">
-                  Appliquez un gabarit depuis la vue journée
+                  Appliquez un gabarit depuis la vue planning
                 </div>
               </div>
             ) : (
-              <div
-                className="grid gap-4"
-                style={{
-                  gridTemplateColumns: `repeat(${dayData.demi_journees.length}, minmax(280px, 1fr))`,
-                }}
-              >
-                {dayData.demi_journees.map((dj) => (
-                  <DemiJourneeColumn key={dj.id} dj={dj}>
-                    {dj.epreuves.map((epreuve) => (
-                      <div key={epreuve.id} className="relative">
-                        {pendingEpreuveId === epreuve.id && (
-                          <div className="absolute inset-0 z-10 bg-white/70 rounded-xl grid place-items-center">
-                            <Loader2 className="h-4 w-4 animate-spin text-black/30" />
-                          </div>
-                        )}
-                        <DroppableEpreuveCard
-                          epreuve={epreuve}
-                          onUnassign={unassignCandidat}
-                        />
-                      </div>
-                    ))}
-                    {dj.epreuves.length === 0 && (
-                      <div className="text-center text-xs text-black/25 py-4">
-                        Aucun créneau
+              <>
+                {dayData.demi_journees.map((dj, idx) => (
+                  <div key={dj.id}>
+                    <DemiJourneeGrid
+                      dj={dj}
+                      matieres={allMatieres}
+                      pendingEpreuveId={pendingEpreuveId}
+                      onUnassign={unassignCandidat}
+                    />
+                    {/* Pause separator between matin and après-midi */}
+                    {idx < dayData.demi_journees.length - 1 && (
+                      <div className="flex items-center gap-3 my-4 px-1">
+                        <div className="flex-1 border-t border-dashed border-black/15" />
+                        <span className="text-[11px] text-black/35 font-medium px-2">
+                          Pause méridienne
+                        </span>
+                        <div className="flex-1 border-t border-dashed border-black/15" />
                       </div>
                     )}
-                  </DemiJourneeColumn>
+                  </div>
                 ))}
-              </div>
+              </>
             )}
           </div>
         </div>
