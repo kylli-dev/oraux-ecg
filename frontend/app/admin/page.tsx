@@ -1799,10 +1799,8 @@ function BlocsManager({
                           </span>
                           <span className="text-xs text-black/30">
                             {b.duree_minutes ?? dureeDefaut}min /{" "}
-                            {b.pause_minutes ?? pauseDefaut}min pause
-                            {(b.preparation_minutes ?? preparationDefaut) > 0 && (
-                              <> / {b.preparation_minutes ?? preparationDefaut}min prép.</>
-                            )}
+                            {b.pause_minutes ?? pauseDefaut}min pause /{" "}
+                            {b.preparation_minutes ?? preparationDefaut}min prép.
                           </span>
                         </>
                       )}
