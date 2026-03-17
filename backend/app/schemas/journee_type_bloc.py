@@ -46,6 +46,30 @@ class JourneeTypeBlocCreate(BaseModel):
         return None
 
 
+class JourneeTypeBlocUpdate(BaseModel):
+    ordre: int = Field(ge=1, le=1000)
+    heure_debut: time
+    heure_fin: time
+    matieres: Optional[List[str]] = None
+    duree_minutes: Optional[int] = Field(default=None, ge=5, le=240)
+    pause_minutes: Optional[int] = Field(default=None, ge=0, le=120)
+
+    @field_validator("heure_fin")
+    @classmethod
+    def validate_hours(cls, heure_fin: time, info):
+        start = info.data.get("heure_debut")
+        if start and not (start < heure_fin):
+            raise ValueError("heure_debut must be < heure_fin")
+        return heure_fin
+
+    @field_validator("matieres")
+    @classmethod
+    def clean_matieres(cls, v):
+        if v is None:
+            return []
+        return [m.strip() for m in v if m and m.strip()]
+
+
 class JourneeTypeBlocOut(BaseModel):
     id: int
     journee_type_id: int

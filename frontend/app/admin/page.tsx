@@ -1688,6 +1688,7 @@ function BlocsManager({
 }) {
   const [blocs, setBlocs] = useState<Bloc[]>([]);
   const [showAdd, setShowAdd] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -1701,6 +1702,7 @@ function BlocsManager({
 
   const handleDelete = async (blocId: number) => {
     await del(`journee-types/blocs/${blocId}`);
+    if (editingId === blocId) setEditingId(null);
     load();
   };
 
@@ -1713,7 +1715,7 @@ function BlocsManager({
         <Btn
           label={showAdd ? "Annuler" : "Ajouter un bloc"}
           icon={showAdd ? X : Plus}
-          onClick={() => setShowAdd((s) => !s)}
+          onClick={() => { setShowAdd((s) => !s); setEditingId(null); }}
           small
           variant="ghost"
         />
@@ -1730,41 +1732,76 @@ function BlocsManager({
       {blocs.length > 0 && (
         <div className="space-y-2 mb-3">
           {blocs.map((b) => (
-            <div
-              key={b.id}
-              className="flex items-center justify-between bg-white rounded-lg px-4 py-2.5 border border-black/5"
-            >
-              <div className="flex items-center gap-3 flex-wrap">
-                <span
-                  className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                    b.type_bloc === "GENERATION"
-                      ? "bg-blue-100 text-blue-700"
-                      : "bg-orange-100 text-orange-600"
-                  }`}
-                >
-                  {b.type_bloc}
-                </span>
-                <span className="text-xs font-mono text-black/50">
-                  {hm(b.heure_debut)} – {hm(b.heure_fin)}
-                </span>
-                {b.type_bloc === "GENERATION" && (
-                  <>
-                    <span className="text-xs text-black/40">
-                      {b.matieres.join(", ")}
-                    </span>
-                    <span className="text-xs text-black/30">
-                      {b.duree_minutes ?? dureeDefaut}min /{" "}
-                      {b.pause_minutes ?? pauseDefaut}min pause
-                    </span>
-                  </>
+            <div key={b.id}>
+              <AnimatePresence mode="wait">
+                {editingId === b.id ? (
+                  <motion.div
+                    key="edit"
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    className="bg-white rounded-xl border border-blue-200 p-4"
+                  >
+                    <EditBlocForm
+                      bloc={b}
+                      dureeDefaut={dureeDefaut}
+                      pauseDefaut={pauseDefaut}
+                      onSuccess={() => { setEditingId(null); load(); }}
+                      onCancel={() => setEditingId(null)}
+                    />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="row"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="flex items-center justify-between bg-white rounded-lg px-4 py-2.5 border border-black/5"
+                  >
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          b.type_bloc === "GENERATION"
+                            ? "bg-blue-100 text-blue-700"
+                            : "bg-orange-100 text-orange-600"
+                        }`}
+                      >
+                        {b.type_bloc}
+                      </span>
+                      <span className="text-xs font-mono text-black/50">
+                        {hm(b.heure_debut)} – {hm(b.heure_fin)}
+                      </span>
+                      {b.type_bloc === "GENERATION" && (
+                        <>
+                          <span className="text-xs text-black/40">
+                            {b.matieres.join(", ")}
+                          </span>
+                          <span className="text-xs text-black/30">
+                            {b.duree_minutes ?? dureeDefaut}min /{" "}
+                            {b.pause_minutes ?? pauseDefaut}min pause
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => { setEditingId(b.id); setShowAdd(false); }}
+                        className="p-1 hover:text-blue-500 text-black/20 transition"
+                        title="Modifier"
+                      >
+                        <Edit2 className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(b.id)}
+                        className="p-1 hover:text-red-500 text-black/20 transition"
+                        title="Supprimer"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </motion.div>
                 )}
-              </div>
-              <button
-                onClick={() => handleDelete(b.id)}
-                className="p-1 hover:text-red-500 text-black/20 transition"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+              </AnimatePresence>
             </div>
           ))}
         </div>
@@ -1926,6 +1963,111 @@ function AddBlocForm({
         disabled={loading}
         small
       />
+    </div>
+  );
+}
+
+// ── EditBlocForm ───────────────────────────────────────────────────────────────
+function EditBlocForm({
+  bloc,
+  dureeDefaut,
+  pauseDefaut,
+  onSuccess,
+  onCancel,
+}: {
+  bloc: Bloc;
+  dureeDefaut: number;
+  pauseDefaut: number;
+  onSuccess: () => void;
+  onCancel: () => void;
+}) {
+  const [form, setForm] = useState({
+    ordre: bloc.ordre,
+    heure_debut: hm(bloc.heure_debut),
+    heure_fin: hm(bloc.heure_fin),
+    matieres: bloc.matieres.join(", "),
+    duree_minutes: bloc.duree_minutes ?? dureeDefaut,
+    pause_minutes: bloc.pause_minutes ?? pauseDefaut,
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
+
+  const submit = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const body: any = {
+        ordre: form.ordre,
+        heure_debut: form.heure_debut + ":00",
+        heure_fin: form.heure_fin + ":00",
+      };
+      if (bloc.type_bloc === "GENERATION") {
+        const matieres = form.matieres.split(",").map((m) => m.trim()).filter(Boolean);
+        if (!matieres.length) throw new Error("Au moins une matière requise");
+        body.matieres = matieres;
+        body.duree_minutes = form.duree_minutes;
+        body.pause_minutes = form.pause_minutes;
+      } else {
+        body.matieres = [];
+      }
+      await put(`journee-types/blocs/${bloc.id}`, body);
+      onSuccess();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-xs font-semibold text-black/40 uppercase tracking-wide">
+          Modifier le bloc{" "}
+          <span className={`px-1.5 py-0.5 rounded-full ${bloc.type_bloc === "GENERATION" ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-600"}`}>
+            {bloc.type_bloc}
+          </span>
+        </p>
+        <button onClick={onCancel} className="p-1 hover:text-black/60 text-black/20 transition">
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Ordre">
+          <Input type="number" value={form.ordre} onChange={(e) => set("ordre", Number(e.target.value))} min={1} />
+        </Field>
+        <div />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Heure début">
+          <Input type="time" value={form.heure_debut} onChange={(e) => set("heure_debut", e.target.value)} />
+        </Field>
+        <Field label="Heure fin">
+          <Input type="time" value={form.heure_fin} onChange={(e) => set("heure_fin", e.target.value)} />
+        </Field>
+      </div>
+      {bloc.type_bloc === "GENERATION" && (
+        <>
+          <Field label="Matières (séparées par virgules)">
+            <Input value={form.matieres} onChange={(e) => set("matieres", e.target.value)} placeholder="Maths, Anglais, Français" />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Durée (min)">
+              <Input type="number" value={form.duree_minutes} onChange={(e) => set("duree_minutes", Number(e.target.value))} min={5} max={240} />
+            </Field>
+            <Field label="Pause (min)">
+              <Input type="number" value={form.pause_minutes} onChange={(e) => set("pause_minutes", Number(e.target.value))} min={0} max={120} />
+            </Field>
+          </div>
+        </>
+      )}
+      <ErrorMsg msg={error} />
+      <div className="flex gap-2">
+        <Btn label={loading ? "Enregistrement…" : "Enregistrer"} onClick={submit} disabled={loading} small />
+        <Btn label="Annuler" onClick={onCancel} small variant="ghost" />
+      </div>
     </div>
   );
 }

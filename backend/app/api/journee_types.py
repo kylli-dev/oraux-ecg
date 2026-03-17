@@ -8,7 +8,7 @@ from app.db.deps import get_db
 from app.models.journee_type import JourneeType
 from app.models.journee_type_bloc import JourneeTypeBloc
 from app.schemas.journee_type import JourneeTypeCreate, JourneeTypeOut
-from app.schemas.journee_type_bloc import JourneeTypeBlocCreate, JourneeTypeBlocOut
+from app.schemas.journee_type_bloc import JourneeTypeBlocCreate, JourneeTypeBlocOut, JourneeTypeBlocUpdate
 
 router = APIRouter(
     prefix="/admin/journee-types",
@@ -72,6 +72,21 @@ def add_bloc(jt_id: int, body: JourneeTypeBlocCreate, db: Session = Depends(get_
     bloc = JourneeTypeBloc(journee_type_id=jt_id, **data)
     bloc.matieres = matieres
     db.add(bloc)
+    db.commit()
+    db.refresh(bloc)
+    return bloc
+
+
+@router.put("/blocs/{bloc_id}", response_model=JourneeTypeBlocOut)
+def update_bloc(bloc_id: int, body: JourneeTypeBlocUpdate, db: Session = Depends(get_db)):
+    bloc = db.get(JourneeTypeBloc, bloc_id)
+    if not bloc:
+        raise HTTPException(status_code=404, detail="Bloc not found")
+    data = body.model_dump()
+    matieres = data.pop("matieres", None) or []
+    for k, v in data.items():
+        setattr(bloc, k, v)
+    bloc.matieres = matieres
     db.commit()
     db.refresh(bloc)
     return bloc
