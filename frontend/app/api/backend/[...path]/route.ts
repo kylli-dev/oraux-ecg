@@ -31,12 +31,20 @@ async function proxy(req: NextRequest, pathSegments: string[]) {
     }
   }
 
-  const res = await fetch(upstream, {
-    method: req.method,
-    headers,
-    body: fetchBody,
-    cache: "no-store",
-  });
+  let res: Response;
+  try {
+    res = await fetch(upstream, {
+      method: req.method,
+      headers,
+      body: fetchBody,
+      cache: "no-store",
+    });
+  } catch (e: any) {
+    return NextResponse.json(
+      { detail: `Backend inaccessible : ${e.message}` },
+      { status: 502 }
+    );
+  }
 
   if (res.status === 204) return new NextResponse(null, { status: 204 });
 
