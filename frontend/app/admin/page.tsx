@@ -900,10 +900,11 @@ function CreatePlanningForm({ onSuccess }: { onSuccess: () => void }) {
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
   const submit = async () => {
-    if (!form.date_ouverture_inscriptions || !form.date_fermeture_inscriptions) {
-      setError("Veuillez renseigner les dates d'ouverture et fermeture des inscriptions.");
-      return;
-    }
+    const payload = {
+      ...form,
+      date_ouverture_inscriptions: form.date_ouverture_inscriptions || `${form.date_debut}T00:00`,
+      date_fermeture_inscriptions: form.date_fermeture_inscriptions || `${form.date_fin}T23:59`,
+    };
     setLoading(true);
     setError("");
     try {
@@ -3428,6 +3429,29 @@ function ConflitsSection() {
   );
 }
 
+// ── EnvBadge ───────────────────────────────────────────────────────────────────
+function EnvBadge() {
+  const env = process.env.NEXT_PUBLIC_ENV;
+  if (!env) return null;
+  const styles: Record<string, string> = {
+    development: "bg-amber-400 text-amber-900",
+    preprod: "bg-orange-400 text-orange-900",
+    production: "bg-emerald-400 text-emerald-900",
+  };
+  const label: Record<string, string> = {
+    development: "DEV",
+    preprod: "PREPROD",
+    production: "PROD",
+  };
+  return (
+    <span
+      className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${styles[env] ?? "bg-gray-400 text-gray-900"}`}
+    >
+      {label[env] ?? env.toUpperCase()}
+    </span>
+  );
+}
+
 // ── Sidebar ────────────────────────────────────────────────────────────────────
 function Sidebar({
   active,
@@ -3461,8 +3485,11 @@ function Sidebar({
             <div className="h-5 w-5 rounded-full border border-white/50" />
           </div>
           <div className="leading-tight">
-            <div className="text-white font-semibold tracking-wide text-sm">
-              ENSAE
+            <div className="flex items-center gap-2">
+              <span className="text-white font-semibold tracking-wide text-sm">
+                ENSAE
+              </span>
+              <EnvBadge />
             </div>
             <div className="text-white/60 text-xs">IP Paris</div>
           </div>
