@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import PlanificationView from "./planification/PlanificationView";
+import { useRouter } from "next/navigation";
 import {
   CalendarDays,
   Settings2,
@@ -31,6 +32,7 @@ import {
   AlertTriangle,
   FileSpreadsheet,
   Send,
+  LogOut,
 } from "lucide-react";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -3716,7 +3718,34 @@ function Sidebar({
           Back-office
         </div>
       </nav>
+
+      <div className="p-4 border-t border-white/10">
+        <LogoutButton />
+      </div>
     </aside>
+  );
+}
+
+function LogoutButton() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+
+  const handleLogout = async () => {
+    setLoading(true);
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/admin/login");
+    router.refresh();
+  };
+
+  return (
+    <button
+      onClick={handleLogout}
+      disabled={loading}
+      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-white/50 hover:bg-white/10 hover:text-white/80 transition text-xs"
+    >
+      <LogOut className="h-3.5 w-3.5" />
+      {loading ? "Déconnexion…" : "Se déconnecter"}
+    </button>
   );
 }
 
