@@ -23,6 +23,7 @@ class JourneeTypeBloc(Base):
     # surcharge optionnelle des paramètres
     duree_minutes: Mapped[int] = mapped_column(Integer, nullable=True)
     pause_minutes: Mapped[int] = mapped_column(Integer, nullable=True)
+    preparation_minutes: Mapped[int] = mapped_column(Integer, nullable=True)
 
     journee_type = relationship("JourneeType", back_populates="blocs")
 

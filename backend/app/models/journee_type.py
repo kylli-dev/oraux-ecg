@@ -13,6 +13,7 @@ class JourneeType(Base):
     # valeurs par défaut (peuvent être surchargées par bloc)
     duree_defaut_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
     pause_defaut_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    preparation_defaut_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     statut_initial: Mapped[str] = mapped_column(String(20), nullable=False, default="CREE")
 

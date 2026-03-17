@@ -52,6 +52,7 @@ type JourneeType = {
   nom: string;
   duree_defaut_minutes: number;
   pause_defaut_minutes: number;
+  preparation_defaut_minutes: number;
   statut_initial: string;
 };
 
@@ -65,6 +66,7 @@ type Bloc = {
   matieres: string[];
   duree_minutes: number | null;
   pause_minutes: number | null;
+  preparation_minutes: number | null;
 };
 
 type Epreuve = {
@@ -1536,6 +1538,9 @@ function JourneeTypesSection() {
                   <span className="text-xs text-black/30">
                     {jt.duree_defaut_minutes}min &bull; pause{" "}
                     {jt.pause_defaut_minutes}min
+                    {jt.preparation_defaut_minutes > 0 && (
+                      <> &bull; prép. {jt.preparation_defaut_minutes}min</>
+                    )}
                   </span>
                   <StatutBadge statut={jt.statut_initial} />
                 </div>
@@ -1575,6 +1580,7 @@ function JourneeTypesSection() {
                       jtId={jt.id}
                       dureeDefaut={jt.duree_defaut_minutes}
                       pauseDefaut={jt.pause_defaut_minutes}
+                      preparationDefaut={jt.preparation_defaut_minutes}
                     />
                   </motion.div>
                 )}
@@ -1605,6 +1611,7 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
     nom: "",
     duree_defaut_minutes: 30,
     pause_defaut_minutes: 5,
+    preparation_defaut_minutes: 0,
     statut_initial: "CREE",
   });
   const [loading, setLoading] = useState(false);
@@ -1658,6 +1665,17 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
           />
         </Field>
       </div>
+      <Field label="Préparation défaut (min)">
+        <Input
+          type="number"
+          value={form.preparation_defaut_minutes}
+          onChange={(e) =>
+            set("preparation_defaut_minutes", Number(e.target.value))
+          }
+          min={0}
+          max={120}
+        />
+      </Field>
       <Field label="Statut initial des épreuves">
         <Select
           value={form.statut_initial}
@@ -1681,10 +1699,12 @@ function BlocsManager({
   jtId,
   dureeDefaut,
   pauseDefaut,
+  preparationDefaut,
 }: {
   jtId: number;
   dureeDefaut: number;
   pauseDefaut: number;
+  preparationDefaut: number;
 }) {
   const [blocs, setBlocs] = useState<Bloc[]>([]);
   const [showAdd, setShowAdd] = useState(false);
@@ -1746,6 +1766,7 @@ function BlocsManager({
                       bloc={b}
                       dureeDefaut={dureeDefaut}
                       pauseDefaut={pauseDefaut}
+                      preparationDefaut={preparationDefaut}
                       onSuccess={() => { setEditingId(null); load(); }}
                       onCancel={() => setEditingId(null)}
                     />
@@ -1779,6 +1800,9 @@ function BlocsManager({
                           <span className="text-xs text-black/30">
                             {b.duree_minutes ?? dureeDefaut}min /{" "}
                             {b.pause_minutes ?? pauseDefaut}min pause
+                            {(b.preparation_minutes ?? preparationDefaut) > 0 && (
+                              <> / {b.preparation_minutes ?? preparationDefaut}min prép.</>
+                            )}
                           </span>
                         </>
                       )}
@@ -1819,6 +1843,7 @@ function BlocsManager({
               jtId={jtId}
               dureeDefaut={dureeDefaut}
               pauseDefaut={pauseDefaut}
+              preparationDefaut={preparationDefaut}
               onSuccess={() => {
                 setShowAdd(false);
                 load();
@@ -1835,11 +1860,13 @@ function AddBlocForm({
   jtId,
   dureeDefaut,
   pauseDefaut,
+  preparationDefaut,
   onSuccess,
 }: {
   jtId: number;
   dureeDefaut: number;
   pauseDefaut: number;
+  preparationDefaut: number;
   onSuccess: () => void;
 }) {
   const [form, setForm] = useState({
@@ -1850,6 +1877,7 @@ function AddBlocForm({
     matieres: "",
     duree_minutes: dureeDefaut,
     pause_minutes: pauseDefaut,
+    preparation_minutes: preparationDefaut,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -1875,6 +1903,7 @@ function AddBlocForm({
         body.matieres = matieres;
         body.duree_minutes = form.duree_minutes;
         body.pause_minutes = form.pause_minutes;
+        body.preparation_minutes = form.preparation_minutes;
       }
       await post(`journee-types/${jtId}/blocs`, body);
       onSuccess();
@@ -1934,8 +1963,8 @@ function AddBlocForm({
               placeholder="Maths, Anglais, Français"
             />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Durée (min)">
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Durée oral (min)">
               <Input
                 type="number"
                 value={form.duree_minutes}
@@ -1949,6 +1978,15 @@ function AddBlocForm({
                 type="number"
                 value={form.pause_minutes}
                 onChange={(e) => set("pause_minutes", Number(e.target.value))}
+                min={0}
+                max={120}
+              />
+            </Field>
+            <Field label="Préparation (min)">
+              <Input
+                type="number"
+                value={form.preparation_minutes}
+                onChange={(e) => set("preparation_minutes", Number(e.target.value))}
                 min={0}
                 max={120}
               />
@@ -1972,12 +2010,14 @@ function EditBlocForm({
   bloc,
   dureeDefaut,
   pauseDefaut,
+  preparationDefaut,
   onSuccess,
   onCancel,
 }: {
   bloc: Bloc;
   dureeDefaut: number;
   pauseDefaut: number;
+  preparationDefaut: number;
   onSuccess: () => void;
   onCancel: () => void;
 }) {
@@ -1988,6 +2028,7 @@ function EditBlocForm({
     matieres: bloc.matieres.join(", "),
     duree_minutes: bloc.duree_minutes ?? dureeDefaut,
     pause_minutes: bloc.pause_minutes ?? pauseDefaut,
+    preparation_minutes: bloc.preparation_minutes ?? preparationDefaut,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -2009,6 +2050,7 @@ function EditBlocForm({
         body.matieres = matieres;
         body.duree_minutes = form.duree_minutes;
         body.pause_minutes = form.pause_minutes;
+        body.preparation_minutes = form.preparation_minutes;
       } else {
         body.matieres = [];
       }
@@ -2053,12 +2095,15 @@ function EditBlocForm({
           <Field label="Matières (séparées par virgules)">
             <Input value={form.matieres} onChange={(e) => set("matieres", e.target.value)} placeholder="Maths, Anglais, Français" />
           </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Durée (min)">
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Durée oral (min)">
               <Input type="number" value={form.duree_minutes} onChange={(e) => set("duree_minutes", Number(e.target.value))} min={5} max={240} />
             </Field>
             <Field label="Pause (min)">
               <Input type="number" value={form.pause_minutes} onChange={(e) => set("pause_minutes", Number(e.target.value))} min={0} max={120} />
+            </Field>
+            <Field label="Préparation (min)">
+              <Input type="number" value={form.preparation_minutes} onChange={(e) => set("preparation_minutes", Number(e.target.value))} min={0} max={120} />
             </Field>
           </div>
         </>

@@ -42,18 +42,22 @@ def generate_in_range(
     duree_minutes: int,
     pause_minutes: int,
     statut_initial: str,
+    preparation_minutes: int = 0,
     skip_ranges: List[SkipRange] | None = None,
     matiere_offset: int = 0,
 ) -> int:
     """
     Génère les épreuves dans la plage [debut, fin[ pour une demi-journée.
 
+    Chaque slot occupe (preparation_minutes + duree_minutes), suivi d'une pause.
+    heure_debut = appel candidat (début préparation), heure_fin = fin de l'oral.
+
     Retourne le nombre d'épreuves créées.
     """
     if skip_ranges is None:
         skip_ranges = []
 
-    duree = timedelta(minutes=duree_minutes)
+    slot = timedelta(minutes=preparation_minutes + duree_minutes)
     pause = timedelta(minutes=pause_minutes)
 
     t = _time_to_dt(debut)
@@ -62,12 +66,11 @@ def generate_in_range(
     idx = matiere_offset
     count = 0
 
-    while t + duree <= fin_dt:
-        slot_end = t + duree
+    while t + slot <= fin_dt:
+        slot_end = t + slot
         skip_fin = _overlaps_skip(t.time(), slot_end.time(), skip_ranges)
 
         if skip_fin is not None:
-            # Avancer jusqu'à la fin du skip range
             t = _time_to_dt(skip_fin)
             continue
 
@@ -78,6 +81,7 @@ def generate_in_range(
             heure_debut=t.time(),
             heure_fin=slot_end.time(),
             statut=statut_initial,
+            preparation_minutes=preparation_minutes if preparation_minutes > 0 else None,
         )
         db.add(epreuve)
         idx += 1
@@ -182,6 +186,7 @@ def apply_journee_type(
         for bloc in blocs_gen:
             duree = bloc.duree_minutes or journee_type.duree_defaut_minutes
             pause = bloc.pause_minutes if bloc.pause_minutes is not None else journee_type.pause_defaut_minutes
+            preparation = bloc.preparation_minutes if bloc.preparation_minutes is not None else journee_type.preparation_defaut_minutes
             matieres = bloc.matieres  # property qui décode le JSON
 
             n = generate_in_range(
@@ -192,6 +197,7 @@ def apply_journee_type(
                 matieres=matieres,
                 duree_minutes=duree,
                 pause_minutes=pause,
+                preparation_minutes=preparation,
                 statut_initial=journee_type.statut_initial,
                 matiere_offset=matiere_offset,
             )

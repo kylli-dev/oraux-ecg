@@ -22,6 +22,9 @@ class Epreuve(Base):
 
     statut: Mapped[str] = mapped_column(String(20), nullable=False, default="CREE")
 
+    # Durée de préparation (en minutes) avant le début de l'oral
+    preparation_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
     # Candidat assigné (nullable)
     candidat_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("candidat.id", ondelete="SET NULL"),
