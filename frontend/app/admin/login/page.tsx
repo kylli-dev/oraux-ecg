@@ -26,9 +26,12 @@ function LoginForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password }),
       });
+      const contentType = res.headers.get("content-type") ?? "";
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error ?? "Erreur");
+        const msg = contentType.includes("application/json")
+          ? (await res.json()).error
+          : `Erreur serveur (${res.status})`;
+        throw new Error(msg ?? "Erreur");
       }
       router.push(from);
       router.refresh();
