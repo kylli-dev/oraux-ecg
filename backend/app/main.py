@@ -81,7 +81,24 @@ def db_check():
     return {"db": "ok"}
 
 
+def _run_migrations():
+    """Ajoute les colonnes manquantes sans casser les données existantes."""
+    migrations = [
+        "ALTER TABLE journee_type ADD COLUMN preparation_defaut_minutes INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE journee_type_bloc ADD COLUMN preparation_minutes INTEGER",
+        "ALTER TABLE epreuve ADD COLUMN preparation_minutes INTEGER",
+    ]
+    with engine.connect() as conn:
+        for sql in migrations:
+            try:
+                conn.execute(text(sql))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+
+
 @app.on_event("startup")
 def on_startup():
     if engine is not None:
         Base.metadata.create_all(bind=engine)
+        _run_migrations()
