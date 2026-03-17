@@ -1767,7 +1767,10 @@ function BlocsManager({
                       dureeDefaut={dureeDefaut}
                       pauseDefaut={pauseDefaut}
                       preparationDefaut={preparationDefaut}
-                      onSuccess={() => { setEditingId(null); load(); }}
+                      onSuccess={(updated) => {
+                        setBlocs((prev) => prev.map((x) => x.id === updated.id ? updated : x));
+                        setEditingId(null);
+                      }}
                       onCancel={() => setEditingId(null)}
                     />
                   </motion.div>
@@ -2016,7 +2019,7 @@ function EditBlocForm({
   dureeDefaut: number;
   pauseDefaut: number;
   preparationDefaut: number;
-  onSuccess: () => void;
+  onSuccess: (updated: Bloc) => void;
   onCancel: () => void;
 }) {
   const [form, setForm] = useState({
@@ -2052,8 +2055,8 @@ function EditBlocForm({
       } else {
         body.matieres = [];
       }
-      await put(`journee-types/blocs/${bloc.id}`, body);
-      onSuccess();
+      const updated = await put<Bloc>(`journee-types/blocs/${bloc.id}`, body);
+      onSuccess(updated);
     } catch (e: any) {
       setError(e.message);
     } finally {
