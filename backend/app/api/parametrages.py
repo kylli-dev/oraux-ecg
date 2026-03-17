@@ -159,13 +159,15 @@ def reset_password_candidat(candidat_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Candidat introuvable")
 
     new_pwd = secrets.token_urlsafe(8)  # ex: "aB3xZ9qR"
+    if not c.login:
+        c.login = c.email
     c.password_hash = hash_password(new_pwd)
     c.reset_token = None
     c.reset_token_expires_at = None
     db.commit()
     # TODO: envoyer Message-type ADMISSIBILITE avec le nouveau mot de passe
 
-    return ResetPasswordOut(login=c.login or c.email, new_password=new_pwd)
+    return ResetPasswordOut(login=c.login, new_password=new_pwd)
 
 
 @router.post("/examinateurs/{examinateur_id}/reset-password", response_model=ResetPasswordOut)

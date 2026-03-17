@@ -148,8 +148,12 @@ class InscriptionActiveOut(BaseModel):
 
 @router.post("/login", response_model=TokenOut)
 def login(body: LoginIn, db: Session = Depends(get_db)):
-    """Authentification candidat par login / mot de passe."""
-    c = db.query(Candidat).filter_by(login=body.login.strip()).first()
+    """Authentification candidat par login ou email / mot de passe."""
+    identifier = body.login.strip()
+    c = (
+        db.query(Candidat).filter_by(login=identifier).first()
+        or db.query(Candidat).filter_by(email=identifier).first()
+    )
     if not c or not c.password_hash or not verify_password(body.password, c.password_hash):
         raise HTTPException(status_code=401, detail="Identifiants incorrects")
     return TokenOut(access_token=create_access_token(c.id))
