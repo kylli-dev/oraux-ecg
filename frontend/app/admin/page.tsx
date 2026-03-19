@@ -3047,7 +3047,7 @@ function CreateCandidatForm({
 }
 
 function AffectationCandidatsTab({ planningId, candidats }: { planningId: number; candidats: Candidat[] }) {
-  const [epreuves, setEpreuves] = useState<EpreuveAffectation[]>([]);
+  const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState<Record<number, boolean>>({});
   const [error, setError] = useState("");
@@ -3056,7 +3056,7 @@ function AffectationCandidatsTab({ planningId, candidats }: { planningId: number
     setLoading(true);
     setError("");
     try {
-      const data = await get<EpreuveAffectation[]>(`plannings/${planningId}/epreuves`);
+      const data = await get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`);
       setEpreuves(data);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
@@ -3067,7 +3067,7 @@ function AffectationCandidatsTab({ planningId, candidats }: { planningId: number
 
   useEffect(() => { load(); }, [load]);
 
-  async function assigner(epreuve: EpreuveAffectation, candidatId: number | null) {
+  async function assigner(epreuve: EpreuveFlat, candidatId: number | null) {
     setAssigning((a) => ({ ...a, [epreuve.id]: true }));
     setError("");
     try {
@@ -3087,7 +3087,7 @@ function AffectationCandidatsTab({ planningId, candidats }: { planningId: number
     }
   }
 
-  const byDate = epreuves.reduce<Record<string, EpreuveAffectation[]>>((acc, e) => {
+  const byDate = epreuves.reduce<Record<string, EpreuveFlat[]>>((acc, e) => {
     (acc[e.date] ??= []).push(e);
     return acc;
   }, {});
