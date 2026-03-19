@@ -94,6 +94,7 @@ def _run_migrations():
     migrations = [
         "ALTER TABLE journee_type ADD COLUMN preparation_defaut_minutes INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE journee_type_bloc ADD COLUMN preparation_minutes INTEGER",
+        "ALTER TABLE journee_type_bloc ADD COLUMN salles_par_matiere INTEGER NOT NULL DEFAULT 1",
         "ALTER TABLE epreuve ADD COLUMN preparation_minutes INTEGER",
         "ALTER TABLE examinateur ADD COLUMN actif INTEGER NOT NULL DEFAULT 1",
         "ALTER TABLE examinateur ADD COLUMN etablissement VARCHAR(200)",
