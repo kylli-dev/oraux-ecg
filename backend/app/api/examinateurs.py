@@ -4,8 +4,12 @@ from sqlalchemy.orm import Session
 from app.core.admin_guard import require_admin
 from app.db.deps import get_db
 from app.models.examinateur import Examinateur
+from app.models.examinateur_indisponibilite import ExaminateurIndisponibilite
 from app.models.epreuve import Epreuve
-from app.schemas.examinateur import ExaminateurCreate, ExaminateurOut, ExaminateurUpdate, AssignerExaminateurIn
+from app.schemas.examinateur import (
+    ExaminateurCreate, ExaminateurOut, ExaminateurUpdate, AssignerExaminateurIn,
+    IndisponibiliteCreate, IndisponibiliteUpdate, IndisponibiliteOut,
+)
 
 router = APIRouter(
     prefix="/admin/examinateurs",
@@ -13,12 +17,16 @@ router = APIRouter(
     dependencies=[Depends(require_admin)],
 )
 
+
+# ── CRUD Examinateurs ─────────────────────────────────────────────────────────
+
 @router.get("/", response_model=List[ExaminateurOut])
 def list_examinateurs(planning_id: Optional[int] = None, db: Session = Depends(get_db)):
     q = db.query(Examinateur)
     if planning_id:
         q = q.filter_by(planning_id=planning_id)
     return q.order_by(Examinateur.nom, Examinateur.prenom).all()
+
 
 @router.post("/", response_model=ExaminateurOut, status_code=201)
 def create_examinateur(body: ExaminateurCreate, db: Session = Depends(get_db)):
@@ -31,12 +39,14 @@ def create_examinateur(body: ExaminateurCreate, db: Session = Depends(get_db)):
     db.refresh(ex)
     return ex
 
+
 @router.get("/{examinateur_id}", response_model=ExaminateurOut)
 def get_examinateur(examinateur_id: int, db: Session = Depends(get_db)):
     ex = db.get(Examinateur, examinateur_id)
     if not ex:
         raise HTTPException(status_code=404, detail="Examinateur not found")
     return ex
+
 
 @router.put("/{examinateur_id}", response_model=ExaminateurOut)
 def update_examinateur(examinateur_id: int, body: ExaminateurUpdate, db: Session = Depends(get_db)):
@@ -52,6 +62,18 @@ def update_examinateur(examinateur_id: int, body: ExaminateurUpdate, db: Session
     db.refresh(ex)
     return ex
 
+
+@router.patch("/{examinateur_id}/actif", response_model=ExaminateurOut)
+def toggle_actif(examinateur_id: int, body: dict, db: Session = Depends(get_db)):
+    ex = db.get(Examinateur, examinateur_id)
+    if not ex:
+        raise HTTPException(status_code=404, detail="Examinateur not found")
+    ex.actif = bool(body.get("actif", True))
+    db.commit()
+    db.refresh(ex)
+    return ex
+
+
 @router.delete("/{examinateur_id}", status_code=204)
 def delete_examinateur(examinateur_id: int, db: Session = Depends(get_db)):
     ex = db.get(Examinateur, examinateur_id)
@@ -60,6 +82,9 @@ def delete_examinateur(examinateur_id: int, db: Session = Depends(get_db)):
     db.query(Epreuve).filter_by(examinateur_id=examinateur_id).update({"examinateur_id": None})
     db.delete(ex)
     db.commit()
+
+
+# ── Affectation épreuve ───────────────────────────────────────────────────────
 
 @router.post("/epreuves/{epreuve_id}/assigner")
 def assigner_examinateur(epreuve_id: int, body: AssignerExaminateurIn, db: Session = Depends(get_db)):
@@ -75,3 +100,61 @@ def assigner_examinateur(epreuve_id: int, body: AssignerExaminateurIn, db: Sessi
         e.examinateur_id = body.examinateur_id
     db.commit()
     return {"epreuve_id": epreuve_id, "examinateur_id": e.examinateur_id}
+
+
+# ── Indisponibilités ──────────────────────────────────────────────────────────
+
+@router.get("/{examinateur_id}/indisponibilites", response_model=List[IndisponibiliteOut])
+def list_indisponibilites(examinateur_id: int, db: Session = Depends(get_db)):
+    ex = db.get(Examinateur, examinateur_id)
+    if not ex:
+        raise HTTPException(status_code=404, detail="Examinateur not found")
+    return (
+        db.query(ExaminateurIndisponibilite)
+        .filter_by(examinateur_id=examinateur_id)
+        .order_by(ExaminateurIndisponibilite.debut)
+        .all()
+    )
+
+
+@router.post("/{examinateur_id}/indisponibilites", response_model=IndisponibiliteOut, status_code=201)
+def create_indisponibilite(
+    examinateur_id: int, body: IndisponibiliteCreate, db: Session = Depends(get_db)
+):
+    ex = db.get(Examinateur, examinateur_id)
+    if not ex:
+        raise HTTPException(status_code=404, detail="Examinateur not found")
+    if body.fin <= body.debut:
+        raise HTTPException(status_code=422, detail="La date de fin doit être après la date de début.")
+    indispo = ExaminateurIndisponibilite(examinateur_id=examinateur_id, **body.model_dump())
+    db.add(indispo)
+    db.commit()
+    db.refresh(indispo)
+    return indispo
+
+
+@router.put("/{examinateur_id}/indisponibilites/{indispo_id}", response_model=IndisponibiliteOut)
+def update_indisponibilite(
+    examinateur_id: int, indispo_id: int, body: IndisponibiliteUpdate, db: Session = Depends(get_db)
+):
+    indispo = db.get(ExaminateurIndisponibilite, indispo_id)
+    if not indispo or indispo.examinateur_id != examinateur_id:
+        raise HTTPException(status_code=404, detail="Indisponibilité introuvable")
+    for field, value in body.model_dump(exclude_none=True).items():
+        setattr(indispo, field, value)
+    if indispo.fin <= indispo.debut:
+        raise HTTPException(status_code=422, detail="La date de fin doit être après la date de début.")
+    db.commit()
+    db.refresh(indispo)
+    return indispo
+
+
+@router.delete("/{examinateur_id}/indisponibilites/{indispo_id}", status_code=204)
+def delete_indisponibilite(
+    examinateur_id: int, indispo_id: int, db: Session = Depends(get_db)
+):
+    indispo = db.get(ExaminateurIndisponibilite, indispo_id)
+    if not indispo or indispo.examinateur_id != examinateur_id:
+        raise HTTPException(status_code=404, detail="Indisponibilité introuvable")
+    db.delete(indispo)
+    db.commit()

@@ -26,3 +26,5 @@ nginx/certs/
 
 # Logs
 *.log
+
+.vercel

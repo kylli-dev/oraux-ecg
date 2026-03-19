@@ -50,11 +50,11 @@ async function proxy(req: NextRequest, pathSegments: string[]) {
 
   // Stream binary responses (e.g. Excel export) transparently
   const upstreamContentType = res.headers.get("content-type") ?? "application/json";
+  const contentDisposition = res.headers.get("content-disposition");
   const buf = await res.arrayBuffer();
-  return new NextResponse(buf, {
-    status: res.status,
-    headers: { "Content-Type": upstreamContentType },
-  });
+  const responseHeaders: Record<string, string> = { "Content-Type": upstreamContentType };
+  if (contentDisposition) responseHeaders["Content-Disposition"] = contentDisposition;
+  return new NextResponse(buf, { status: res.status, headers: responseHeaders });
 }
 
 type Ctx = { params: Promise<{ path: string[] }> };

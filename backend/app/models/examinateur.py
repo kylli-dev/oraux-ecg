@@ -1,7 +1,8 @@
 import json
 import secrets
-from sqlalchemy import String, Integer, ForeignKey, Text
+from sqlalchemy import Boolean, String, Integer, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from typing import Optional
 from app.db.base import Base
 
 def _gen_code() -> str:
@@ -21,8 +22,16 @@ class Examinateur(Base):
     # JSON list of matieres this examiner can handle
     matieres_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
 
-    # Code UAI établissement (détection conflit candidat même lycée)
-    code_uai: Mapped[str] = mapped_column(String(20), nullable=True)
+    # Établissement (code UAI — saisie libre)
+    code_uai: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    etablissement: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+
+    # Contact
+    telephone: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    commentaire: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+
+    # Statut mobilisable dans le planning
+    actif: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     # Code for the examiner portal (public access)
     code_acces: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, default=_gen_code)

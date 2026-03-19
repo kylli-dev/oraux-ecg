@@ -18,6 +18,8 @@ type EpreuveOut = {
 
 type TripletOut = {
   date: string;
+  heure_debut: string;
+  heure_fin: string;
   nb_epreuves: number;
   epreuves: EpreuveOut[];
 };
@@ -68,7 +70,7 @@ export default function CandidatPlanningPage() {
   // Confirmation de désinscription
   const [confirmDesinscription, setConfirmDesinscription] = useState(false);
   // Confirmation de changement
-  const [pendingDate, setPendingDate] = useState<string | null>(null);
+  const [pendingTriplet, setPendingTriplet] = useState<{ date: string; heure_debut: string } | null>(null);
 
   const loadData = useCallback(async (tok: string) => {
     setLoading(true);
@@ -104,14 +106,14 @@ export default function CandidatPlanningPage() {
     loadData(tok);
   }, [router, loadData]);
 
-  const doInscrire = async (date: string) => {
+  const doInscrire = async (date: string, heure_debut: string) => {
     setActionLoading(true);
     setError("");
     try {
       const res = await fetch(`${API_BASE}/portal/me/inscriptions`, {
         method: "POST",
         headers: authHeaders(token),
-        body: JSON.stringify({ date }),
+        body: JSON.stringify({ date, heure_debut }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -122,16 +124,15 @@ export default function CandidatPlanningPage() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setActionLoading(false);
-      setPendingDate(null);
+      setPendingTriplet(null);
     }
   };
 
-  const handleInscrireClick = (date: string) => {
+  const handleInscrireClick = (date: string, heure_debut: string) => {
     if (inscription) {
-      // Demander confirmation de changement
-      setPendingDate(date);
+      setPendingTriplet({ date, heure_debut });
     } else {
-      doInscrire(date);
+      doInscrire(date, heure_debut);
     }
   };
 
@@ -158,7 +159,7 @@ export default function CandidatPlanningPage() {
   };
 
   // ── Modale de confirmation changement ────────────────────────────────────────
-  if (pendingDate) {
+  if (pendingTriplet) {
     return (
       <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
         <div className="bg-white rounded-2xl shadow-xl p-7 max-w-sm w-full">
@@ -169,18 +170,18 @@ export default function CandidatPlanningPage() {
           <p className="text-sm text-gray-600 mb-5">
             En validant, votre inscription du{" "}
             <strong>{formatDate(inscription!.date)}</strong> sera annulée et remplacée
-            par celle du <strong>{formatDate(pendingDate)}</strong>.
+            par celle du <strong>{formatDate(pendingTriplet.date)}</strong>.
           </p>
           <div className="flex gap-3">
             <button
-              onClick={() => setPendingDate(null)}
+              onClick={() => setPendingTriplet(null)}
               disabled={actionLoading}
               className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition"
             >
               Annuler
             </button>
             <button
-              onClick={() => doInscrire(pendingDate)}
+              onClick={() => doInscrire(pendingTriplet.date, pendingTriplet.heure_debut)}
               disabled={actionLoading}
               className="flex-1 py-2 rounded-lg text-white text-sm font-medium hover:opacity-90 transition flex items-center justify-center gap-2"
               style={{ backgroundColor: RED }}
@@ -300,13 +301,16 @@ export default function CandidatPlanningPage() {
       ) : (
         <div className="space-y-4">
           {triplets.map((triplet) => {
-            const isCurrentDate = inscription?.date === triplet.date;
+            const firstHeure = triplet.epreuves.length > 0
+              ? triplet.epreuves[0].heure_debut
+              : triplet.heure_debut.slice(0, 5);
+            const lastHeure = triplet.epreuves.length > 0
+              ? triplet.epreuves[triplet.epreuves.length - 1].heure_fin
+              : triplet.heure_fin.slice(0, 5);
             return (
               <div
-                key={triplet.date}
-                className={`rounded-xl border bg-white shadow-sm overflow-hidden ${
-                  isCurrentDate ? "opacity-50 pointer-events-none" : ""
-                }`}
+                key={`${triplet.date}-${triplet.heure_debut}`}
+                className="rounded-xl border bg-white shadow-sm overflow-hidden"
               >
                 <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
                   <div className="flex items-center gap-2">
@@ -314,25 +318,22 @@ export default function CandidatPlanningPage() {
                     <span className="text-sm font-semibold text-gray-800 capitalize">
                       {formatDate(triplet.date)}
                     </span>
+                    <span className="text-sm font-mono text-gray-500">
+                      {firstHeure} – {lastHeure}
+                    </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    {isCurrentDate ? (
-                      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
-                        Inscrit
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() => handleInscrireClick(triplet.date)}
-                        disabled={actionLoading}
-                        className="text-xs text-white px-3 py-1.5 rounded-lg font-medium hover:opacity-90 transition disabled:opacity-50 flex items-center gap-1.5"
-                        style={{ backgroundColor: RED }}
-                      >
-                        {actionLoading && pendingDate === null && (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        )}
-                        Je m&apos;inscris
-                      </button>
-                    )}
+                    <button
+                      onClick={() => handleInscrireClick(triplet.date, triplet.heure_debut)}
+                      disabled={actionLoading}
+                      className="text-xs text-white px-3 py-1.5 rounded-lg font-medium hover:opacity-90 transition disabled:opacity-50 flex items-center gap-1.5"
+                      style={{ backgroundColor: RED }}
+                    >
+                      {actionLoading && pendingTriplet === null && (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      )}
+                      Je m&apos;inscris
+                    </button>
                   </div>
                 </div>
                 <div className="px-4 divide-y divide-gray-50">

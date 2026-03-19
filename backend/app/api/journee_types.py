@@ -7,7 +7,8 @@ from app.core.admin_guard import require_admin
 from app.db.deps import get_db
 from app.models.journee_type import JourneeType
 from app.models.journee_type_bloc import JourneeTypeBloc
-from app.schemas.journee_type import JourneeTypeCreate, JourneeTypeOut
+from app.schemas.journee_type import JourneeTypeCreate, JourneeTypeOut, JourneeTypePreviewOut, BlocParamsOut, PeriodePlanOut
+from app.services.generation import build_journee_plan
 from app.schemas.journee_type_bloc import JourneeTypeBlocCreate, JourneeTypeBlocOut, JourneeTypeBlocUpdate
 
 router = APIRouter(
@@ -39,6 +40,44 @@ def get_journee_type(jt_id: int, db: Session = Depends(get_db)):
     if not jt:
         raise HTTPException(status_code=404, detail="JourneeType not found")
     return jt
+
+
+@router.get("/{jt_id}/preview", response_model=JourneeTypePreviewOut)
+def preview_journee_type(jt_id: int, db: Session = Depends(get_db)):
+    """
+    Prévisualise la génération d'un gabarit sans toucher à la base de données.
+
+    Retourne le plan complet : périodes (MATIN/APRES_MIDI) avec leurs blocs
+    et les paramètres effectifs résolus (après application des valeurs par défaut).
+    Utile pour vérifier un gabarit avant de l'appliquer à un planning.
+    """
+    jt = db.get(JourneeType, jt_id)
+    if not jt:
+        raise HTTPException(status_code=404, detail="JourneeType not found")
+
+    plans = build_journee_plan(jt)
+    return JourneeTypePreviewOut(
+        journee_type_id=jt_id,
+        periodes=[
+            PeriodePlanOut(
+                type_dj=p.type_dj,
+                heure_debut=p.heure_debut,
+                heure_fin=p.heure_fin,
+                blocs=[
+                    BlocParamsOut(
+                        heure_debut=b.heure_debut,
+                        heure_fin=b.heure_fin,
+                        matieres=b.matieres,
+                        duree_minutes=b.duree_minutes,
+                        pause_minutes=b.pause_minutes,
+                        preparation_minutes=b.preparation_minutes,
+                    )
+                    for b in p.blocs
+                ],
+            )
+            for p in plans
+        ],
+    )
 
 
 @router.delete("/{jt_id}", status_code=204)

@@ -24,6 +24,7 @@ class JourneeTypeBloc(Base):
     duree_minutes: Mapped[int] = mapped_column(Integer, nullable=True)
     pause_minutes: Mapped[int] = mapped_column(Integer, nullable=True)
     preparation_minutes: Mapped[int] = mapped_column(Integer, nullable=True)
+    salles_par_matiere: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
     journee_type = relationship("JourneeType", back_populates="blocs")
 

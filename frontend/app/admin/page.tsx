@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import PlanificationView from "./planification/PlanificationView";
+import InterfaceAdminENSAEPlanning from "../InterfaceAdminENSAEPlanning";
 import { useRouter } from "next/navigation";
 import {
   CalendarDays,
@@ -38,6 +39,7 @@ import {
 // ── Constants ──────────────────────────────────────────────────────────────────
 const RED = "#C62828";
 
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Planning = {
   id: number;
@@ -69,6 +71,7 @@ type Bloc = {
   duree_minutes: number | null;
   pause_minutes: number | null;
   preparation_minutes: number | null;
+  salles_par_matiere: number;
 };
 
 type Epreuve = {
@@ -105,6 +108,23 @@ type DayViewData = {
   demi_journees: DemiJournee[];
 };
 
+type EpreuveFlat = {
+  id: number;
+  date: string;
+  demi_journee_type: string;
+  matiere: string;
+  heure_debut: string;
+  heure_fin: string;
+  preparation_minutes: number | null;
+  statut: string;
+  candidat_id: number | null;
+  candidat_nom: string | null;
+  candidat_prenom: string | null;
+  examinateur_id: number | null;
+  examinateur_nom: string | null;
+  examinateur_prenom: string | null;
+};
+
 type Examinateur = {
   id: number;
   planning_id: number;
@@ -112,7 +132,20 @@ type Examinateur = {
   prenom: string;
   email: string;
   matieres: string[];
+  code_uai: string | null;
+  etablissement: string | null;
+  telephone: string | null;
+  commentaire: string | null;
+  actif: boolean;
   code_acces: string;
+};
+
+type Indisponibilite = {
+  id: number;
+  examinateur_id: number;
+  debut: string;
+  fin: string;
+  commentaire: string | null;
 };
 
 type DashboardData = {
@@ -152,6 +185,27 @@ type Conflit = {
   examinateur_nom: string;
   examinateur_prenom: string;
   code_uai: string;
+};
+
+type BlocPreview = {
+  heure_debut: string;
+  heure_fin: string;
+  matieres: string[];
+  duree_minutes: number;
+  pause_minutes: number;
+  preparation_minutes: number;
+};
+
+type PeriodePreview = {
+  type_dj: string;
+  heure_debut: string;
+  heure_fin: string;
+  blocs: BlocPreview[];
+};
+
+type JourneeTypePreview = {
+  journee_type_id: number;
+  periodes: PeriodePreview[];
 };
 
 // ── API client ─────────────────────────────────────────────────────────────────
@@ -218,11 +272,13 @@ function Modal({
   onClose,
   title,
   children,
+  wide,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  wide?: boolean;
 }) {
   if (!open) return null;
   return (
@@ -230,7 +286,7 @@ function Modal({
       <motion.div
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col"
+        className={`bg-white rounded-2xl shadow-2xl w-full max-h-[90vh] flex flex-col ${wide ? "max-w-3xl" : "max-w-lg"}`}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b">
           <h3 className="font-semibold text-base">{title}</h3>
@@ -316,6 +372,7 @@ function ImportExcelModal({
           <p className="text-sm text-gray-600">Télécharger le modèle Excel</p>
           <a
             href={templateUrl}
+            download
             className="flex items-center gap-1.5 text-xs font-semibold text-[#C62828] hover:underline"
           >
             <Download className="h-3.5 w-3.5" />
@@ -983,6 +1040,257 @@ function CreatePlanningForm({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
+// ── Vue tableau complet du planning ───────────────────────────────────────────
+function hmToMin(hm: string): number {
+  const [h, m] = hm.split(":").map(Number);
+  return h * 60 + m;
+}
+function minToHm(total: number): string {
+  const h = Math.floor(total / 60) % 24;
+  const m = total % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function statutBadgeCell(statut: string) {
+  if (statut === "LIBRE")
+    return <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-medium bg-green-100 text-green-700">Libre</span>;
+  if (statut === "PRERESERVE")
+    return <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-medium bg-amber-100 text-amber-700">Prérés.</span>;
+  if (statut === "ATTRIBUEE")
+    return <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-medium bg-blue-100 text-blue-700">Réservé</span>;
+  if (statut === "EN_EVALUATION")
+    return <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-medium bg-purple-100 text-purple-700">En éval.</span>;
+  if (statut === "FINALISEE")
+    return <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-medium bg-gray-200 text-gray-600">Finalisé</span>;
+  return <span className="inline-block px-1.5 py-0.5 rounded text-[11px] bg-gray-100 text-gray-500">{statut}</span>;
+}
+
+function rowStatut(byMat: Record<string, EpreuveFlat[]>): string {
+  const all = Object.values(byMat).flat();
+  if (all.length === 0) return "CREE";
+  const statuts = new Set(all.map((e) => e.statut));
+  if (statuts.has("ATTRIBUEE") || statuts.has("FINALISEE") || statuts.has("EN_EVALUATION")) return "ATTRIBUEE";
+  if (statuts.has("LIBRE")) return "LIBRE";
+  if (statuts.has("PRERESERVE")) return "PRERESERVE";
+  return all[0].statut;
+}
+
+function PlanningTableauView({ planningId, planning }: { planningId: number; planning: Planning }) {
+  const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filterDate, setFilterDate] = useState<string>("");
+  const [filterStatut, setFilterStatut] = useState<string>("");
+
+  useEffect(() => {
+    setLoading(true);
+    get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`)
+      .then(setEpreuves)
+      .catch(() => setEpreuves([]))
+      .finally(() => setLoading(false));
+  }, [planningId]);
+
+  if (loading) return <div className="flex justify-center py-16 text-black/30"><Spinner /></div>;
+  if (epreuves.length === 0)
+    return <Empty message="Aucun créneau" sub="Appliquez un gabarit pour générer les créneaux du planning." />;
+
+  // Dates et matières disponibles
+  const dates = [...new Set(epreuves.map((e) => e.date))].sort();
+  const matieres = [...new Set(epreuves.map((e) => e.matiere))].sort();
+
+  // Filtrage
+  const filtered = epreuves
+    .filter((e) => !filterDate || e.date === filterDate)
+    .filter((e) => !filterStatut || e.statut === filterStatut);
+
+  // Construction des lignes : (date, heure_debut) → byMat
+  type SlotRow = { date: string; heure_debut: string; heure_fin: string; byMat: Record<string, EpreuveFlat[]> };
+  const slotMap = new Map<string, SlotRow>();
+  for (const e of filtered) {
+    const key = `${e.date}|${e.heure_debut}`;
+    if (!slotMap.has(key))
+      slotMap.set(key, { date: e.date, heure_debut: e.heure_debut, heure_fin: e.heure_fin, byMat: {} });
+    const row = slotMap.get(key)!;
+    if (!row.byMat[e.matiere]) row.byMat[e.matiere] = [];
+    row.byMat[e.matiere].push(e);
+  }
+  const rows = [...slotMap.values()].sort((a, b) =>
+    a.date !== b.date ? a.date.localeCompare(b.date) : a.heure_debut.localeCompare(b.heure_debut)
+  );
+
+  // Regroupement par date pour affichage
+  const rowsByDate = new Map<string, SlotRow[]>();
+  for (const row of rows) {
+    if (!rowsByDate.has(row.date)) rowsByDate.set(row.date, []);
+    rowsByDate.get(row.date)!.push(row);
+  }
+
+  // Calcul de dép. prépa à partir des slots consécutifs (même logique que PlanificationView)
+  const slotsByDate = new Map<string, SlotRow[]>();
+  for (const row of [...slotMap.values()].sort((a, b) =>
+    a.date !== b.date ? a.date.localeCompare(b.date) : a.heure_debut.localeCompare(b.heure_debut)
+  )) {
+    if (!slotsByDate.has(row.date)) slotsByDate.set(row.date, []);
+    slotsByDate.get(row.date)!.push(row);
+  }
+  const debPrepaMap = new Map<string, string>(); // key → "HH:MM"
+  for (const [, dateSlots] of slotsByDate) {
+    const gap = dateSlots.length >= 2
+      ? hmToMin(dateSlots[1].heure_debut) - hmToMin(dateSlots[0].heure_debut)
+      : 0;
+    dateSlots.forEach((slot, idx) => {
+      const key = `${slot.date}|${slot.heure_debut}`;
+      const debExam = hmToMin(slot.heure_debut);
+      const prep = idx > 0
+        ? hmToMin(dateSlots[idx - 1].heure_debut)
+        : gap > 0 ? debExam - gap : debExam;
+      debPrepaMap.set(key, minToHm(prep));
+    });
+  }
+
+  return (
+    <div>
+      {/* Filtres */}
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <select
+          value={filterDate}
+          onChange={(e) => setFilterDate(e.target.value)}
+          className="px-3 py-1.5 rounded-lg border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
+        >
+          <option value="">Toutes les dates</option>
+          {dates.map((d) => (
+            <option key={d} value={d}>{formatDate(d)}</option>
+          ))}
+        </select>
+        <select
+          value={filterStatut}
+          onChange={(e) => setFilterStatut(e.target.value)}
+          className="px-3 py-1.5 rounded-lg border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
+        >
+          <option value="">Tous les statuts</option>
+          <option value="LIBRE">Libre</option>
+          <option value="PRERESERVE">Préréservé</option>
+          <option value="ATTRIBUEE">Réservé</option>
+          <option value="EN_EVALUATION">En évaluation</option>
+          <option value="FINALISEE">Finalisé</option>
+        </select>
+        <span className="text-xs text-black/30 ml-auto">{filtered.length} créneau(x)</span>
+      </div>
+
+      {/* Tableau croisé */}
+      <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
+        <table className="w-full text-sm border-collapse min-w-max">
+          <thead>
+            {/* Ligne 1 : en-têtes matières */}
+            <tr className="bg-black/[0.04] border-b">
+              <th className="px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap">Statut</th>
+              <th className="px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap">Dép. prépa</th>
+              <th className="px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap">Dép. exam</th>
+              <th className="px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap">Fin exam</th>
+              {matieres.map((m) => (
+                <th
+                  key={m}
+                  colSpan={2}
+                  className="px-3 py-2.5 text-center text-xs font-semibold whitespace-nowrap border-l border-black/10"
+                >
+                  {m}
+                </th>
+              ))}
+            </tr>
+            {/* Ligne 2 : sous-colonnes par matière */}
+            <tr className="bg-black/[0.02] border-b text-[11px] text-black/40">
+              <th colSpan={4} />
+              {matieres.map((m) => (
+                <React.Fragment key={m}>
+                  <th className="px-3 py-1.5 text-left font-normal border-l border-black/10">Candidat</th>
+                  <th className="px-3 py-1.5 text-left font-normal">Examinateur</th>
+                </React.Fragment>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {[...rowsByDate.entries()].map(([date, dateRows]) => (
+              <React.Fragment key={date}>
+                {/* En-tête de date */}
+                <tr>
+                  <td
+                    colSpan={4 + matieres.length * 2}
+                    className="px-4 py-2 bg-black/[0.05] font-semibold text-black/60 text-xs uppercase tracking-widest sticky left-0"
+                  >
+                    {formatDate(date)}
+                  </td>
+                </tr>
+                {dateRows.map((row) => {
+                  const key = `${row.date}|${row.heure_debut}`;
+                  const rs = rowStatut(row.byMat);
+                  const rowBg =
+                    rs === "LIBRE" ? "bg-green-50/50"
+                    : rs === "PRERESERVE" ? "bg-amber-50/50"
+                    : rs === "ATTRIBUEE" ? "bg-blue-50/30"
+                    : "";
+
+                  return (
+                    <tr key={key} className={`border-b border-black/[0.06] hover:bg-black/[0.02] transition ${rowBg}`}>
+                      {/* Statut */}
+                      <td className="px-3 py-2 whitespace-nowrap">{statutBadgeCell(rs)}</td>
+                      {/* Dép. prépa */}
+                      <td className="px-3 py-2 text-black/40 font-mono text-xs whitespace-nowrap">
+                        {debPrepaMap.get(key) ?? "—"}
+                      </td>
+                      {/* Dép. exam */}
+                      <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">{row.heure_debut}</td>
+                      {/* Fin exam */}
+                      <td className="px-3 py-2 text-black/40 font-mono text-xs whitespace-nowrap">{row.heure_fin}</td>
+                      {/* Par matière */}
+                      {matieres.map((m) => {
+                        const eps = row.byMat[m] ?? [];
+                        if (eps.length === 0) {
+                          return (
+                            <React.Fragment key={m}>
+                              <td className="px-3 py-2 text-black/20 text-xs border-l border-black/[0.06]" colSpan={2}>—</td>
+                            </React.Fragment>
+                          );
+                        }
+                        return (
+                          <React.Fragment key={m}>
+                            {/* Candidat */}
+                            <td className="px-3 py-2 border-l border-black/[0.06]">
+                              {eps.map((e) => (
+                                <div key={e.id}>
+                                  {e.candidat_nom ? (
+                                    <span className="font-medium text-sm">
+                                      {e.candidat_nom} {e.candidat_prenom}
+                                    </span>
+                                  ) : (
+                                    <span className="text-black/25 text-xs italic">—</span>
+                                  )}
+                                </div>
+                              ))}
+                            </td>
+                            {/* Examinateur */}
+                            <td className="px-3 py-2">
+                              {eps.map((e) => (
+                                <div key={e.id} className="text-xs text-black/50">
+                                  {e.examinateur_nom
+                                    ? `${e.examinateur_nom}${e.examinateur_prenom ? " " + e.examinateur_prenom[0] + "." : ""}`
+                                    : <span className="text-black/20 italic">—</span>}
+                                </div>
+                              ))}
+                            </td>
+                          </React.Fragment>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </React.Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ── Section : Vue journée ──────────────────────────────────────────────────────
 function PlanningDaySection({
   planning,
@@ -993,6 +1301,7 @@ function PlanningDaySection({
   journeeTypes: JourneeType[];
   onBack: () => void;
 }) {
+  const [viewMode, setViewMode] = useState<"journee" | "tableau">("journee");
   const [date, setDate] = useState(planning.date_debut);
   const [dayData, setDayData] = useState<DayViewData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1015,17 +1324,17 @@ function PlanningDaySection({
   }, [planning.id, date]);
 
   useEffect(() => {
-    loadDay();
-  }, [loadDay]);
+    if (viewMode === "journee") loadDay();
+  }, [loadDay, viewMode]);
 
   if (dndMode) {
     return <PlanificationView planning={planning} onBack={() => setDndMode(false)} />;
   }
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="max-w-6xl mx-auto">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
+      <div className="flex items-center gap-3 mb-5">
         <button
           onClick={onBack}
           className="h-9 w-9 rounded-lg border bg-white shadow-sm grid place-items-center hover:bg-black/[0.02] transition"
@@ -1033,132 +1342,122 @@ function PlanningDaySection({
           <ChevronLeft className="h-4 w-4" />
         </button>
         <div>
-          <p className="text-xs text-black/40 uppercase tracking-wide">
-            Planning
-          </p>
+          <p className="text-xs text-black/40 uppercase tracking-wide">Planning</p>
           <h2 className="text-xl font-semibold leading-tight">{planning.nom}</h2>
         </div>
         <StatutBadge statut={planning.statut} />
       </div>
 
-      {/* Date bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <div className="flex items-center gap-2">
+      {/* Onglets Vue journée / Vue tableau */}
+      <div className="flex gap-1 mb-5 border-b border-black/10">
+        {(["journee", "tableau"] as const).map((m) => (
           <button
-            onClick={() => setDate(addDays(date, -1))}
-            className="h-9 w-9 rounded-lg border bg-white shadow-sm grid place-items-center hover:bg-black/[0.02] transition"
-            disabled={date <= planning.date_debut}
+            key={m}
+            onClick={() => setViewMode(m)}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition -mb-px border border-b-0 ${
+              viewMode === m
+                ? "bg-white border-black/10 text-black"
+                : "border-transparent text-black/40 hover:text-black/60"
+            }`}
           >
-            <ChevronLeft className="h-4 w-4" />
+            {m === "journee" ? "Vue journée" : "Vue tableau"}
           </button>
-          <input
-            type="date"
-            value={date}
-            min={planning.date_debut}
-            max={planning.date_fin}
-            onChange={(e) => setDate(e.target.value)}
-            className="px-3 py-2 rounded-lg border bg-white shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
-          />
-          <button
-            onClick={() => setDate(addDays(date, 1))}
-            className="h-9 w-9 rounded-lg border bg-white shadow-sm grid place-items-center hover:bg-black/[0.02] transition"
-            disabled={date >= planning.date_fin}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-          <span className="text-sm text-black/40 hidden sm:block">
-            {formatDate(date)}
-          </span>
-        </div>
-        <div className="flex gap-2">
-          <Btn
-            label="Planification DnD"
-            icon={LayoutGrid}
-            onClick={() => setDndMode(true)}
-            small
-          />
-          <Btn
-            label="Appliquer un gabarit"
-            icon={Wand2}
-            onClick={() => setApplyModal(true)}
-          />
-          <Btn
-            label="Rafraîchir"
-            icon={RefreshCw}
-            onClick={loadDay}
-            variant="ghost"
-            small
-          />
-        </div>
+        ))}
       </div>
 
-      {/* Day content */}
-      {loading ? (
-        <div className="flex justify-center py-16 text-black/30">
-          <Spinner />
-        </div>
-      ) : !dayData || dayData.demi_journees.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-black/15 p-14 text-center">
-          <CalendarDays className="h-8 w-8 mx-auto mb-3 text-black/20" />
-          <p className="text-black/40 font-medium">Aucune demi-journée</p>
-          <p className="text-sm text-black/30 mt-1">
-            Cliquez sur &laquo; Appliquer un gabarit &raquo; pour générer les
-            créneaux de cette journée.
-          </p>
-        </div>
+      {viewMode === "tableau" ? (
+        <PlanningTableauView planningId={planning.id} planning={planning} />
       ) : (
-        <div className="grid gap-5 md:grid-cols-2">
-          {dayData.demi_journees.map((dj) => (
-            <DemiJourneeCard
-              key={dj.id}
-              dj={dj}
-              planningId={planning.id}
-              onRegen={() => setRegenDj(dj)}
-              onRefresh={loadDay}
-            />
-          ))}
-        </div>
+        <>
+          {/* Date bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setDate(addDays(date, -1))}
+                className="h-9 w-9 rounded-lg border bg-white shadow-sm grid place-items-center hover:bg-black/[0.02] transition"
+                disabled={date <= planning.date_debut}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <input
+                type="date"
+                value={date}
+                min={planning.date_debut}
+                max={planning.date_fin}
+                onChange={(e) => setDate(e.target.value)}
+                className="px-3 py-2 rounded-lg border bg-white shadow-sm text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
+              />
+              <button
+                onClick={() => setDate(addDays(date, 1))}
+                className="h-9 w-9 rounded-lg border bg-white shadow-sm grid place-items-center hover:bg-black/[0.02] transition"
+                disabled={date >= planning.date_fin}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+              <span className="text-sm text-black/40 hidden sm:block">{formatDate(date)}</span>
+            </div>
+            <div className="flex gap-2">
+              <Btn label="Planification DnD" icon={LayoutGrid} onClick={() => setDndMode(true)} small />
+              <Btn label="Appliquer un gabarit" icon={Wand2} onClick={() => setApplyModal(true)} />
+              <Btn label="Rafraîchir" icon={RefreshCw} onClick={loadDay} variant="ghost" small />
+            </div>
+          </div>
+
+          {/* Day content */}
+          {loading ? (
+            <div className="flex justify-center py-16 text-black/30"><Spinner /></div>
+          ) : !dayData || dayData.demi_journees.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-black/15 p-14 text-center">
+              <CalendarDays className="h-8 w-8 mx-auto mb-3 text-black/20" />
+              <p className="text-black/40 font-medium">Aucune demi-journée</p>
+              <p className="text-sm text-black/30 mt-1">
+                Cliquez sur &laquo; Appliquer un gabarit &raquo; pour générer les créneaux de cette journée.
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-5 md:grid-cols-2">
+              {dayData.demi_journees.map((dj) => (
+                <DemiJourneeCard
+                  key={dj.id}
+                  dj={dj}
+                  planningId={planning.id}
+                  onRegen={() => setRegenDj(dj)}
+                  onRefresh={loadDay}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Modals */}
+          <Modal open={applyModal} onClose={() => setApplyModal(false)} title="Appliquer un gabarit">
+            {journeeTypes.length === 0 ? (
+              <p className="text-sm text-black/50">
+                Aucune journée type disponible. Créez-en une dans la section &laquo; Journées types &raquo;.
+              </p>
+            ) : (
+              <ApplyForm
+                planningId={planning.id}
+                date={date}
+                journeeTypes={journeeTypes}
+                onSuccess={() => { setApplyModal(false); loadDay(); }}
+              />
+            )}
+          </Modal>
+
+          <Modal
+            open={!!regenDj}
+            onClose={() => setRegenDj(null)}
+            title={`Régénérer — ${regenDj?.type === "MATIN" ? "Matin" : "Après-midi"}`}
+          >
+            {regenDj && (
+              <RegenForm
+                demiJourneeId={regenDj.id}
+                onSuccess={() => { setRegenDj(null); loadDay(); }}
+              />
+            )}
+          </Modal>
+        </>
       )}
-
-      {/* Modals */}
-      <Modal
-        open={applyModal}
-        onClose={() => setApplyModal(false)}
-        title="Appliquer un gabarit"
-      >
-        {journeeTypes.length === 0 ? (
-          <p className="text-sm text-black/50">
-            Aucune journée type disponible. Créez-en une dans la section
-            &laquo; Journées types &raquo;.
-          </p>
-        ) : (
-          <ApplyForm
-            planningId={planning.id}
-            date={date}
-            journeeTypes={journeeTypes}
-            onSuccess={() => {
-              setApplyModal(false);
-              loadDay();
-            }}
-          />
-        )}
-      </Modal>
-
-      <Modal
-        open={!!regenDj}
-        onClose={() => setRegenDj(null)}
-        title={`Régénérer — ${regenDj?.type === "MATIN" ? "Matin" : "Après-midi"}`}
-      >
-        {regenDj && (
-          <RegenForm
-            demiJourneeId={regenDj.id}
-            onSuccess={() => {
-              setRegenDj(null);
-              loadDay();
-            }}
-          />
-        )}
-      </Modal>
     </div>
   );
 }
@@ -1472,12 +1771,316 @@ function RegenForm({
   );
 }
 
+// ── Helpers éditeur ───────────────────────────────────────────────────────────
+function minutesFromTime(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + (m || 0);
+}
+
+const TL_START = 8 * 60;
+const TL_END   = 19 * 60;
+const TL_TOTAL = TL_END - TL_START;
+const TL_HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
+
+// ── BlocTimeline ──────────────────────────────────────────────────────────────
+function BlocTimeline({
+  blocs,
+  selectedBlocId,
+  onSelect,
+}: {
+  blocs: Bloc[];
+  selectedBlocId: number | null;
+  onSelect: (id: number | null) => void;
+}) {
+  return (
+    <div className="flex gap-3 select-none">
+      {/* Heure labels */}
+      <div className="relative shrink-0 w-10" style={{ height: 440 }}>
+        {TL_HOURS.map((h) => (
+          <div
+            key={h}
+            className="absolute right-1 text-[10px] font-mono text-black/25 -translate-y-1/2"
+            style={{ top: `${((h * 60 - TL_START) / TL_TOTAL) * 100}%` }}
+          >
+            {h}h
+          </div>
+        ))}
+      </div>
+
+      {/* Zone timeline */}
+      <div
+        className="relative flex-1 rounded-xl border border-black/8 bg-gray-50 overflow-hidden cursor-default"
+        style={{ height: 440 }}
+        onClick={(e) => { if (e.target === e.currentTarget) onSelect(null); }}
+      >
+        {/* Lignes horaires */}
+        {TL_HOURS.map((h) => (
+          <div
+            key={h}
+            className={`absolute left-0 right-0 border-t ${h === 12 ? "border-black/15 border-dashed" : "border-black/5"}`}
+            style={{ top: `${((h * 60 - TL_START) / TL_TOTAL) * 100}%` }}
+          />
+        ))}
+        <div
+          className="absolute left-1.5 text-[9px] font-medium text-black/25 -translate-y-1/2"
+          style={{ top: `${((12 * 60 - TL_START) / TL_TOTAL) * 100}%` }}
+        >
+          midi
+        </div>
+
+        {/* Blocs */}
+        {blocs.map((bloc) => {
+          const startMin  = minutesFromTime(bloc.heure_debut);
+          const endMin    = minutesFromTime(bloc.heure_fin);
+          const topPct    = ((startMin - TL_START) / TL_TOTAL) * 100;
+          const heightPct = Math.max(((endMin - startMin) / TL_TOTAL) * 100, 1.5);
+          const isGen     = bloc.type_bloc === "GENERATION";
+          const selected  = bloc.id === selectedBlocId;
+
+          return (
+            <div
+              key={bloc.id}
+              onClick={(e) => { e.stopPropagation(); onSelect(selected ? null : bloc.id); }}
+              className={`absolute left-2 right-2 rounded-lg cursor-pointer transition-all overflow-hidden ${
+                isGen
+                  ? selected
+                    ? "bg-blue-500 ring-2 ring-blue-300 shadow-lg"
+                    : "bg-blue-400/85 hover:bg-blue-500"
+                  : selected
+                    ? "bg-orange-400 ring-2 ring-orange-200 shadow-lg"
+                    : "bg-orange-300/80 hover:bg-orange-400"
+              }`}
+              style={{ top: `${topPct}%`, height: `${heightPct}%` }}
+            >
+              <div className="px-2 py-1 text-white">
+                <div className="text-xs font-semibold truncate">
+                  {isGen
+                    ? bloc.matieres.length ? bloc.matieres.join(" · ") : "GENERATION"
+                    : "PAUSE"}
+                </div>
+                <div className="text-[10px] text-white/70">
+                  {hm(bloc.heure_debut)} – {hm(bloc.heure_fin)}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {blocs.length === 0 && (
+          <div className="flex items-center justify-center h-full text-xs text-black/20">
+            Aucun bloc — ajoutez-en un pour commencer
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── JourneeTypeEditor ─────────────────────────────────────────────────────────
+function JourneeTypeEditor({ jt }: { jt: JourneeType }) {
+  const [blocs, setBlocs] = useState<Bloc[]>([]);
+  const [selectedBlocId, setSelectedBlocId] = useState<number | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+
+  // Planning application
+  const [plannings, setPlannings] = useState<Planning[]>([]);
+  const [selPlanning, setSelPlanning] = useState<Planning | null>(null);
+  const [applyDate, setApplyDate] = useState("");
+  const [applying, setApplying] = useState(false);
+  const [applyResult, setApplyResult] = useState<{ epreuves_created: number; demi_journees_created: number } | null>(null);
+  const [applyError, setApplyError] = useState("");
+
+  const load = useCallback(async () => {
+    try { setBlocs(await get<Bloc[]>(`journee-types/${jt.id}/blocs`)); } catch {}
+  }, [jt.id]);
+
+  useEffect(() => {
+    load();
+    get<Planning[]>("plannings/").then(setPlannings).catch(() => {});
+  }, [load]);
+
+  const selectedBloc = blocs.find((b) => b.id === selectedBlocId) ?? null;
+
+  const handleDelete = async (blocId: number) => {
+    if (!confirm("Supprimer ce bloc ?")) return;
+    await del(`journee-types/blocs/${blocId}`);
+    setSelectedBlocId(null);
+    load();
+  };
+
+  const handleApply = async () => {
+    if (!selPlanning || !applyDate) return;
+    setApplying(true);
+    setApplyError("");
+    setApplyResult(null);
+    try {
+      const res = await post<{ epreuves_created: number; demi_journees_created: number }>(
+        `plannings/${selPlanning.id}/apply-journee-type`,
+        { journee_type_id: jt.id, date: applyDate }
+      );
+      setApplyResult(res);
+    } catch (e: any) {
+      setApplyError(e.message);
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <div className="flex divide-x border-t">
+      {/* ── Panneau gauche : Timeline + édition ── */}
+      <div className="flex-1 p-5 min-w-0">
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-xs font-semibold text-black/40 uppercase tracking-wide">
+            Blocs ({blocs.length})
+          </span>
+          <Btn
+            label={showAdd ? "Annuler" : "Ajouter un bloc"}
+            icon={showAdd ? X : Plus}
+            onClick={() => { setShowAdd((s) => !s); setSelectedBlocId(null); }}
+            small
+            variant="ghost"
+          />
+        </div>
+
+        <BlocTimeline
+          blocs={blocs}
+          selectedBlocId={selectedBlocId}
+          onSelect={(id) => { setSelectedBlocId(id); if (id) setShowAdd(false); }}
+        />
+
+        <AnimatePresence>
+          {showAdd && (
+            <motion.div
+              key="add"
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="mt-4 rounded-xl border border-black/10 bg-gray-50 p-4"
+            >
+              <AddBlocForm
+                jtId={jt.id}
+                dureeDefaut={jt.duree_defaut_minutes}
+                pauseDefaut={jt.pause_defaut_minutes}
+                preparationDefaut={jt.preparation_defaut_minutes}
+                onSuccess={() => { setShowAdd(false); load(); }}
+              />
+            </motion.div>
+          )}
+
+          {selectedBloc && !showAdd && (
+            <motion.div
+              key={`edit-${selectedBloc.id}`}
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              className="mt-4 rounded-xl border border-blue-200 bg-blue-50/40 p-4"
+            >
+              <EditBlocForm
+                bloc={selectedBloc}
+                dureeDefaut={jt.duree_defaut_minutes}
+                pauseDefaut={jt.pause_defaut_minutes}
+                preparationDefaut={jt.preparation_defaut_minutes}
+                onSuccess={(updated) => {
+                  setBlocs((prev) => prev.map((b) => b.id === updated.id ? updated : b));
+                  setSelectedBlocId(null);
+                }}
+                onCancel={() => setSelectedBlocId(null)}
+              />
+              <div className="mt-2 flex justify-end">
+                <Btn
+                  label="Supprimer ce bloc"
+                  icon={Trash2}
+                  onClick={() => handleDelete(selectedBloc.id)}
+                  small
+                  variant="danger"
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {blocs.length > 0 && !selectedBloc && !showAdd && (
+          <p className="mt-3 text-xs text-black/25 text-center">
+            Cliquez sur un bloc pour le modifier
+          </p>
+        )}
+      </div>
+
+      {/* ── Panneau droit : Appliquer au planning ── */}
+      <div className="w-72 shrink-0 p-5 bg-gray-50/60">
+        <p className="text-xs font-semibold text-black/40 uppercase tracking-wide mb-4">
+          Appliquer au planning
+        </p>
+        <div className="space-y-3">
+          <Field label="Planning">
+            <Select
+              value={selPlanning?.id ?? ""}
+              onChange={(e) => {
+                const p = plannings.find((x) => x.id === Number(e.target.value)) ?? null;
+                setSelPlanning(p);
+                setApplyDate("");
+                setApplyResult(null);
+                setApplyError("");
+              }}
+            >
+              <option value="">— Choisir —</option>
+              {plannings.map((p) => (
+                <option key={p.id} value={p.id}>{p.nom}</option>
+              ))}
+            </Select>
+          </Field>
+
+          {selPlanning && (
+            <Field label="Date">
+              <Input
+                type="date"
+                value={applyDate}
+                min={selPlanning.date_debut}
+                max={selPlanning.date_fin}
+                onChange={(e) => { setApplyDate(e.target.value); setApplyResult(null); setApplyError(""); }}
+              />
+            </Field>
+          )}
+
+          <Btn
+            label={applying ? "Application…" : "Appliquer ce gabarit"}
+            icon={Wand2}
+            onClick={handleApply}
+            disabled={applying || !selPlanning || !applyDate}
+          />
+
+          {applyResult && (
+            <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-700">
+              ✓ {applyResult.demi_journees_created} demi-journée(s) —{" "}
+              {applyResult.epreuves_created} épreuve(s) générée(s)
+            </div>
+          )}
+          <ErrorMsg msg={applyError} />
+        </div>
+
+        {selPlanning && (
+          <div className="mt-5 pt-4 border-t border-black/5">
+            <p className="text-[10px] text-black/30 font-medium uppercase tracking-wide mb-1">
+              Plage du planning
+            </p>
+            <p className="text-xs text-black/50">
+              {selPlanning.date_debut} → {selPlanning.date_fin}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Section : Journées types ───────────────────────────────────────────────────
 function JourneeTypesSection() {
+  const [tab, setTab] = useState<"gabarits" | "matrice">("gabarits");
   const [jts, setJts] = useState<JourneeType[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [expanded, setExpanded] = useState<number | null>(null);
+  const [editing, setEditing] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1496,6 +2099,7 @@ function JourneeTypesSection() {
     if (!confirm("Supprimer cette journée type ?")) return;
     try {
       await del(`journee-types/${id}`);
+      if (editing === id) setEditing(null);
       load();
     } catch (e: any) {
       alert(e.message);
@@ -1504,21 +2108,42 @@ function JourneeTypesSection() {
 
   return (
     <div className="max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-xl font-semibold">Journées types</h2>
           <p className="text-sm text-black/40 mt-0.5">
             Gabarits de génération des créneaux
           </p>
         </div>
-        <Btn
-          label="Nouvelle journée type"
-          icon={Plus}
-          onClick={() => setShowCreate(true)}
-        />
+        {tab === "gabarits" && (
+          <Btn
+            label="Nouvelle journée type"
+            icon={Plus}
+            onClick={() => setShowCreate(true)}
+          />
+        )}
       </div>
 
-      {loading ? (
+      {/* Onglets */}
+      <div className="flex gap-1 mb-6 border-b border-black/10">
+        {(["gabarits", "matrice"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition -mb-px border border-b-0 ${
+              tab === t
+                ? "bg-white border-black/10 text-black"
+                : "border-transparent text-black/40 hover:text-black/60"
+            }`}
+          >
+            {t === "gabarits" ? "Gabarits" : "Matrice oraux"}
+          </button>
+        ))}
+      </div>
+
+      {tab === "matrice" ? (
+        <InterfaceAdminENSAEPlanning />
+      ) : loading ? (
         <div className="flex justify-center py-16 text-black/30">
           <Spinner />
         </div>
@@ -1548,13 +2173,9 @@ function JourneeTypesSection() {
                 </div>
                 <div className="flex gap-2">
                   <Btn
-                    label={
-                      expanded === jt.id ? "Fermer" : "Gérer les blocs"
-                    }
+                    label={editing === jt.id ? "Fermer" : "Éditer"}
                     icon={Settings2}
-                    onClick={() =>
-                      setExpanded(expanded === jt.id ? null : jt.id)
-                    }
+                    onClick={() => setEditing(editing === jt.id ? null : jt.id)}
                     small
                     variant="ghost"
                   />
@@ -1569,21 +2190,16 @@ function JourneeTypesSection() {
               </div>
 
               <AnimatePresence>
-                {expanded === jt.id && (
+                {editing === jt.id && (
                   <motion.div
-                    key="blocs"
+                    key="editor"
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: "auto", opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
                     transition={{ duration: 0.2 }}
                     className="overflow-hidden border-t"
                   >
-                    <BlocsManager
-                      jtId={jt.id}
-                      dureeDefaut={jt.duree_defaut_minutes}
-                      pauseDefaut={jt.pause_defaut_minutes}
-                      preparationDefaut={jt.preparation_defaut_minutes}
-                    />
+                    <JourneeTypeEditor jt={jt} />
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -1596,6 +2212,7 @@ function JourneeTypesSection() {
         open={showCreate}
         onClose={() => setShowCreate(false)}
         title="Créer une journée type"
+        wide
       >
         <CreateJourneeTypeForm
           onSuccess={() => {
@@ -1608,24 +2225,113 @@ function JourneeTypesSection() {
   );
 }
 
-function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
-  const [form, setForm] = useState({
-    nom: "",
-    duree_defaut_minutes: 30,
-    pause_defaut_minutes: 5,
-    preparation_defaut_minutes: 0,
-    statut_initial: "CREE",
+// ── Helpers wizard journée type ────────────────────────────────────────────────
+function minutesToHM(total: number): string {
+  const h = Math.floor(total / 60) % 24;
+  const m = total % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+const TRIPLET_BG = [
+  "#FEF9C3","#DCFCE7","#DBEAFE","#FCE7F3","#FEE2E2",
+  "#FFEDD5","#F3E8FF","#ECFDF5","#E0F2FE",
+];
+const TRIPLET_RING = [
+  "#FDE047","#86EFAC","#93C5FD","#F9A8D4","#FCA5A5",
+  "#FDBA74","#D8B4FE","#6EE7B7","#7DD3FC",
+];
+
+type WizardParams = {
+  nom: string;
+  matieres: string[];
+  salles_par_matiere: number;
+  duree_minutes: number;
+  preparation_minutes: number;
+  pause_minutes: number;
+  heure_debut: string;
+  statut_initial: string;
+};
+
+type MatrixRow = {
+  deb_prepa: string;
+  deb_exam: string;
+  fin_exam: string;
+  candidates: number[]; // candidat k pour chaque colonne matière
+};
+
+function buildMatrix(p: WizardParams): MatrixRow[] {
+  const N = p.matieres.length;
+  const Nsq = N * N;
+  const [hh, mm] = p.heure_debut.split(":").map(Number);
+  const start = hh * 60 + mm;
+  return Array.from({ length: Nsq }, (_, i) => {
+    const dPrepa = start + i * (p.duree_minutes + p.pause_minutes);
+    const dExam = dPrepa + p.preparation_minutes;
+    const fExam = dExam + p.duree_minutes;
+    // cell (i, j) → candidat k = (i - j*N + Nsq*N) % Nsq  (garantit ≥ 0)
+    return {
+      deb_prepa: minutesToHM(dPrepa),
+      deb_exam: minutesToHM(dExam),
+      fin_exam: minutesToHM(fExam),
+      candidates: p.matieres.map((_, j) => ((i - j * N) % Nsq + Nsq) % Nsq),
+    };
   });
+}
+
+// ── Wizard création journée type (2 étapes) ────────────────────────────────────
+function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
+  const [step, setStep] = useState<1 | 2>(1);
+  const [p, setP] = useState<WizardParams>({
+    nom: "",
+    matieres: [],
+    salles_par_matiere: 1,
+    duree_minutes: 30,
+    preparation_minutes: 30,
+    pause_minutes: 0,
+    heure_debut: "08:00",
+    statut_initial: "LIBRE",
+  });
+  const [matrix, setMatrix] = useState<MatrixRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
+  const set = (k: keyof WizardParams, v: any) =>
+    setP((prev) => ({ ...prev, [k]: v }));
 
-  const submit = async () => {
+  const N = p.matieres.length;
+  const Nsq = N * N;
+
+  const handleGenerate = () => {
+    if (!p.nom.trim()) { setError("Nom requis"); return; }
+    if (!N) { setError("Sélectionnez au moins une matière"); return; }
+    setError("");
+    setMatrix(buildMatrix(p));
+    setStep(2);
+  };
+
+  const handleSave = async () => {
     setLoading(true);
     setError("");
     try {
-      await post("journee-types/", form);
+      const heureFinStr = matrix[Nsq - 1].fin_exam + ":00";
+      const jt = await post<{ id: number }>("journee-types/", {
+        nom: p.nom,
+        duree_defaut_minutes: p.duree_minutes,
+        pause_defaut_minutes: p.pause_minutes,
+        preparation_defaut_minutes: p.preparation_minutes,
+        statut_initial: p.statut_initial,
+      });
+      await post(`journee-types/${jt.id}/blocs`, {
+        ordre: 1,
+        type_bloc: "GENERATION",
+        heure_debut: p.heure_debut + ":00",
+        heure_fin: heureFinStr,
+        matieres: p.matieres,
+        duree_minutes: p.duree_minutes,
+        pause_minutes: p.pause_minutes,
+        preparation_minutes: p.preparation_minutes,
+        salles_par_matiere: p.salles_par_matiere,
+      });
       onSuccess();
     } catch (e: any) {
       setError(e.message);
@@ -1634,227 +2340,178 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
     }
   };
 
+  // ── Indicateur d'étapes ──────────────────────────────────────────────────────
+  const StepPills = () => (
+    <div className="flex items-center gap-2 mb-1">
+      <button
+        className={`text-[11px] font-bold px-2 py-0.5 rounded-full transition ${step === 1 ? "bg-black text-white" : "border border-black/20 text-black/40 hover:border-black/50"}`}
+        onClick={() => step === 2 && setStep(1)}
+      >1</button>
+      <button
+        className={`text-xs transition ${step === 1 ? "font-semibold text-black/80" : "text-black/40 hover:text-black/60"}`}
+        onClick={() => step === 2 && setStep(1)}
+      >Paramétrage</button>
+      <span className="text-black/20 text-xs mx-1">→</span>
+      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${step === 2 ? "bg-black text-white" : "border border-black/20 text-black/30"}`}>2</span>
+      <span className={`text-xs ${step === 2 ? "font-semibold text-black/80" : "text-black/30"}`}>Matrice & enregistrement</span>
+    </div>
+  );
+
+  // ── Étape 1 ─────────────────────────────────────────────────────────────────
+  if (step === 1) {
+    return (
+      <div className="space-y-4">
+        <StepPills />
+        <Field label="Nom">
+          <Input value={p.nom} onChange={(e) => set("nom", e.target.value)} placeholder="Journée standard ECG" />
+        </Field>
+        <Field label="Matières">
+          <MatieresSelector selected={p.matieres} onChange={(v) => set("matieres", v)} />
+          {N > 0 && (
+            <p className="text-xs text-black/40 mt-1.5">
+              {N} matière(s) → <strong>{Nsq} créneaux</strong> par session
+            </p>
+          )}
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Heure de début">
+            <Input type="time" value={p.heure_debut} onChange={(e) => set("heure_debut", e.target.value)} />
+          </Field>
+          <Field label="Salles / matière">
+            <Input type="number" value={p.salles_par_matiere} onChange={(e) => set("salles_par_matiere", Number(e.target.value))} min={1} max={50} />
+          </Field>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Durée oral (min)">
+            <Input type="number" value={p.duree_minutes} onChange={(e) => set("duree_minutes", Number(e.target.value))} min={5} max={240} />
+          </Field>
+          <Field label="Préparation (min)">
+            <Input type="number" value={p.preparation_minutes} onChange={(e) => set("preparation_minutes", Number(e.target.value))} min={0} max={120} />
+          </Field>
+          <Field label="Pause (min)">
+            <Input type="number" value={p.pause_minutes} onChange={(e) => set("pause_minutes", Number(e.target.value))} min={0} max={120} />
+          </Field>
+        </div>
+        <ErrorMsg msg={error} />
+        <Btn label="Générer la matrice →" icon={LayoutGrid} onClick={handleGenerate} disabled={!p.nom.trim() || !N} />
+      </div>
+    );
+  }
+
+  // ── Étape 2 ─────────────────────────────────────────────────────────────────
+  const heureFinAuto = matrix.length ? matrix[Nsq - 1].fin_exam : "";
+  const capacite = Nsq * p.salles_par_matiere;
+
   return (
     <div className="space-y-4">
-      <Field label="Nom">
-        <Input
-          value={form.nom}
-          onChange={(e) => set("nom", e.target.value)}
-          placeholder="Journée standard ECG"
-        />
-      </Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Durée défaut (min)">
-          <Input
-            type="number"
-            value={form.duree_defaut_minutes}
-            onChange={(e) =>
-              set("duree_defaut_minutes", Number(e.target.value))
-            }
-            min={5}
-            max={240}
-          />
-        </Field>
-        <Field label="Pause défaut (min)">
-          <Input
-            type="number"
-            value={form.pause_defaut_minutes}
-            onChange={(e) =>
-              set("pause_defaut_minutes", Number(e.target.value))
-            }
-            min={0}
-            max={120}
-          />
-        </Field>
+      <StepPills />
+
+      {/* Récapitulatif */}
+      <div className="rounded-lg bg-gray-50 border border-black/8 px-4 py-2.5 text-xs text-black/60 flex flex-wrap gap-x-5 gap-y-1">
+        <span className="font-semibold text-black/80">{p.nom}</span>
+        <span>{p.matieres.join(" · ")}</span>
+        <span>⏱ {p.duree_minutes} min oral · {p.preparation_minutes} min prép.</span>
+        <span>🕐 {p.heure_debut} → {heureFinAuto}</span>
+        <span className="font-medium text-black/70">{capacite} candidat(s) / session</span>
       </div>
-      <Field label="Préparation défaut (min)">
-        <Input
-          type="number"
-          value={form.preparation_defaut_minutes}
-          onChange={(e) =>
-            set("preparation_defaut_minutes", Number(e.target.value))
-          }
-          min={0}
-          max={120}
-        />
-      </Field>
-      <Field label="Statut initial des épreuves">
-        <Select
-          value={form.statut_initial}
-          onChange={(e) => set("statut_initial", e.target.value)}
-        >
-          <option value="CREE">CREE</option>
-          <option value="LIBRE">LIBRE</option>
+
+      {/* Matrice */}
+      <div className="overflow-x-auto rounded-xl border border-black/8">
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr className="bg-gray-50">
+              <th className="text-left px-3 py-2 text-black/40 font-medium border-b border-black/8 whitespace-nowrap">Dép. prépa</th>
+              <th className="text-left px-3 py-2 text-black/40 font-medium border-b border-black/8 whitespace-nowrap">Dép. exam</th>
+              <th className="text-left px-3 py-2 text-black/40 font-medium border-b border-black/8 whitespace-nowrap">Fin exam</th>
+              {p.matieres.map((m) => (
+                <th key={m} className="text-center px-3 py-2 font-semibold border-b border-black/8 text-black/70 whitespace-nowrap">{m}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {matrix.map((row, i) => (
+              <tr key={i} className="border-b border-black/5 last:border-0 hover:bg-black/[0.015]">
+                <td className="px-3 py-1.5 font-mono text-black/40">{row.deb_prepa}</td>
+                <td className="px-3 py-1.5 font-mono font-medium text-black/80">{row.deb_exam}</td>
+                <td className="px-3 py-1.5 font-mono text-black/50">{row.fin_exam}</td>
+                {row.candidates.map((k, j) => (
+                  <td key={j} className="px-3 py-1 text-center">
+                    <span
+                      className="inline-block px-2 py-0.5 rounded-full font-semibold text-[11px] text-gray-700"
+                      style={{
+                        backgroundColor: TRIPLET_BG[k % TRIPLET_BG.length],
+                        outline: `1.5px solid ${TRIPLET_RING[k % TRIPLET_RING.length]}`,
+                      }}
+                    >
+                      T{k + 1}
+                    </span>
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="text-xs text-black/40 leading-relaxed">
+        Chaque triplet T<em>k</em> représente un candidat passant {N} épreuve(s) à des horaires décalés (offset de {N} créneaux).
+        {p.salles_par_matiere > 1 && (
+          <> Avec {p.salles_par_matiere} salle(s) par matière, {capacite} candidats peuvent être accueillis par session.</>
+        )}
+      </p>
+
+      {/* Statut initial */}
+      <Field label="Statut initial des créneaux">
+        <Select value={p.statut_initial} onChange={(e) => set("statut_initial", e.target.value)}>
+          <option value="LIBRE">Libre (inscription ouverte)</option>
+          <option value="PRERESERVE">Préréservé</option>
+          <option value="CREE">Créé (non publié)</option>
         </Select>
       </Field>
+
       <ErrorMsg msg={error} />
-      <Btn
-        label={loading ? "Création…" : "Créer"}
-        onClick={submit}
-        disabled={loading || !form.nom}
-      />
+      <div className="flex gap-2">
+        <Btn label="← Retour" onClick={() => setStep(1)} variant="ghost" />
+        <Btn label={loading ? "Enregistrement…" : "Enregistrer la journée type"} onClick={handleSave} disabled={loading} />
+      </div>
     </div>
   );
 }
 
-function BlocsManager({
-  jtId,
-  dureeDefaut,
-  pauseDefaut,
-  preparationDefaut,
+// ── MatieresSelector ──────────────────────────────────────────────────────────
+function MatieresSelector({
+  selected,
+  onChange,
 }: {
-  jtId: number;
-  dureeDefaut: number;
-  pauseDefaut: number;
-  preparationDefaut: number;
+  selected: string[];
+  onChange: (next: string[]) => void;
 }) {
-  const [blocs, setBlocs] = useState<Bloc[]>([]);
-  const [showAdd, setShowAdd] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const matieres = useMatieres();
+  const toggle = (m: string) =>
+    onChange(selected.includes(m) ? selected.filter((x) => x !== m) : [...selected, m]);
 
-  const load = useCallback(async () => {
-    try {
-      setBlocs(await get<Bloc[]>(`journee-types/${jtId}/blocs`));
-    } catch {}
-  }, [jtId]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const handleDelete = async (blocId: number) => {
-    await del(`journee-types/blocs/${blocId}`);
-    if (editingId === blocId) setEditingId(null);
-    load();
-  };
+  if (matieres.length === 0)
+    return <p className="text-xs text-black/40 italic">Aucune matière configurée — ajoutez-en dans Paramétrages → Matières.</p>;
 
   return (
-    <div className="px-5 py-4 bg-[#FAFAFA]">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-xs font-semibold text-black/40 uppercase tracking-wide">
-          Blocs ({blocs.length})
-        </span>
-        <Btn
-          label={showAdd ? "Annuler" : "Ajouter un bloc"}
-          icon={showAdd ? X : Plus}
-          onClick={() => { setShowAdd((s) => !s); setEditingId(null); }}
-          small
-          variant="ghost"
-        />
-      </div>
-
-      {blocs.length === 0 && !showAdd && (
-        <p className="text-sm text-black/30 mb-3">
-          Aucun bloc. Ajoutez des blocs{" "}
-          <strong className="text-blue-600">GENERATION</strong> et{" "}
-          <strong className="text-orange-500">PAUSE</strong> pour structurer la journée.
-        </p>
-      )}
-
-      {blocs.length > 0 && (
-        <div className="space-y-2 mb-3">
-          {blocs.map((b) => (
-            <div key={b.id}>
-              <AnimatePresence mode="wait">
-                {editingId === b.id ? (
-                  <motion.div
-                    key="edit"
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
-                    className="bg-white rounded-xl border border-blue-200 p-4"
-                  >
-                    <EditBlocForm
-                      bloc={b}
-                      dureeDefaut={dureeDefaut}
-                      pauseDefaut={pauseDefaut}
-                      preparationDefaut={preparationDefaut}
-                      onSuccess={(updated) => {
-                        setBlocs((prev) => prev.map((x) => x.id === updated.id ? updated : x));
-                        setEditingId(null);
-                      }}
-                      onCancel={() => setEditingId(null)}
-                    />
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key="row"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="flex items-center justify-between bg-white rounded-lg px-4 py-2.5 border border-black/5"
-                  >
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          b.type_bloc === "GENERATION"
-                            ? "bg-blue-100 text-blue-700"
-                            : "bg-orange-100 text-orange-600"
-                        }`}
-                      >
-                        {b.type_bloc}
-                      </span>
-                      <span className="text-xs font-mono text-black/50">
-                        {hm(b.heure_debut)} – {hm(b.heure_fin)}
-                      </span>
-                      {b.type_bloc === "GENERATION" && (
-                        <>
-                          <span className="text-xs text-black/40">
-                            {b.matieres.join(", ")}
-                          </span>
-                          <span className="text-xs text-black/30">
-                            {b.duree_minutes ?? dureeDefaut}min /{" "}
-                            {b.pause_minutes ?? pauseDefaut}min pause /{" "}
-                            {b.preparation_minutes ?? preparationDefaut}min prép.
-                          </span>
-                        </>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => { setEditingId(b.id); setShowAdd(false); }}
-                        className="p-1 hover:text-blue-500 text-black/20 transition"
-                        title="Modifier"
-                      >
-                        <Edit2 className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(b.id)}
-                        className="p-1 hover:text-red-500 text-black/20 transition"
-                        title="Supprimer"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <AnimatePresence>
-        {showAdd && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className="bg-white rounded-xl border border-black/10 p-4"
+    <div className="flex flex-wrap gap-2">
+      {matieres.filter((m) => m.active).map((m) => {
+        const active = selected.includes(m.intitule);
+        return (
+          <button
+            key={m.id}
+            type="button"
+            onClick={() => toggle(m.intitule)}
+            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+              active
+                ? "bg-black text-white border-black"
+                : "bg-white text-black/50 border-black/20 hover:border-black/40 hover:text-black/70"
+            }`}
           >
-            <AddBlocForm
-              jtId={jtId}
-              dureeDefaut={dureeDefaut}
-              pauseDefaut={pauseDefaut}
-              preparationDefaut={preparationDefaut}
-              onSuccess={() => {
-                setShowAdd(false);
-                load();
-              }}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+            {m.intitule}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -1877,10 +2534,11 @@ function AddBlocForm({
     type_bloc: "GENERATION",
     heure_debut: "08:30",
     heure_fin: "12:00",
-    matieres: "",
+    matieres: [] as string[],
     duree_minutes: dureeDefaut,
     pause_minutes: pauseDefaut,
     preparation_minutes: preparationDefaut,
+    salles_par_matiere: 1,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -1898,15 +2556,12 @@ function AddBlocForm({
         heure_fin: form.heure_fin + ":00",
       };
       if (form.type_bloc === "GENERATION") {
-        const matieres = form.matieres
-          .split(",")
-          .map((m) => m.trim())
-          .filter(Boolean);
-        if (!matieres.length) throw new Error("Au moins une matière requise");
-        body.matieres = matieres;
+        if (!form.matieres.length) throw new Error("Au moins une matière requise");
+        body.matieres = form.matieres;
         body.duree_minutes = form.duree_minutes;
         body.pause_minutes = form.pause_minutes;
         body.preparation_minutes = form.preparation_minutes;
+        body.salles_par_matiere = form.salles_par_matiere;
       }
       await post(`journee-types/${jtId}/blocs`, body);
       onSuccess();
@@ -1959,11 +2614,10 @@ function AddBlocForm({
       </div>
       {form.type_bloc === "GENERATION" && (
         <>
-          <Field label="Matières (séparées par virgules)">
-            <Input
-              value={form.matieres}
-              onChange={(e) => set("matieres", e.target.value)}
-              placeholder="Maths, Anglais, Français"
+          <Field label="Matières">
+            <MatieresSelector
+              selected={form.matieres}
+              onChange={(v) => set("matieres", v)}
             />
           </Field>
           <div className="grid grid-cols-3 gap-3">
@@ -1995,6 +2649,15 @@ function AddBlocForm({
               />
             </Field>
           </div>
+          <Field label="Salles / matière">
+            <Input
+              type="number"
+              value={form.salles_par_matiere}
+              onChange={(e) => set("salles_par_matiere", Number(e.target.value))}
+              min={1}
+              max={50}
+            />
+          </Field>
         </>
       )}
       <ErrorMsg msg={error} />
@@ -2028,10 +2691,11 @@ function EditBlocForm({
     ordre: bloc.ordre,
     heure_debut: hm(bloc.heure_debut),
     heure_fin: hm(bloc.heure_fin),
-    matieres: bloc.matieres.join(", "),
+    matieres: bloc.matieres,
     duree_minutes: bloc.duree_minutes ?? dureeDefaut,
     pause_minutes: bloc.pause_minutes ?? pauseDefaut,
     preparation_minutes: bloc.preparation_minutes ?? preparationDefaut,
+    salles_par_matiere: bloc.salles_par_matiere ?? 1,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -2048,12 +2712,12 @@ function EditBlocForm({
         heure_fin: form.heure_fin + ":00",
       };
       if (bloc.type_bloc === "GENERATION") {
-        const matieres = form.matieres.split(",").map((m) => m.trim()).filter(Boolean);
-        if (!matieres.length) throw new Error("Au moins une matière requise");
-        body.matieres = matieres;
+        if (!form.matieres.length) throw new Error("Au moins une matière requise");
+        body.matieres = form.matieres;
         body.duree_minutes = form.duree_minutes;
         body.pause_minutes = form.pause_minutes;
         body.preparation_minutes = form.preparation_minutes;
+        body.salles_par_matiere = form.salles_par_matiere;
       } else {
         body.matieres = [];
       }
@@ -2095,8 +2759,11 @@ function EditBlocForm({
       </div>
       {bloc.type_bloc === "GENERATION" && (
         <>
-          <Field label="Matières (séparées par virgules)">
-            <Input value={form.matieres} onChange={(e) => set("matieres", e.target.value)} placeholder="Maths, Anglais, Français" />
+          <Field label="Matières">
+            <MatieresSelector
+              selected={form.matieres}
+              onChange={(v) => set("matieres", v)}
+            />
           </Field>
           <div className="grid grid-cols-3 gap-3">
             <Field label="Durée oral (min)">
@@ -2109,6 +2776,9 @@ function EditBlocForm({
               <Input type="number" value={form.preparation_minutes} onChange={(e) => set("preparation_minutes", Number(e.target.value))} min={0} max={120} />
             </Field>
           </div>
+          <Field label="Salles / matière">
+            <Input type="number" value={form.salles_par_matiere} onChange={(e) => set("salles_par_matiere", Number(e.target.value))} min={1} max={50} />
+          </Field>
         </>
       )}
       <ErrorMsg msg={error} />
@@ -2173,7 +2843,7 @@ function CandidatsSection() {
         </div>
         <div className="flex items-center gap-2">
           <Btn
-            label="Importer Excel"
+            label="Importer"
             icon={Upload}
             onClick={() => setShowImport(true)}
             disabled={!planningId}
@@ -2283,12 +2953,12 @@ function CandidatsSection() {
         open={showImport}
         onClose={() => setShowImport(false)}
         title="Importer des candidats"
-        templateUrl={`/api/backend/excel/candidats/template`}
-        uploadUrl={`/api/backend/excel/plannings/${planningId}/candidats/import`}
+        templateUrl={`/api/backend/excel/candidats/template-complet`}
+        uploadUrl={`/api/backend/excel/plannings/${planningId}/candidats/import-complet`}
         onSuccess={loadCandidats}
         resultRenderer={(r) => r.candidats?.length > 0 && (
           <div className="mt-3 max-h-40 overflow-y-auto">
-            <p className="text-xs font-medium text-green-700 mb-1">Mots de passe provisoires :</p>
+            <p className="text-xs font-medium text-green-700 mb-1">Candidats importés ({r.candidats.length}) — mots de passe provisoires :</p>
             <table className="w-full text-xs">
               <thead><tr><th className="text-left text-green-700">Nom</th><th className="text-left text-green-700">Login</th><th className="text-left text-green-700">MDP provisoire</th></tr></thead>
               <tbody>
@@ -2514,76 +3184,10 @@ function AffectationCandidatsTab({ planningId, candidats }: { planningId: number
   );
 }
 
-// ── Examinateurs ───────────────────────────────────────────────────────────────
-function CreateExaminateurForm({
-  planningId,
-  onCreated,
-}: {
-  planningId: number;
-  onCreated: () => void;
-}) {
-  const [nom, setNom] = useState("");
-  const [prenom, setPrenom] = useState("");
-  const [email, setEmail] = useState("");
-  const [matieresStr, setMatieresStr] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  async function submit() {
-    setLoading(true);
-    setError("");
-    try {
-      const matieres = matieresStr
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      await post("examinateurs/", {
-        planning_id: planningId,
-        nom: nom.toUpperCase(),
-        prenom,
-        email,
-        matieres,
-      });
-      onCreated();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Erreur");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="space-y-3">
-      <Field label="Nom"><Input value={nom} onChange={(e) => setNom(e.target.value)} placeholder="MARTIN" /></Field>
-      <Field label="Prénom"><Input value={prenom} onChange={(e) => setPrenom(e.target.value)} placeholder="Sophie" /></Field>
-      <Field label="Email"><Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="s.martin@ensae.fr" /></Field>
-      <Field label="Matières (séparées par virgule)">
-        <Input value={matieresStr} onChange={(e) => setMatieresStr(e.target.value)} placeholder="Maths, Économie" />
-      </Field>
-      <ErrorMsg msg={error} />
-      <Btn label={loading ? "Création…" : "Créer"} icon={Plus} onClick={submit} disabled={loading || !nom || !prenom || !email} />
-    </div>
-  );
-}
-
-type EpreuveAffectation = {
-  id: number;
-  date: string;
-  demi_journee_type: string;
-  matiere: string;
-  heure_debut: string;
-  heure_fin: string;
-  statut: string;
-  candidat_id: number | null;
-  candidat_nom: string | null;
-  candidat_prenom: string | null;
-  examinateur_id: number | null;
-  examinateur_nom: string | null;
-  examinateur_prenom: string | null;
-};
+// ── AffectationTab (examinateurs) ─────────────────────────────────────────────
 
 function AffectationTab({ planningId, examinateurs }: { planningId: number; examinateurs: Examinateur[] }) {
-  const [epreuves, setEpreuves] = useState<EpreuveAffectation[]>([]);
+  const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState<Record<number, boolean>>({});
   const [error, setError] = useState("");
@@ -2592,7 +3196,7 @@ function AffectationTab({ planningId, examinateurs }: { planningId: number; exam
     setLoading(true);
     setError("");
     try {
-      const data = await get<EpreuveAffectation[]>(`plannings/${planningId}/epreuves`);
+      const data = await get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`);
       setEpreuves(data);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
@@ -2603,33 +3207,27 @@ function AffectationTab({ planningId, examinateurs }: { planningId: number; exam
 
   useEffect(() => { load(); }, [load]);
 
-  async function assigner(epreuve: EpreuveAffectation, examinateurId: number | null) {
-    setAssigning((a) => ({ ...a, [epreuve.id]: true }));
+  async function assigner(epreuveId: number, examinateurId: number | null) {
+    setAssigning((a) => ({ ...a, [epreuveId]: true }));
     setError("");
     try {
-      await post(`examinateurs/epreuves/${epreuve.id}/assigner`, { examinateur_id: examinateurId });
-      const ex = examinateurId ? examinateurs.find((e) => e.id === examinateurId) : null;
+      await post(`examinateurs/epreuves/${epreuveId}/assigner`, { examinateur_id: examinateurId });
+      const ex = examinateurId ? examinateurs.find((x) => x.id === examinateurId) : null;
       setEpreuves((prev) =>
         prev.map((ep) =>
-          ep.id === epreuve.id
-            ? {
-                ...ep,
-                examinateur_id: ex?.id ?? null,
-                examinateur_nom: ex?.nom ?? null,
-                examinateur_prenom: ex?.prenom ?? null,
-              }
+          ep.id === epreuveId
+            ? { ...ep, examinateur_id: ex?.id ?? null, examinateur_nom: ex?.nom ?? null, examinateur_prenom: ex?.prenom ?? null }
             : ep
         )
       );
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setAssigning((a) => ({ ...a, [epreuve.id]: false }));
+      setAssigning((a) => ({ ...a, [epreuveId]: false }));
     }
   }
 
-  // Group by date
-  const byDate = epreuves.reduce<Record<string, EpreuveAffectation[]>>((acc, e) => {
+  const byDate = epreuves.reduce<Record<string, EpreuveFlat[]>>((acc, e) => {
     (acc[e.date] ??= []).push(e);
     return acc;
   }, {});
@@ -2643,25 +3241,21 @@ function AffectationTab({ planningId, examinateurs }: { planningId: number; exam
     <div className="space-y-4">
       {error && <div className="rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600">{error}</div>}
 
-      {/* Progression */}
       {total > 0 && (
         <div className="bg-white rounded-xl shadow-sm p-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-black/60">{assigned} / {total} épreuves affectées</span>
+            <span className="text-sm text-black/60">{assigned} / {total} épreuves attribuées</span>
             <span className="text-xs font-semibold text-[#C62828]">{Math.round((assigned / total) * 100)}%</span>
           </div>
           <div className="w-full bg-gray-100 rounded-full h-1.5">
-            <div
-              className="bg-[#C62828] h-1.5 rounded-full transition-all"
-              style={{ width: `${(assigned / total) * 100}%` }}
-            />
+            <div className="bg-[#C62828] h-1.5 rounded-full transition-all" style={{ width: `${(assigned / total) * 100}%` }} />
           </div>
         </div>
       )}
 
       {Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b)).map(([date, eps]) => (
         <div key={date}>
-          <p className="text-xs font-semibold text-black/40 uppercase tracking-wide mb-2 capitalize">
+          <p className="text-xs font-semibold text-black/40 uppercase tracking-wide mb-2">
             {new Date(date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}
           </p>
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
@@ -2675,52 +3269,46 @@ function AffectationTab({ planningId, examinateurs }: { planningId: number; exam
                 </tr>
               </thead>
               <tbody>
-                {eps.map((ep, i) => {
-                  // Examinateurs compatibles : même matière ou sans filtre
-                  const compatibles = examinateurs.filter(
-                    (ex) => ex.matieres.length === 0 || ex.matieres.includes(ep.matiere)
-                  );
-                  return (
-                    <tr key={ep.id} className={`border-b last:border-0 ${i % 2 === 0 ? "" : "bg-black/[0.01]"}`}>
-                      <td className="px-4 py-3 font-mono text-xs text-black/50 whitespace-nowrap">
-                        {ep.heure_debut} – {ep.heure_fin}
-                      </td>
-                      <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{ep.matiere}</td>
-                      <td className="px-4 py-3 text-sm text-black/60">
-                        {ep.candidat_id
-                          ? `${ep.candidat_prenom} ${ep.candidat_nom}`
-                          : <span className="text-black/30 italic text-xs">Non assigné</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <select
-                            value={ep.examinateur_id ?? ""}
-                            onChange={(e) => assigner(ep, e.target.value ? Number(e.target.value) : null)}
-                            disabled={assigning[ep.id]}
-                            className="w-full border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 disabled:opacity-50"
+                {eps.map((ep, i) => (
+                  <tr key={ep.id} className={`border-b last:border-0 ${i % 2 === 0 ? "" : "bg-black/[0.01]"}`}>
+                    <td className="px-4 py-3 font-mono text-xs text-black/50 whitespace-nowrap">
+                      {ep.heure_debut} – {ep.heure_fin}
+                    </td>
+                    <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{ep.matiere}</td>
+                    <td className="px-4 py-3 text-sm text-black/60">
+                      {ep.candidat_id
+                        ? `${ep.candidat_prenom} ${ep.candidat_nom}`
+                        : <span className="text-black/30 italic text-xs">Non assigné</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={ep.examinateur_id ?? ""}
+                          onChange={(e) => assigner(ep.id, e.target.value ? Number(e.target.value) : null)}
+                          disabled={assigning[ep.id]}
+                          className="w-full border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 disabled:opacity-50"
+                        >
+                          <option value="">— Aucun —</option>
+                          {examinateurs.map((ex) => (
+                            <option key={ex.id} value={ex.id}>
+                              {ex.nom} {ex.prenom} {ex.matieres.length ? `(${ex.matieres.join(", ")})` : ""}
+                            </option>
+                          ))}
+                        </select>
+                        {assigning[ep.id] && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400 shrink-0" />}
+                        {ep.examinateur_id && !assigning[ep.id] && (
+                          <button
+                            onClick={() => assigner(ep.id, null)}
+                            className="shrink-0 text-gray-300 hover:text-red-400 transition"
+                            title="Désaffecter"
                           >
-                            <option value="">— Aucun —</option>
-                            {compatibles.map((ex) => (
-                              <option key={ex.id} value={ex.id}>
-                                {ex.nom} {ex.prenom}
-                              </option>
-                            ))}
-                          </select>
-                          {assigning[ep.id] && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400 shrink-0" />}
-                          {ep.examinateur_id && !assigning[ep.id] && (
-                            <button
-                              onClick={() => assigner(ep, null)}
-                              className="shrink-0 text-gray-300 hover:text-red-400 transition"
-                              title="Désaffecter"
-                            >
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -2736,17 +3324,531 @@ function AffectationTab({ planningId, examinateurs }: { planningId: number; exam
   );
 }
 
+// ── Examinateurs ───────────────────────────────────────────────────────────────
+
+type MatiereItem = { id: number; intitule: string; active: boolean };
+
+function useMatieres() {
+  const [matieres, setMatieres] = useState<MatiereItem[]>([]);
+  useEffect(() => {
+    get<MatiereItem[]>("parametrages/matieres/").then(setMatieres).catch(() => {});
+  }, []);
+  return matieres;
+}
+
+function MatieresCheckboxes({
+  selected,
+  onChange,
+  matieres,
+}: {
+  selected: string[];
+  onChange: (v: string[]) => void;
+  matieres: MatiereItem[];
+}) {
+  const toggle = (intitule: string) => {
+    onChange(selected.includes(intitule) ? selected.filter((m) => m !== intitule) : [...selected, intitule]);
+  };
+  if (matieres.length === 0)
+    return <p className="text-xs text-black/40 italic">Aucune matière configurée dans Paramétrages.</p>;
+  return (
+    <div className="flex flex-wrap gap-2">
+      {matieres.filter((m) => m.active).map((m) => (
+        <button
+          key={m.id}
+          type="button"
+          onClick={() => toggle(m.intitule)}
+          className={`px-2.5 py-1 rounded-lg border text-sm transition ${
+            selected.includes(m.intitule)
+              ? "bg-blue-600 text-white border-blue-600"
+              : "bg-white text-black/60 border-black/15 hover:border-black/30"
+          }`}
+        >
+          {m.intitule}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function formatDt(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString("fr-FR", {
+      day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+// ── Indisponibilités ──────────────────────────────────────────────────────────
+
+function IndisponibilitesSection({ examinateurId, onLoad }: { examinateurId: number; onLoad?: (items: Indisponibilite[]) => void }) {
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<Indisponibilite[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [debut, setDebut] = useState("");
+  const [fin, setFin] = useState("");
+  const [comment, setComment] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const data = await get<Indisponibilite[]>(`examinateurs/${examinateurId}/indisponibilites`).catch(() => []);
+    setItems(data);
+    onLoad?.(data);
+    setLoading(false);
+  }, [examinateurId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function save() {
+    setSaving(true); setErr("");
+    try {
+      if (editingId) {
+        await put(`examinateurs/${examinateurId}/indisponibilites/${editingId}`, { debut, fin, commentaire: comment || null });
+      } else {
+        await post(`examinateurs/${examinateurId}/indisponibilites`, { debut, fin, commentaire: comment || null });
+      }
+      setShowAdd(false); setEditingId(null); setDebut(""); setFin(""); setComment("");
+      load();
+    } catch (e: unknown) { setErr(e instanceof Error ? e.message : "Erreur"); }
+    finally { setSaving(false); }
+  }
+
+  function startEdit(item: Indisponibilite) {
+    setEditingId(item.id);
+    setDebut(item.debut.slice(0, 16));
+    setFin(item.fin.slice(0, 16));
+    setComment(item.commentaire ?? "");
+    setShowAdd(true);
+  }
+
+  async function remove(id: number) {
+    if (!confirm("Supprimer cette indisponibilité ?")) return;
+    await del(`examinateurs/${examinateurId}/indisponibilites/${id}`);
+    load();
+  }
+
+  return (
+    <div className="border rounded-xl overflow-hidden">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-black/[0.02] hover:bg-black/[0.04] transition text-sm font-medium"
+      >
+        <span className="flex items-center gap-2">
+          <span>Indisponibilités</span>
+          {items.length > 0 && (
+            <span className="text-[10px] bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5 font-semibold">{items.length}</span>
+          )}
+        </span>
+        <span className="text-black/30 text-xs">{open ? "▲" : "▼"}</span>
+      </button>
+
+      {open && (
+        <div className="p-4 space-y-3">
+          {loading ? <div className="text-center py-4"><Spinner /></div> : items.length === 0 ? (
+            <p className="text-sm text-black/40 text-center py-2">Aucune indisponibilité enregistrée.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-xs text-black/40">
+                  <th className="text-left py-1.5 font-medium">Début</th>
+                  <th className="text-left py-1.5 font-medium">Fin</th>
+                  <th className="text-left py-1.5 font-medium">Commentaire</th>
+                  <th className="py-1.5" />
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr key={item.id} className="border-b last:border-0">
+                    <td className="py-2 pr-3 whitespace-nowrap text-sm">{formatDt(item.debut)}</td>
+                    <td className="py-2 pr-3 whitespace-nowrap text-sm">{formatDt(item.fin)}</td>
+                    <td className="py-2 text-black/50 text-sm">{item.commentaire ?? "—"}</td>
+                    <td className="py-2 text-right whitespace-nowrap">
+                      <button onClick={() => startEdit(item)} className="text-xs text-blue-500 hover:text-blue-700 mr-3">Éditer</button>
+                      <button onClick={() => remove(item.id)} className="text-xs text-red-400 hover:text-red-600">Supprimer</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          {showAdd ? (
+            <div className="bg-black/[0.02] rounded-lg p-3 space-y-2 border">
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Début"><Input type="datetime-local" value={debut} onChange={(e) => setDebut(e.target.value)} /></Field>
+                <Field label="Fin"><Input type="datetime-local" value={fin} onChange={(e) => setFin(e.target.value)} /></Field>
+              </div>
+              <Field label="Commentaire">
+                <Input value={comment} onChange={(e) => setComment(e.target.value)} placeholder="ex : Voyage professionnel" />
+              </Field>
+              <ErrorMsg msg={err} />
+              <div className="flex gap-2">
+                <Btn label={saving ? "Enregistrement…" : editingId ? "Modifier" : "Ajouter"} onClick={save} disabled={saving || !debut || !fin} small />
+                <Btn label="Annuler" onClick={() => { setShowAdd(false); setEditingId(null); setErr(""); }} variant="ghost" small />
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => { setShowAdd(true); setEditingId(null); setDebut(""); setFin(""); setComment(""); }}
+              className="flex items-center gap-1 text-sm text-[#C62828] hover:underline"
+            >
+              <Plus className="h-3.5 w-3.5" /> Ajouter une indisponibilité
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Créneaux de l'examinateur ─────────────────────────────────────────────────
+
+function CreneauxExaminateur({
+  planningId,
+  examinateur,
+  indisponibilites,
+}: {
+  planningId: number;
+  examinateur: Examinateur;
+  indisponibilites: Indisponibilite[];
+}) {
+  const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`)
+      .then((all) => setEpreuves(all.filter((e) => examinateur.matieres.includes(e.matiere))))
+      .catch(() => setEpreuves([]))
+      .finally(() => setLoading(false));
+  }, [planningId, examinateur.id, examinateur.matieres.join(",")]);
+
+  function isIndispo(date: string, heure_debut: string): boolean {
+    const slotDt = new Date(`${date}T${heure_debut}:00`);
+    return indisponibilites.some((i) => slotDt >= new Date(i.debut) && slotDt < new Date(i.fin));
+  }
+
+  if (loading) return <div className="flex justify-center py-6"><Spinner /></div>;
+  if (epreuves.length === 0)
+    return <p className="text-sm text-black/40 text-center py-4">Aucun créneau dans ce planning pour ces matières.</p>;
+
+  return (
+    <div className="overflow-x-auto rounded-xl border">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-black/[0.03] border-b text-xs text-black/50">
+            <th className="px-3 py-2 w-6" />
+            <th className="px-3 py-2 text-left font-medium">Matière</th>
+            <th className="px-3 py-2 text-left font-medium">Jour</th>
+            <th className="px-3 py-2 text-left font-medium">Heure passage</th>
+            <th className="px-3 py-2 text-left font-medium">Examinateur</th>
+            <th className="px-3 py-2 text-left font-medium">Candidat</th>
+            <th className="px-3 py-2 text-left font-medium">Alerte</th>
+          </tr>
+        </thead>
+        <tbody>
+          {epreuves.map((e) => {
+            const indispo = isIndispo(e.date, e.heure_debut);
+            return (
+              <tr key={e.id} className={`border-b last:border-0 ${indispo ? "bg-red-50/60" : "hover:bg-black/[0.01]"}`}>
+                <td className="px-3 py-2 text-center">
+                  <span className={`inline-block h-2 w-2 rounded-full ${indispo ? "bg-red-400" : "bg-green-400"}`} />
+                </td>
+                <td className="px-3 py-2 font-medium">{e.matiere}</td>
+                <td className="px-3 py-2 whitespace-nowrap text-black/60">{formatDate(e.date)}</td>
+                <td className="px-3 py-2 font-mono">{e.heure_debut}</td>
+                <td className="px-3 py-2 text-black/60">
+                  {e.examinateur_nom
+                    ? `${e.examinateur_nom} ${e.examinateur_prenom ?? ""}`
+                    : <span className="text-black/25 italic">—</span>}
+                </td>
+                <td className="px-3 py-2">
+                  {e.candidat_nom
+                    ? <span>{e.candidat_nom} {e.candidat_prenom}</span>
+                    : <span className="text-black/25 italic">—</span>}
+                </td>
+                <td className="px-3 py-2">
+                  {indispo && (
+                    <span className="text-xs font-semibold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">Indisponible !</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Fiche détail examinateur ──────────────────────────────────────────────────
+
+function ExaminateurFiche({
+  ex,
+  planningId,
+  onUpdated,
+  onDeleted,
+}: {
+  ex: Examinateur;
+  planningId: number;
+  onUpdated: (updated: Examinateur) => void;
+  onDeleted: () => void;
+}) {
+  const matieres = useMatieres();
+  const [nom, setNom] = useState(ex.nom);
+  const [prenom, setPrenom] = useState(ex.prenom);
+  const [email, setEmail] = useState(ex.email);
+  const [telephone, setTelephone] = useState(ex.telephone ?? "");
+  const [etablissement, setEtablissement] = useState(ex.etablissement ?? "");
+  const [codeUai, setCodeUai] = useState(ex.code_uai ?? "");
+  const [commentaire, setCommentaire] = useState(ex.commentaire ?? "");
+  const [selectedMatieres, setSelectedMatieres] = useState<string[]>(ex.matieres);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const [showIdentifiants, setShowIdentifiants] = useState(false);
+  const [indisponibilites, setIndisponibilites] = useState<Indisponibilite[]>([]);
+
+  useEffect(() => {
+    setNom(ex.nom); setPrenom(ex.prenom); setEmail(ex.email);
+    setTelephone(ex.telephone ?? ""); setEtablissement(ex.etablissement ?? "");
+    setCodeUai(ex.code_uai ?? ""); setCommentaire(ex.commentaire ?? "");
+    setSelectedMatieres(ex.matieres); setErr("");
+  }, [ex.id]);
+
+  async function save() {
+    setSaving(true); setErr("");
+    try {
+      const updated = await put<Examinateur>(`examinateurs/${ex.id}`, {
+        nom: nom.trim().toUpperCase(), prenom: prenom.trim(), email: email.trim(),
+        matieres: selectedMatieres,
+        code_uai: codeUai.trim() || null,
+        etablissement: etablissement.trim() || null,
+        telephone: telephone.trim() || null,
+        commentaire: commentaire.trim() || null,
+      });
+      onUpdated(updated);
+    } catch (e: unknown) { setErr(e instanceof Error ? e.message : "Erreur"); }
+    finally { setSaving(false); }
+  }
+
+  async function toggleActif() {
+    try {
+      const updated = await patch<Examinateur>(`examinateurs/${ex.id}/actif`, { actif: !ex.actif });
+      onUpdated(updated);
+    } catch (e: unknown) { alert(e instanceof Error ? e.message : "Erreur"); }
+  }
+
+  async function deleteEx() {
+    if (!confirm(`Supprimer ${ex.prenom} ${ex.nom} ?`)) return;
+    try { await del(`examinateurs/${ex.id}`); onDeleted(); }
+    catch (e: unknown) { alert(e instanceof Error ? e.message : "Erreur"); }
+  }
+
+  return (
+    <div className="overflow-y-auto h-full">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3 px-6 pt-5 pb-4 border-b sticky top-0 bg-white z-10">
+        <div>
+          <p className="text-xs text-black/40 uppercase tracking-wide mb-0.5">Examinateur</p>
+          <h3 className="text-lg font-semibold">{ex.prenom} {ex.nom}</h3>
+          <div className="flex flex-wrap gap-1 mt-1">
+            {ex.matieres.map((m) => (
+              <span key={m} className="text-[11px] bg-blue-50 text-blue-700 rounded px-1.5 py-0.5 font-medium">{m}</span>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0 mt-1">
+          <button
+            onClick={toggleActif}
+            className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border font-medium transition ${
+              ex.actif
+                ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
+                : "bg-black/5 text-black/40 border-black/10 hover:bg-black/10"
+            }`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${ex.actif ? "bg-green-500" : "bg-black/30"}`} />
+            {ex.actif ? "Actif" : "Inactif"}
+          </button>
+          <button
+            onClick={() => setShowIdentifiants(true)}
+            className="text-xs px-2.5 py-1.5 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition font-medium flex items-center gap-1"
+          >
+            <Send className="h-3 w-3" /> Identifiants
+          </button>
+          <button onClick={deleteEx} className="p-1.5 text-red-400 hover:text-red-600 transition" title="Supprimer">
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      <div className="px-6 py-5 space-y-5">
+        {/* Infos */}
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Nom"><Input value={nom} onChange={(e) => setNom(e.target.value)} /></Field>
+          <Field label="Prénom"><Input value={prenom} onChange={(e) => setPrenom(e.target.value)} /></Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Email"><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
+          <Field label="Téléphone"><Input value={telephone} onChange={(e) => setTelephone(e.target.value)} placeholder="06 12 34 56 78" /></Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Établissement"><Input value={etablissement} onChange={(e) => setEtablissement(e.target.value)} placeholder="Lycée Henri IV" /></Field>
+          <Field label="Code UAI"><Input value={codeUai} onChange={(e) => setCodeUai(e.target.value)} placeholder="0750001A" /></Field>
+        </div>
+        <Field label="Matière(s)">
+          <MatieresCheckboxes selected={selectedMatieres} onChange={setSelectedMatieres} matieres={matieres} />
+        </Field>
+        <Field label="Commentaire">
+          <textarea
+            value={commentaire}
+            onChange={(e) => setCommentaire(e.target.value)}
+            rows={2}
+            placeholder="Remarques sur cet examinateur…"
+            className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black/10 resize-none"
+          />
+        </Field>
+        <ErrorMsg msg={err} />
+        <Btn label={saving ? "Enregistrement…" : "Enregistrer"} onClick={save} disabled={saving} />
+
+        {/* Indisponibilités */}
+        <IndisponibilitesSection examinateurId={ex.id} onLoad={setIndisponibilites} />
+
+        {/* Créneaux */}
+        <div>
+          <p className="text-xs font-semibold text-black/40 uppercase tracking-widest mb-3">Créneaux</p>
+          <CreneauxExaminateur planningId={planningId} examinateur={ex} indisponibilites={indisponibilites} />
+        </div>
+      </div>
+
+      {/* Modal identifiants */}
+      <Modal open={showIdentifiants} onClose={() => setShowIdentifiants(false)} title="Identifiants examinateur">
+        <div className="space-y-4">
+          <p className="text-sm text-black/60">
+            Communiquez ces informations à <strong>{ex.prenom} {ex.nom}</strong> pour accéder à son espace.
+          </p>
+          <div className="rounded-lg bg-black/[0.03] p-4 space-y-2.5 font-mono text-sm border">
+            <div className="flex justify-between gap-4 items-center">
+              <span className="text-black/50 text-xs uppercase tracking-wide">Login</span>
+              <span className="font-semibold select-all">{ex.email}</span>
+            </div>
+            <div className="h-px bg-black/5" />
+            <div className="flex justify-between gap-4 items-center">
+              <span className="text-black/50 text-xs uppercase tracking-wide">Code d&apos;accès</span>
+              <span className="font-semibold select-all tracking-widest text-lg">{ex.code_acces}</span>
+            </div>
+          </div>
+          <p className="text-xs text-black/40">
+            Pour réinitialiser le code d&apos;accès, utilisez Paramétrages → Réinitialisation.
+          </p>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+// ── Formulaire création ───────────────────────────────────────────────────────
+
+function CreateExaminateurForm({
+  planningId,
+  onCreated,
+  onCancel,
+}: {
+  planningId: number;
+  onCreated: () => void;
+  onCancel: () => void;
+}) {
+  const matieres = useMatieres();
+  const [nom, setNom] = useState("");
+  const [prenom, setPrenom] = useState("");
+  const [email, setEmail] = useState("");
+  const [telephone, setTelephone] = useState("");
+  const [selectedMatieres, setSelectedMatieres] = useState<string[]>([]);
+  const [codeUai, setCodeUai] = useState("");
+  const [etablissement, setEtablissement] = useState("");
+  const [actif, setActif] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit() {
+    setLoading(true); setError("");
+    try {
+      await post("examinateurs/", {
+        planning_id: planningId,
+        nom: nom.trim().toUpperCase(), prenom: prenom.trim(), email: email.trim(),
+        telephone: telephone.trim() || null,
+        matieres: selectedMatieres,
+        code_uai: codeUai.trim() || null,
+        etablissement: etablissement.trim() || null,
+        actif,
+      });
+      onCreated();
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : "Erreur"); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div className="overflow-y-auto h-full">
+      <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b sticky top-0 bg-white z-10">
+        <h3 className="text-lg font-semibold">Nouvel examinateur</h3>
+        <button onClick={onCancel} className="p-1 text-black/40 hover:text-black/70 transition"><X className="h-4 w-4" /></button>
+      </div>
+      <div className="px-6 py-5 space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Nom *"><Input value={nom} onChange={(e) => setNom(e.target.value)} placeholder="MARTIN" /></Field>
+          <Field label="Prénom *"><Input value={prenom} onChange={(e) => setPrenom(e.target.value)} placeholder="Sophie" /></Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Email *"><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="s.martin@…" /></Field>
+          <Field label="Téléphone"><Input value={telephone} onChange={(e) => setTelephone(e.target.value)} placeholder="06 12 34 56 78" /></Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Établissement"><Input value={etablissement} onChange={(e) => setEtablissement(e.target.value)} placeholder="Lycée Henri IV" /></Field>
+          <Field label="Code UAI"><Input value={codeUai} onChange={(e) => setCodeUai(e.target.value)} placeholder="0750001A" /></Field>
+        </div>
+        <Field label="Matière(s) *">
+          <MatieresCheckboxes selected={selectedMatieres} onChange={setSelectedMatieres} matieres={matieres} />
+        </Field>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={actif} onChange={(e) => setActif(e.target.checked)} className="rounded" />
+          <span className="text-sm">Actif (mobilisable dans le planning)</span>
+        </label>
+        <ErrorMsg msg={error} />
+        <div className="flex gap-2">
+          <Btn label={loading ? "Création…" : "Créer l'examinateur"} icon={Plus} onClick={submit}
+            disabled={loading || !nom || !prenom || !email} />
+          <Btn label="Annuler" onClick={onCancel} variant="ghost" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Section principale Examinateurs ──────────────────────────────────────────
+
 function ExaminateursSection() {
   const [plannings, setPlannings] = useState<Planning[]>([]);
   const [selectedPlanningId, setSelectedPlanningId] = useState<number | null>(null);
   const [examinateurs, setExaminateurs] = useState<Examinateur[]>([]);
+  const [selectedEx, setSelectedEx] = useState<Examinateur | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showImportEx, setShowImportEx] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState<"liste" | "affectation">("liste");
+  const [filterActif, setFilterActif] = useState<"tous" | "actif" | "inactif">("tous");
+  const [tab, setTab] = useState<"fiche" | "affectation">("fiche");
 
   useEffect(() => {
-    get<Planning[]>("plannings/").then(setPlannings).catch(() => {});
+    get<Planning[]>("plannings/").then((ps) => {
+      setPlannings(ps);
+      if (ps.length > 0) setSelectedPlanningId(ps[0].id);
+    }).catch(() => {});
   }, []);
 
   const loadExaminateurs = useCallback(async () => {
@@ -2755,126 +3857,134 @@ function ExaminateursSection() {
     try {
       const data = await get<Examinateur[]>(`examinateurs/?planning_id=${selectedPlanningId}`);
       setExaminateurs(data);
-    } finally {
-      setLoading(false);
-    }
+      setSelectedEx((prev) => prev ? (data.find((e) => e.id === prev.id) ?? null) : null);
+    } finally { setLoading(false); }
   }, [selectedPlanningId]);
 
-  useEffect(() => {
-    loadExaminateurs();
-  }, [loadExaminateurs]);
+  useEffect(() => { loadExaminateurs(); }, [loadExaminateurs]);
 
-  async function deleteEx(id: number) {
-    if (!confirm("Supprimer cet examinateur ?")) return;
-    await del(`examinateurs/${id}`);
-    loadExaminateurs();
-  }
+  const filtered = examinateurs.filter((ex) =>
+    filterActif === "tous" ? true : filterActif === "actif" ? ex.actif : !ex.actif
+  );
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <GraduationCap className="h-5 w-5 text-[#C62828]" />
-        <h2 className="text-lg font-semibold">Examinateurs</h2>
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          <GraduationCap className="h-5 w-5 text-[#C62828]" />
+          <h2 className="text-lg font-semibold">Examinateurs</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <select
+            className="border rounded-lg px-3 py-2 text-sm"
+            value={selectedPlanningId ?? ""}
+            onChange={(e) => {
+              setSelectedPlanningId(e.target.value ? Number(e.target.value) : null);
+              setSelectedEx(null); setShowCreate(false);
+            }}
+          >
+            <option value="">— Sélectionner un planning —</option>
+            {plannings.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
+          </select>
+          {selectedPlanningId && (
+            <Btn label="Importer" icon={Upload} small variant="ghost" onClick={() => setShowImportEx(true)} />
+          )}
+        </div>
       </div>
 
-      {/* Filtre planning */}
-      <div className="bg-white rounded-xl shadow-sm p-4">
-        <label className="block text-xs font-medium text-black/50 mb-1.5">Filtrer par planning</label>
-        <select
-          className="w-full border rounded-lg px-3 py-2 text-sm"
-          value={selectedPlanningId ?? ""}
-          onChange={(e) => {
-            setSelectedPlanningId(e.target.value ? Number(e.target.value) : null);
-            setExaminateurs([]);
-            setShowCreate(false);
-            setTab("liste");
-          }}
-        >
-          <option value="">— Sélectionner un planning —</option>
-          {plannings.map((p) => (
-            <option key={p.id} value={p.id}>{p.nom}</option>
-          ))}
-        </select>
-      </div>
-
+      {/* Onglets */}
       {selectedPlanningId && (
-        <>
-          {/* Onglets */}
-          <div className="flex border-b border-gray-200">
-            {(["liste", "affectation"] as const).map((t) => (
+        <div className="flex gap-1 border-b border-black/10">
+          {(["fiche", "affectation"] as const).map((t) => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`px-4 py-2 text-sm font-medium rounded-t-lg transition -mb-px border border-b-0 ${
+                tab === t ? "bg-white border-black/10 text-black" : "border-transparent text-black/40 hover:text-black/60"
+              }`}
+            >
+              {t === "fiche" ? "Fiches" : "Affectation aux épreuves"}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {selectedPlanningId && tab === "affectation" && (
+        <AffectationTab planningId={selectedPlanningId} examinateurs={examinateurs} />
+      )}
+
+      {selectedPlanningId && tab === "fiche" && (
+        <div className="flex bg-white rounded-xl shadow-sm overflow-hidden border" style={{ minHeight: 560 }}>
+          {/* Colonne gauche : liste */}
+          <div className="w-56 shrink-0 border-r flex flex-col">
+            <div className="p-3 border-b">
+              <div className="flex rounded-lg border overflow-hidden text-xs w-full">
+                {(["tous", "actif", "inactif"] as const).map((f) => (
+                  <button key={f} onClick={() => setFilterActif(f)}
+                    className={`flex-1 py-1.5 transition ${filterActif === f ? "bg-black text-white" : "bg-white text-black/50 hover:bg-black/5"}`}
+                  >
+                    {f === "tous" ? "Tous" : f === "actif" ? "Actifs" : "Inact."}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto divide-y">
+              {loading ? <div className="p-4 text-center"><Spinner /></div> :
+               filtered.length === 0 ? <p className="text-xs text-black/40 text-center p-4">Aucun examinateur</p> :
+               filtered.map((ex) => (
+                <button
+                  key={ex.id}
+                  onClick={() => { setSelectedEx(ex); setShowCreate(false); }}
+                  className={`w-full text-left px-3 py-2.5 transition text-sm flex items-center gap-2 ${
+                    selectedEx?.id === ex.id
+                      ? "bg-[#C62828]/8 text-[#C62828] border-l-2 border-[#C62828]"
+                      : "hover:bg-black/[0.02] text-black border-l-2 border-transparent"
+                  }`}
+                >
+                  <span className={`h-2 w-2 rounded-full shrink-0 ${ex.actif ? "bg-green-500" : "bg-black/20"}`} />
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-sm">{ex.prenom} {ex.nom}</p>
+                    <p className="truncate text-xs text-black/40">{ex.matieres.join(", ") || "—"}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="p-3 border-t">
               <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition ${
-                  tab === t
-                    ? "border-[#C62828] text-[#C62828]"
-                    : "border-transparent text-black/50 hover:text-black"
-                }`}
+                onClick={() => { setShowCreate(true); setSelectedEx(null); }}
+                className="w-full flex items-center justify-center gap-1.5 text-sm text-[#C62828] border border-[#C62828]/30 rounded-lg py-2 hover:bg-[#C62828]/5 transition font-medium"
               >
-                {t === "liste" ? "Liste" : "Affectation aux épreuves"}
+                <Plus className="h-3.5 w-3.5" /> Nouvel examinateur
               </button>
-            ))}
+            </div>
           </div>
 
-          {tab === "liste" && (
-            <>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-black/50">{examinateurs.length} examinateur(s)</span>
-                <div className="flex items-center gap-2">
-                  <Btn label="Importer Excel" icon={Upload} small variant="ghost" onClick={() => setShowImportEx(true)} />
-                  <Btn label="Ajouter" icon={Plus} small onClick={() => setShowCreate(true)} />
-                </div>
+          {/* Panneau droit : fiche ou création */}
+          <div className="flex-1 min-w-0">
+            {showCreate ? (
+              <CreateExaminateurForm
+                planningId={selectedPlanningId}
+                onCreated={() => { setShowCreate(false); loadExaminateurs(); }}
+                onCancel={() => setShowCreate(false)}
+              />
+            ) : selectedEx ? (
+              <ExaminateurFiche
+                key={selectedEx.id}
+                ex={selectedEx}
+                planningId={selectedPlanningId}
+                onUpdated={(updated) => {
+                  setExaminateurs((prev) => prev.map((e) => e.id === updated.id ? updated : e));
+                  setSelectedEx(updated);
+                }}
+                onDeleted={() => { setSelectedEx(null); loadExaminateurs(); }}
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-black/20 gap-3 py-16">
+                <GraduationCap className="h-12 w-12" />
+                <p className="text-sm text-black/30">Sélectionnez un examinateur ou créez-en un nouveau</p>
               </div>
-
-              <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-                {loading ? (
-                  <div className="p-8 text-center"><Spinner /></div>
-                ) : examinateurs.length === 0 ? (
-                  <div className="p-8 text-center text-sm text-black/40">Aucun examinateur</div>
-                ) : (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-black/2">
-                        <th className="text-left px-4 py-3 font-medium text-black/50 text-xs uppercase tracking-wide">Nom</th>
-                        <th className="text-left px-4 py-3 font-medium text-black/50 text-xs uppercase tracking-wide">Email</th>
-                        <th className="text-left px-4 py-3 font-medium text-black/50 text-xs uppercase tracking-wide">Matières</th>
-                        <th className="text-left px-4 py-3 font-medium text-black/50 text-xs uppercase tracking-wide">Code</th>
-                        <th className="px-4 py-3" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {examinateurs.map((ex) => (
-                        <tr key={ex.id} className="border-b last:border-0 hover:bg-black/2 transition">
-                          <td className="px-4 py-3 font-medium">{ex.nom} {ex.prenom}</td>
-                          <td className="px-4 py-3 text-black/60">{ex.email}</td>
-                          <td className="px-4 py-3">
-                            <div className="flex flex-wrap gap-1">
-                              {ex.matieres.map((m) => (
-                                <span key={m} className="text-[10px] bg-blue-50 text-blue-700 rounded px-1.5 py-0.5">{m}</span>
-                              ))}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <code className="text-xs bg-black/5 rounded px-1.5 py-0.5">{ex.code_acces}</code>
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <button onClick={() => deleteEx(ex.id)} className="text-red-400 hover:text-red-600 transition p-1">
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </>
-          )}
-
-          {tab === "affectation" && (
-            <AffectationTab planningId={selectedPlanningId} examinateurs={examinateurs} />
-          )}
-        </>
+            )}
+          </div>
+        </div>
       )}
 
       <ImportExcelModal
@@ -2888,26 +3998,28 @@ function ExaminateursSection() {
           <div className="mt-3 max-h-40 overflow-y-auto">
             <p className="text-xs font-medium text-green-700 mb-1">Codes d&apos;accès générés :</p>
             <table className="w-full text-xs">
-              <thead><tr><th className="text-left text-green-700">Nom</th><th className="text-left text-green-700">Code accès</th><th className="text-left text-green-700">Matières</th></tr></thead>
+              <thead><tr>
+                <th className="text-left text-green-700">Nom</th>
+                <th className="text-left text-green-700">Code accès</th>
+                <th className="text-left text-green-700">Matières</th>
+              </tr></thead>
               <tbody>
                 {r.examinateurs.map((e: {id: number; prenom: string; nom: string; code_acces: string; matieres: string[]}) => (
-                  <tr key={e.id}><td>{e.prenom} {e.nom}</td><td className="font-mono font-bold">{e.code_acces}</td><td>{e.matieres.join(", ")}</td></tr>
+                  <tr key={e.id}>
+                    <td>{e.prenom} {e.nom}</td>
+                    <td className="font-mono font-bold">{e.code_acces}</td>
+                    <td>{e.matieres.join(", ")}</td>
+                  </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
       />
-
-      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Nouvel examinateur">
-        <CreateExaminateurForm
-          planningId={selectedPlanningId!}
-          onCreated={() => { setShowCreate(false); loadExaminateurs(); }}
-        />
-      </Modal>
     </div>
   );
 }
+
 
 // ── Tableau de bord ─────────────────────────────────────────────────────────────
 function StatCard({
@@ -3309,8 +4421,170 @@ const MESSAGE_LABELS: Record<string, string> = {
   PUBLICATION_NOTES: "Publication des notes",
 };
 
+// ── ReferentielSection : générique Matières / Salles ──────────────────────────
+type ReferentielItem = { id: number; intitule: string; active: boolean };
+
+function ReferentielSection({
+  entite,
+  label,
+  labelPlural,
+}: {
+  entite: "matieres" | "salles";
+  label: string;
+  labelPlural: string;
+}) {
+  const [items, setItems] = useState<ReferentielItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newIntitule, setNewIntitule] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setItems(await get<ReferentielItem[]>(`parametrages/${entite}/`));
+    } finally {
+      setLoading(false);
+    }
+  }, [entite]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleCreate = async () => {
+    if (!newIntitule.trim()) return;
+    setCreating(true);
+    setError("");
+    try {
+      await post(`parametrages/${entite}/`, { intitule: newIntitule.trim(), active: true });
+      setNewIntitule("");
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const toggleActive = async (item: ReferentielItem) => {
+    try {
+      const updated = await patch<ReferentielItem>(
+        `parametrages/${entite}/${item.id}`,
+        { active: !item.active }
+      );
+      setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+    } catch (e: any) {
+      alert(e.message);
+    }
+  };
+
+  const handleDelete = async (item: ReferentielItem) => {
+    if (!confirm(`Supprimer « ${item.intitule} » ?`)) return;
+    try {
+      await del(`parametrages/${entite}/${item.id}`);
+      load();
+    } catch (e: any) {
+      alert(e.message);
+    }
+  };
+
+  const actives = items.filter((i) => i.active);
+  const inactives = items.filter((i) => !i.active);
+
+  return (
+    <div className="max-w-xl">
+      <div className="bg-white rounded-2xl border border-black/5 shadow-sm overflow-hidden">
+        {/* Formulaire d'ajout */}
+        <div className="p-5 border-b border-black/5">
+          <p className="text-xs font-semibold text-black/40 uppercase tracking-wide mb-3">
+            Nouvelle {label.toLowerCase()}
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newIntitule}
+              onChange={(e) => setNewIntitule(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+              placeholder={`Intitulé de la ${label.toLowerCase()}…`}
+              className="flex-1 rounded-lg border border-black/15 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
+            />
+            <Btn
+              label={creating ? "…" : "Ajouter"}
+              icon={Plus}
+              onClick={handleCreate}
+              disabled={creating || !newIntitule.trim()}
+              small
+            />
+          </div>
+          {error && <p className="text-xs text-red-500 mt-2">{error}</p>}
+        </div>
+
+        {/* Liste */}
+        {loading ? (
+          <div className="flex justify-center py-10"><Spinner /></div>
+        ) : items.length === 0 ? (
+          <div className="py-10 text-center text-sm text-black/30">
+            Aucune {labelPlural} enregistrée
+          </div>
+        ) : (
+          <div className="divide-y divide-black/5">
+            {actives.map((item) => (
+              <div key={item.id} className="flex items-center gap-3 px-5 py-3">
+                <span className="flex-1 text-sm font-medium text-black/80">{item.intitule}</span>
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
+                  Actif
+                </span>
+                <button
+                  onClick={() => toggleActive(item)}
+                  className="text-xs text-black/40 hover:text-amber-600 transition px-2 py-1 rounded border border-black/10 hover:border-amber-300"
+                >
+                  Désactiver
+                </button>
+                <button
+                  onClick={() => handleDelete(item)}
+                  className="text-black/20 hover:text-red-500 transition"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+            {inactives.length > 0 && (
+              <>
+                <div className="px-5 py-2 bg-black/[0.02]">
+                  <span className="text-[10px] font-semibold text-black/30 uppercase tracking-wide">
+                    Inactives ({inactives.length})
+                  </span>
+                </div>
+                {inactives.map((item) => (
+                  <div key={item.id} className="flex items-center gap-3 px-5 py-3 opacity-50">
+                    <span className="flex-1 text-sm text-black/60 line-through">{item.intitule}</span>
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-black/40 border border-black/10 font-medium">
+                      Inactif
+                    </span>
+                    <button
+                      onClick={() => toggleActive(item)}
+                      className="text-xs text-black/40 hover:text-emerald-600 transition px-2 py-1 rounded border border-black/10 hover:border-emerald-300"
+                    >
+                      Activer
+                    </button>
+                    <button
+                      onClick={() => handleDelete(item)}
+                      className="text-black/20 hover:text-red-500 transition"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ParametragesSection() {
-  const [tab, setTab] = useState<"messages" | "mdp">("messages");
+  const [tab, setTab] = useState<"matieres" | "salles" | "messages" | "mdp">("matieres");
   const [messages, setMessages] = useState<MessageType[]>([]);
   const [selected, setSelected] = useState<MessageType | null>(null);
   const [sujet, setSujet] = useState("");
@@ -3383,6 +4657,8 @@ function ParametragesSection() {
   };
 
   const tabs = [
+    { key: "matieres" as const, label: "Matières" },
+    { key: "salles" as const, label: "Salles" },
     { key: "messages" as const, label: "Messages-type" },
     { key: "mdp" as const, label: "Mots de passe" },
   ];
@@ -3406,6 +4682,12 @@ function ParametragesSection() {
           </button>
         ))}
       </div>
+
+      {/* ── Matières ── */}
+      {tab === "matieres" && <ReferentielSection entite="matieres" label="Matière" labelPlural="matières" />}
+
+      {/* ── Salles ── */}
+      {tab === "salles" && <ReferentielSection entite="salles" label="Salle" labelPlural="salles" />}
 
       {/* ── Messages-type ── */}
       {tab === "messages" && (

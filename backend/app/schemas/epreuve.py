@@ -56,6 +56,7 @@ class EpreuveOut(BaseModel):
     heure_debut: time
     heure_fin: time
     statut: str
+    preparation_minutes: Optional[int] = None
     candidat_id: Optional[int] = None
     candidat_nom: Optional[str] = None
     candidat_prenom: Optional[str] = None

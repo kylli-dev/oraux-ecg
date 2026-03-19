@@ -1,5 +1,5 @@
 from datetime import date as Date
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
@@ -119,16 +119,21 @@ def apply_jt(planning_id: int, body: ApplyJourneeTypeIn, db: Session = Depends(g
 # ── Liste épreuves d'un planning ──────────────────────────────────────────────
 
 @router.get("/{planning_id}/epreuves")
-def list_epreuves_planning(planning_id: int, db: Session = Depends(get_db)):
+def list_epreuves_planning(
+    planning_id: int,
+    examinateur_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
     """Retourne toutes les épreuves d'un planning avec leur date et examinateur."""
     from app.models.examinateur import Examinateur as ExaminateurModel
-    rows = (
+    q = (
         db.query(Epreuve, DemiJournee)
         .join(DemiJournee, Epreuve.demi_journee_id == DemiJournee.id)
         .filter(DemiJournee.planning_id == planning_id)
-        .order_by(DemiJournee.date, Epreuve.heure_debut)
-        .all()
     )
+    if examinateur_id is not None:
+        q = q.filter(Epreuve.examinateur_id == examinateur_id)
+    rows = q.order_by(DemiJournee.date, Epreuve.heure_debut).all()
     result = []
     for epreuve, dj in rows:
         candidat = db.get(Candidat, epreuve.candidat_id) if epreuve.candidat_id else None
@@ -140,6 +145,7 @@ def list_epreuves_planning(planning_id: int, db: Session = Depends(get_db)):
             "matiere": epreuve.matiere,
             "heure_debut": str(epreuve.heure_debut)[:5],
             "heure_fin": str(epreuve.heure_fin)[:5],
+            "preparation_minutes": epreuve.preparation_minutes,
             "statut": epreuve.statut,
             "candidat_id": candidat.id if candidat else None,
             "candidat_nom": candidat.nom if candidat else None,
@@ -355,3 +361,4 @@ def dashboard(planning_id: int, db: Session = Depends(get_db)):
         "by_matiere": by_matiere,
         "by_date": by_date,
     }
+

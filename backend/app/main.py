@@ -24,6 +24,9 @@ from app.models import (  # noqa: F401
     ListeAttente,
     Note,
     MessageType,
+    Matiere,
+    Salle,
+    ExaminateurIndisponibilite,
 )
 
 from app.api.plannings import router as plannings_router
@@ -92,6 +95,25 @@ def _run_migrations():
         "ALTER TABLE journee_type ADD COLUMN preparation_defaut_minutes INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE journee_type_bloc ADD COLUMN preparation_minutes INTEGER",
         "ALTER TABLE epreuve ADD COLUMN preparation_minutes INTEGER",
+        "ALTER TABLE examinateur ADD COLUMN actif INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE examinateur ADD COLUMN etablissement VARCHAR(200)",
+        "ALTER TABLE examinateur ADD COLUMN telephone VARCHAR(30)",
+        "ALTER TABLE examinateur ADD COLUMN commentaire VARCHAR(1000)",
+        # Candidat — champs import complet
+        "ALTER TABLE candidat ADD COLUMN code_candidat VARCHAR(50)",
+        "ALTER TABLE candidat ADD COLUMN numero_ine VARCHAR(20)",
+        "ALTER TABLE candidat ADD COLUMN civilite VARCHAR(10)",
+        "ALTER TABLE candidat ADD COLUMN date_naissance VARCHAR(20)",
+        "ALTER TABLE candidat ADD COLUMN tel_portable VARCHAR(30)",
+        "ALTER TABLE candidat ADD COLUMN qualite VARCHAR(50)",
+        "ALTER TABLE candidat ADD COLUMN handicape INTEGER",
+        "ALTER TABLE candidat ADD COLUMN cp VARCHAR(10)",
+        "ALTER TABLE candidat ADD COLUMN ville VARCHAR(100)",
+        "ALTER TABLE candidat ADD COLUMN libelle_pays VARCHAR(100)",
+        "ALTER TABLE candidat ADD COLUMN classe VARCHAR(50)",
+        "ALTER TABLE candidat ADD COLUMN etablissement VARCHAR(200)",
+        "ALTER TABLE candidat ADD COLUMN ville_etablissement VARCHAR(100)",
+        "ALTER TABLE candidat ADD COLUMN departement_etablissement VARCHAR(100)",
     ]
     with engine.connect() as conn:
         for sql in migrations:

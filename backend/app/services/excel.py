@@ -349,6 +349,202 @@ def export_template_examinateurs() -> bytes:
     return buf.getvalue()
 
 
+# ── Template candidats complet (18 champs) ────────────────────────────────────
+
+CANDIDATS_COMPLET_HEADERS = [
+    "CODE_CANDIDAT",
+    "NUMERO_INE",
+    "CIVILITE",
+    "NOM",
+    "PRENOM",
+    "DATE_NAISSANCE",
+    "QUALITE",
+    "HANDICAPE",
+    "CP",
+    "VILLE",
+    "LIBELLE_PAYS",
+    "TEL_PORTABLE",
+    "EMAIL",
+    "CLASSE",
+    "NUMERO_RNE",
+    "ETABLISSEMENT",
+    "VILLE_ETABLISSEMENT",
+    "DEPARTEMENT_ETABLISSEMENT",
+]
+
+
+def export_template_candidats_complet() -> bytes:
+    """Fichier modèle d'import candidats avec les 18 champs du concours."""
+    wb = openpyxl.Workbook()
+
+    # ── Feuille 1 : données ───────────────────────────────────────────────────
+    ws = wb.active
+    ws.title = "Candidats"
+    _header_row(ws, CANDIDATS_COMPLET_HEADERS)
+
+    # Ligne d'exemple
+    ws.append([
+        "15617",                          # CODE_CANDIDAT
+        "070164375KA",                    # NUMERO_INE
+        "M.",                             # CIVILITE  (M. / Mme.)
+        "IKSIL",                          # NOM
+        "Raphaël",                        # PRENOM
+        "30/03/2005",                     # DATE_NAISSANCE  (DD/MM/YYYY)
+        "Non boursier",                   # QUALITE
+        "Non",                            # HANDICAPE  (Oui / Non)
+        "75015",                          # CP
+        "Paris",                          # VILLE
+        "France",                         # LIBELLE_PAYS
+        "0638348849",                     # TEL_PORTABLE
+        "raphaeliksil@gmail.com",         # EMAIL
+        "ECG - Maths approfondies et HGG",  # CLASSE
+        "0750658H",                       # NUMERO_RNE
+        "Lycée Saint-Louis",              # ETABLISSEMENT
+        "Paris",                          # VILLE_ETABLISSEMENT
+        "75",                             # DEPARTEMENT_ETABLISSEMENT
+    ])
+
+    # Validation CIVILITE
+    from openpyxl.worksheet.datavalidation import DataValidation
+    dv_civilite = DataValidation(type="list", formula1='"M.,Mme."', allow_blank=True)
+    ws.add_data_validation(dv_civilite)
+    dv_civilite.sqref = "C2:C5000"
+
+    # Validation HANDICAPE
+    dv_handicap = DataValidation(type="list", formula1='"Oui,Non"', allow_blank=True)
+    ws.add_data_validation(dv_handicap)
+    dv_handicap.sqref = "H2:H5000"
+
+    _autosize(ws)
+
+    # ── Feuille 2 : instructions ──────────────────────────────────────────────
+    ws2 = wb.create_sheet("Instructions")
+    instructions = [
+        ("Champ", "Description", "Format", "Obligatoire"),
+        ("CODE_CANDIDAT", "Code candidat attribué par le concours", "Texte libre", "Non"),
+        ("NUMERO_INE", "Identifiant national élève (11 caractères)", "Alphanumérique", "Non"),
+        ("CIVILITE", "Civilité", "M. ou Mme.", "Non"),
+        ("NOM", "Nom de famille (majuscules recommandées)", "Texte", "Oui"),
+        ("PRENOM", "Prénom", "Texte", "Oui"),
+        ("DATE_NAISSANCE", "Date de naissance", "DD/MM/YYYY", "Non"),
+        ("QUALITE", "Qualité / statut concours (ex : ADMISSIBLE)", "Texte", "Non"),
+        ("HANDICAPE", "Aménagement handicap", "Oui ou Non", "Non"),
+        ("CP", "Code postal du domicile", "Texte (5 chiffres)", "Non"),
+        ("VILLE", "Ville du domicile", "Texte", "Non"),
+        ("LIBELLE_PAYS", "Pays du domicile", "Texte", "Non"),
+        ("TEL_PORTABLE", "Numéro de téléphone portable", "Texte", "Non"),
+        ("EMAIL", "Adresse e-mail (utilisée comme login)", "Email valide", "Oui"),
+        ("CLASSE", "Classe (ex : ECG1, ECG2)", "Texte", "Non"),
+        ("NUMERO_RNE", "Numéro RNE / code UAI de l'établissement", "8 caractères", "Non"),
+        ("ETABLISSEMENT", "Nom de l'établissement d'origine", "Texte", "Non"),
+        ("VILLE_ETABLISSEMENT", "Ville de l'établissement", "Texte", "Non"),
+        ("DEPARTEMENT_ETABLISSEMENT", "Département de l'établissement", "Texte", "Non"),
+    ]
+    for row in instructions:
+        ws2.append(row)
+    # Mettre en forme l'en-tête
+    for cell in ws2[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor=RED_HEX)
+        cell.alignment = Alignment(horizontal="center")
+    _autosize(ws2)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def import_candidats_complet(db: Session, planning_id: int, file_bytes: bytes) -> dict:
+    """
+    Importe des candidats depuis le template complet (18 colonnes).
+    Colonnes lues par en-tête (insensible à la casse).
+    """
+    from app.core.auth import hash_password
+
+    planning = db.get(Planning, planning_id)
+    if not planning:
+        raise ValueError("Planning not found")
+
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    ws = wb.active
+
+    # Lire les en-têtes (ligne 1) pour mapper colonne → index
+    headers_row = [str(c.value or "").strip().upper() for c in next(ws.iter_rows(min_row=1, max_row=1))]
+    col = {h: i for i, h in enumerate(headers_row)}
+
+    def _get(row, name: str) -> str | None:
+        idx = col.get(name)
+        if idx is None or idx >= len(row):
+            return None
+        v = row[idx]
+        return str(v).strip() if v is not None else None
+
+    def _bool(val: str | None) -> bool | None:
+        if val is None:
+            return None
+        return val.upper() in ("OUI", "1", "TRUE", "VRAI", "YES")
+
+    created = []
+    errors: list[str] = []
+
+    for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        if not any(row):
+            continue
+        try:
+            nom = _get(row, "NOM")
+            prenom = _get(row, "PRENOM")
+            email = _get(row, "EMAIL")
+
+            if not all([nom, prenom, email]):
+                errors.append(f"Ligne {i} : NOM, PRENOM et EMAIL sont obligatoires")
+                continue
+
+            plain_pwd = secrets.token_urlsafe(8)
+            profil = _get(row, "QUALITE")  # mapping simplifié
+
+            c = Candidat(
+                planning_id=planning_id,
+                nom=nom,
+                prenom=prenom,
+                email=email,
+                login=email,
+                password_hash=hash_password(plain_pwd),
+                statut="INSCRIT",
+                # Champs import complet
+                code_candidat=_get(row, "CODE_CANDIDAT"),
+                numero_ine=_get(row, "NUMERO_INE"),
+                civilite=_get(row, "CIVILITE"),
+                date_naissance=_get(row, "DATE_NAISSANCE"),
+                tel_portable=_get(row, "TEL_PORTABLE"),
+                qualite=_get(row, "QUALITE"),
+                handicape=_bool(_get(row, "HANDICAPE")),
+                cp=_get(row, "CP"),
+                ville=_get(row, "VILLE"),
+                libelle_pays=_get(row, "LIBELLE_PAYS"),
+                classe=_get(row, "CLASSE"),
+                code_uai=_get(row, "NUMERO_RNE"),
+                etablissement=_get(row, "ETABLISSEMENT"),
+                ville_etablissement=_get(row, "VILLE_ETABLISSEMENT"),
+                departement_etablissement=_get(row, "DEPARTEMENT_ETABLISSEMENT"),
+            )
+            db.add(c)
+            db.flush()
+            created.append({
+                "id": c.id,
+                "nom": nom,
+                "prenom": prenom,
+                "email": email,
+                "login": email,
+                "password_provisoire": plain_pwd,
+                "code_candidat": c.code_candidat,
+            })
+        except Exception as ex:
+            errors.append(f"Ligne {i} : {ex}")
+
+    db.commit()
+    return {"created": len(created), "candidats": created, "errors": errors}
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _header_row(ws, headers: list):

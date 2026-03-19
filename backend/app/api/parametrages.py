@@ -14,6 +14,8 @@ from app.db.deps import get_db
 from app.models.candidat import Candidat
 from app.models.examinateur import Examinateur
 from app.models.message_type import MessageType
+from app.models.matiere import Matiere
+from app.models.salle import Salle
 
 router = APIRouter(
     prefix="/admin/parametrages",
@@ -114,6 +116,42 @@ class ResetPasswordOut(BaseModel):
     new_password: str
 
 
+class MatiereCreate(BaseModel):
+    intitule: str
+    active: bool = True
+
+
+class MatiereUpdate(BaseModel):
+    active: bool
+
+
+class MatiereOut(BaseModel):
+    id: int
+    intitule: str
+    active: bool
+
+    class Config:
+        from_attributes = True
+
+
+class SalleCreate(BaseModel):
+    intitule: str
+    active: bool = True
+
+
+class SalleUpdate(BaseModel):
+    active: bool
+
+
+class SalleOut(BaseModel):
+    id: int
+    intitule: str
+    active: bool
+
+    class Config:
+        from_attributes = True
+
+
 # ── Routes message-types ────────────────────────────────────────────────────────
 
 @router.get("/message-types/", response_model=List[MessageTypeOut])
@@ -178,9 +216,82 @@ def reset_password_examinateur(examinateur_id: int, db: Session = Depends(get_db
         raise HTTPException(status_code=404, detail="Examinateur introuvable")
 
     new_pwd = secrets.token_urlsafe(8)
-    # Examinateur n'a pas encore de password_hash — on le note pour future implémentation
-    # ex.password_hash = hash_password(new_pwd)
-    # db.commit()
-    # TODO: envoyer email
-
     return ResetPasswordOut(login=ex.email, new_password=new_pwd)
+
+
+# ── Matières ────────────────────────────────────────────────────────────────────
+
+@router.get("/matieres/", response_model=List[MatiereOut])
+def list_matieres(db: Session = Depends(get_db)):
+    return db.query(Matiere).order_by(Matiere.intitule).all()
+
+
+@router.post("/matieres/", response_model=MatiereOut, status_code=201)
+def create_matiere(body: MatiereCreate, db: Session = Depends(get_db)):
+    existing = db.query(Matiere).filter_by(intitule=body.intitule).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Cette matière existe déjà.")
+    m = Matiere(**body.model_dump())
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+    return m
+
+
+@router.patch("/matieres/{matiere_id}", response_model=MatiereOut)
+def update_matiere(matiere_id: int, body: MatiereUpdate, db: Session = Depends(get_db)):
+    m = db.get(Matiere, matiere_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Matière introuvable")
+    m.active = body.active
+    db.commit()
+    db.refresh(m)
+    return m
+
+
+@router.delete("/matieres/{matiere_id}", status_code=204)
+def delete_matiere(matiere_id: int, db: Session = Depends(get_db)):
+    m = db.get(Matiere, matiere_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Matière introuvable")
+    db.delete(m)
+    db.commit()
+
+
+# ── Salles ──────────────────────────────────────────────────────────────────────
+
+@router.get("/salles/", response_model=List[SalleOut])
+def list_salles(db: Session = Depends(get_db)):
+    return db.query(Salle).order_by(Salle.intitule).all()
+
+
+@router.post("/salles/", response_model=SalleOut, status_code=201)
+def create_salle(body: SalleCreate, db: Session = Depends(get_db)):
+    existing = db.query(Salle).filter_by(intitule=body.intitule).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Cette salle existe déjà.")
+    s = Salle(**body.model_dump())
+    db.add(s)
+    db.commit()
+    db.refresh(s)
+    return s
+
+
+@router.patch("/salles/{salle_id}", response_model=SalleOut)
+def update_salle(salle_id: int, body: SalleUpdate, db: Session = Depends(get_db)):
+    s = db.get(Salle, salle_id)
+    if not s:
+        raise HTTPException(status_code=404, detail="Salle introuvable")
+    s.active = body.active
+    db.commit()
+    db.refresh(s)
+    return s
+
+
+@router.delete("/salles/{salle_id}", status_code=204)
+def delete_salle(salle_id: int, db: Session = Depends(get_db)):
+    s = db.get(Salle, salle_id)
+    if not s:
+        raise HTTPException(status_code=404, detail="Salle introuvable")
+    db.delete(s)
+    db.commit()

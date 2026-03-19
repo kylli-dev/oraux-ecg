@@ -1,195 +1,183 @@
-import React, { useMemo, useState } from "react";
-import { motion } from "framer-motion";
+"use client";
+
+import React, { useState, useEffect, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  Search,
-  Plus,
   ChevronLeft,
   ChevronRight,
   LayoutGrid,
-  CalendarDays,
-  Users,
-  UserCog,
-  ClipboardCheck,
-  Database,
-  Upload,
-  Download,
-  Menu,
-  X,
+  Wand2,
+  RefreshCw,
+  Sun,
+  Sunset,
+  CheckCircle2,
+  Lock,
+  EyeOff,
 } from "lucide-react";
 
 const ENSAE_RED = "#C62828";
 
-const rowsSeed = [
-  { time: "09:00", subject: "Math", candidate: "Dupont", examiner: "Martin", room: "A101" },
-  { time: "10:00", subject: "Anglais", candidate: "—", examiner: "Martin", room: "A102" },
-  { time: "11:00", subject: "Math", candidate: "Bernard B", examiner: "Martin", room: "A103" },
-  { time: "12:00", subject: "Anglais", candidate: "Martin C", examiner: "Martin", room: "A104" },
-  { time: "13:00", subject: "HGG", candidate: "Bernard B", examiner: "Martin", room: "A105" },
-  { time: "14:00", subject: "Math", candidate: "Dupont", examiner: "Martin", room: "A106" },
-  { time: "15:00", subject: "Anglais", candidate: "—", examiner: "Martin", room: "A107" },
-  { time: "16:00", subject: "ESH", candidate: "Martin C", examiner: "Martin", room: "A108" },
+// ── API ────────────────────────────────────────────────────────────────────────
+async function apiFetch(method, path, body) {
+  const res = await fetch(`/api/backend/${path}`, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+    cache: "no-store",
+  });
+  if (res.status === 204) return null;
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.detail ?? JSON.stringify(data));
+  return data;
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function minutesToHM(total) {
+  const h = Math.floor(((total % 1440) + 1440) % 1440 / 60);
+  const m = ((total % 60) + 60) % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function hmToMinutes(t) {
+  if (!t) return 0;
+  const [h, m] = t.slice(0, 5).split(":").map(Number);
+  return h * 60 + m;
+}
+
+function buildMatrix(bloc) {
+  const { matieres, duree_minutes, preparation_minutes, pause_minutes, heure_debut } = bloc;
+  const N = matieres.length;
+  if (N === 0) return [];
+  const Nsq = N * N;
+  const duree = duree_minutes;
+  const prep = preparation_minutes ?? 0;
+  const pause = pause_minutes ?? 0;
+  const start = hmToMinutes(heure_debut);
+
+  return Array.from({ length: Nsq }, (_, i) => {
+    const dPrepa = start + i * (duree + pause);
+    const dExam = dPrepa + prep;
+    const fExam = dExam + duree;
+    return {
+      index: i,
+      deb_prepa: minutesToHM(dPrepa),
+      deb_exam: minutesToHM(dExam),
+      fin_exam: minutesToHM(fExam),
+      // candidat k pour la colonne matière j : k = (i - j*N + Nsq*N) % Nsq
+      candidates: matieres.map((_, j) => ((i - j * N) % Nsq + Nsq) % Nsq),
+    };
+  });
+}
+
+const TRIPLET_BG = [
+  "#FEF9C3","#DCFCE7","#DBEAFE","#FCE7F3","#FEE2E2",
+  "#FFEDD5","#F3E8FF","#ECFDF5","#E0F2FE","#F0FDF4",
+  "#FFF7ED","#EFF6FF","#FDF4FF","#F0FDFA","#FAFAFA",
+];
+const TRIPLET_RING = [
+  "#FDE047","#86EFAC","#93C5FD","#F9A8D4","#FCA5A5",
+  "#FDBA74","#D8B4FE","#6EE7B7","#7DD3FC","#4ADE80",
+  "#FB923C","#60A5FA","#C084FC","#2DD4BF","#A1A1AA",
 ];
 
-const menu = [
-  {
-    title: "Organisation",
-    items: [
-      { label: "Planning", icon: CalendarDays, key: "planning" },
-      { label: "Candidats", icon: Users, key: "candidats" },
-      { label: "Intervenants", icon: UserCog, key: "intervenants" },
-    ],
-  },
-  {
-    title: "Évaluations",
-    items: [{ label: "Notes", icon: ClipboardCheck, key: "notes" }],
-  },
-  {
-    title: "Données",
-    items: [{ label: "Imports & Exports", icon: Database, key: "imports" }],
-  },
+const STATUT_OPTIONS = [
+  { value: "LIBRE",      label: "Libre",       icon: CheckCircle2, color: "#15803D", bg: "#F0FDF4" },
+  { value: "PRERESERVE", label: "Préréservé",   icon: Lock,         color: "#B45309", bg: "#FFFBEB" },
+  { value: "CREE",       label: "Créé",         icon: EyeOff,       color: "#7C3AED", bg: "#FAF5FF" },
 ];
 
-function classNames(...c) {
-  return c.filter(Boolean).join(" ");
-}
-
-function LogoENSAE() {
-  return (
-    <div className="flex items-center gap-3">
-      <div className="h-10 w-10 rounded-full border border-white/35 grid place-items-center">
-        <div className="h-6 w-6 rounded-full border border-white/50" />
-      </div>
-      <div className="leading-tight">
-        <div className="text-white font-semibold tracking-wide">ENSAE</div>
-        <div className="text-white/80 text-xs">IP Paris</div>
-      </div>
-    </div>
-  );
-}
-
-function Sidebar({ active, onSelect }) {
-  return (
-    <aside
-      className="h-full w-[240px] shrink-0 text-white"
-      style={{ backgroundColor: ENSAE_RED }}
-    >
-      <div className="p-5">
-        <LogoENSAE />
-      </div>
-
-      <nav className="px-3 pb-6">
-        {menu.map((group) => (
-          <div key={group.title} className="mb-5">
-            <div className="px-3 py-2 text-xs uppercase tracking-wider text-white/70">
-              {group.title}
-            </div>
-            <div className="space-y-1">
-              {group.items.map((item) => {
-                const Icon = item.icon;
-                const isActive = active === item.key;
-                return (
-                  <button
-                    key={item.key}
-                    onClick={() => onSelect(item.key)}
-                    className={classNames(
-                      "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition",
-                      "focus:outline-none focus:ring-2 focus:ring-white/30",
-                      isActive ? "bg-white/18" : "hover:bg-black/10"
-                    )}
-                  >
-                    <Icon className="h-4 w-4" />
-                    <span className="text-sm">{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
-
-        <div className="mt-2 px-3">
-          <div className="h-px bg-white/15" />
-        </div>
-
-        <div className="px-3 pt-4 text-xs text-white/70">
-          <div className="flex items-center gap-2">
-            <LayoutGrid className="h-4 w-4" />
-            <span>Back-office</span>
-          </div>
-        </div>
-      </nav>
-    </aside>
-  );
-}
-
-function TopTitle({ title }) {
-  return (
-    <div className="flex items-center justify-center gap-3">
-      <button
-        className="h-9 w-9 grid place-items-center rounded-lg bg-white shadow-sm border border-black/5 hover:bg-black/[0.02] transition"
-        aria-label="Semaine précédente"
-      >
-        <ChevronLeft className="h-4 w-4" />
-      </button>
-      <div className="text-lg md:text-xl font-semibold">{title}</div>
-      <button
-        className="h-9 w-9 grid place-items-center rounded-lg bg-white shadow-sm border border-black/5 hover:bg-black/[0.02] transition"
-        aria-label="Semaine suivante"
-      >
-        <ChevronRight className="h-4 w-4" />
-      </button>
-    </div>
-  );
-}
-
-function ActionPill({ label, onClick }) {
+// ── Cellule triplet ────────────────────────────────────────────────────────────
+function TripletCell({ k, statut, onClick }) {
+  const statutOpt = STATUT_OPTIONS.find((s) => s.value === statut) ?? STATUT_OPTIONS[0];
   return (
     <button
-      onClick={onClick}
-      className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-white shadow-sm transition focus:outline-none focus:ring-2 focus:ring-black/10"
-      style={{ backgroundColor: ENSAE_RED }}
-      onMouseEnter={(e) => (e.currentTarget.style.filter = "brightness(0.95)")}
-      onMouseLeave={(e) => (e.currentTarget.style.filter = "brightness(1)")}
+      onClick={() => onClick(k)}
+      title={`Triplet T${k + 1} — ${statutOpt.label}`}
+      className="inline-flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-lg font-semibold text-[11px] text-gray-700 transition hover:scale-105 active:scale-95"
+      style={{
+        backgroundColor: statut !== "LIBRE" ? statutOpt.bg : TRIPLET_BG[k % TRIPLET_BG.length],
+        outline: `1.5px solid ${statut !== "LIBRE" ? statutOpt.color + "60" : TRIPLET_RING[k % TRIPLET_RING.length]}`,
+        color: statut !== "LIBRE" ? statutOpt.color : "#374151",
+        minWidth: 48,
+      }}
     >
-      <Plus className="h-4 w-4" />
-      <span>{label}</span>
+      <span>T{k + 1}</span>
+      {statut !== "LIBRE" && (
+        <span className="text-[9px] font-medium opacity-80">{statutOpt.label}</span>
+      )}
     </button>
   );
 }
 
-function Table({ rows }) {
+// ── Matrice journée type ───────────────────────────────────────────────────────
+function MatriceJourneeType({ bloc, tripletStatuts, onTripletClick }) {
+  const matrix = buildMatrix(bloc);
+  const N = bloc.matieres.length;
+  const Nsq = N * N;
+  const isMatin = hmToMinutes(bloc.heure_debut) < 12 * 60;
+  const accentColor = isMatin ? "#F59E0B" : "#6366F1";
+  const accentBg = isMatin ? "#FFFBEB" : "#EEF2FF";
+
+  if (matrix.length === 0) return null;
+
   return (
-    <div className="rounded-lg bg-white shadow-sm border border-black/5 overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="min-w-[820px] w-full">
+    <div className="mb-6">
+      {/* En-tête demi-journée */}
+      <div
+        className="flex items-center gap-3 px-4 py-2.5 rounded-xl mb-3"
+        style={{ backgroundColor: accentBg, borderLeft: `4px solid ${accentColor}` }}
+      >
+        {isMatin
+          ? <Sun className="h-4 w-4 shrink-0" style={{ color: accentColor }} />
+          : <Sunset className="h-4 w-4 shrink-0" style={{ color: accentColor }} />
+        }
+        <span className="font-semibold text-sm" style={{ color: accentColor }}>
+          {isMatin ? "Matin" : "Après-midi"}
+        </span>
+        <span className="text-xs text-black/40 ml-1">
+          {bloc.heure_debut?.slice(0, 5)} → {matrix[Nsq - 1]?.fin_exam}
+        </span>
+        <span className="ml-auto text-xs text-black/40">
+          {N} matière(s) · {Nsq} créneaux · {Nsq * (bloc.salles_par_matiere ?? 1)} candidats/session
+        </span>
+      </div>
+
+      {/* Grille */}
+      <div className="overflow-x-auto rounded-xl border border-black/8 bg-white">
+        <table className="w-full border-collapse text-xs">
           <thead>
-            <tr className="bg-[#F5F5F5] text-left">
-              {[
-                { k: "time", label: "Heure" },
-                { k: "subject", label: "Matière" },
-                { k: "candidate", label: "Candidat" },
-                { k: "examiner", label: "Examinateur" },
-                { k: "room", label: "Salle" },
-              ].map((h) => (
-                <th
-                  key={h.k}
-                  className="px-6 py-4 text-xs font-semibold tracking-wide text-black/70"
-                >
-                  {h.label}
+            <tr style={{ backgroundColor: accentColor + "10" }}>
+              <th className="text-left px-3 py-2 text-black/40 font-medium border-b border-black/8 whitespace-nowrap">Dép. prépa</th>
+              <th className="text-left px-3 py-2 text-black/60 font-semibold border-b border-black/8 whitespace-nowrap">Dép. exam</th>
+              <th className="text-left px-3 py-2 text-black/40 font-medium border-b border-black/8 whitespace-nowrap">Fin exam</th>
+              <th className="px-2 py-2 text-black/30 font-medium border-b border-black/8 text-center w-8">N°</th>
+              {bloc.matieres.map((m) => (
+                <th key={m} className="text-center px-3 py-2 font-semibold border-b border-black/8 whitespace-nowrap" style={{ color: accentColor }}>
+                  {m}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, idx) => (
-              <tr
-                key={idx}
-                className="border-t border-black/5 hover:bg-black/[0.015] transition"
-              >
-                <td className="px-6 py-4 text-sm text-black/85">{r.time}</td>
-                <td className="px-6 py-4 text-sm text-black/85">{r.subject}</td>
-                <td className="px-6 py-4 text-sm text-black/85">{r.candidate}</td>
-                <td className="px-6 py-4 text-sm text-black/85">{r.examiner}</td>
-                <td className="px-6 py-4 text-sm text-black/85">{r.room}</td>
+            {matrix.map((row, idx) => (
+              <tr key={idx} className={`border-b border-black/5 last:border-0 ${idx % 2 === 0 ? "bg-white" : "bg-black/[0.012]"}`}>
+                <td className="px-3 py-1.5 font-mono text-black/35">{row.deb_prepa}</td>
+                <td className="px-3 py-1.5 font-mono font-semibold text-black/80">{row.deb_exam}</td>
+                <td className="px-3 py-1.5 font-mono text-black/45">{row.fin_exam}</td>
+                <td className="px-2 py-1.5 text-center">
+                  <span className="text-[10px] font-mono font-bold text-black/25 bg-black/5 rounded px-1.5 py-0.5">
+                    {idx + 1}
+                  </span>
+                </td>
+                {row.candidates.map((k, j) => (
+                  <td key={j} className="px-2 py-1.5 text-center">
+                    <TripletCell
+                      k={k}
+                      statut={tripletStatuts[k] ?? "LIBRE"}
+                      onClick={onTripletClick}
+                    />
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>
@@ -199,178 +187,355 @@ function Table({ rows }) {
   );
 }
 
-function Pagination({ page, setPage, total = 4 }) {
+// ── Légende statuts ────────────────────────────────────────────────────────────
+function LegendeStatuts({ tripletStatuts, onTripletClick, N }) {
+  const Nsq = N * N;
+  const groupes = STATUT_OPTIONS.map((opt) => ({
+    ...opt,
+    triplets: Array.from({ length: Nsq }, (_, k) => k).filter(
+      (k) => (tripletStatuts[k] ?? "LIBRE") === opt.value
+    ),
+  })).filter((g) => g.triplets.length > 0);
+
   return (
-    <div className="flex items-center justify-center gap-2 pt-5">
-      <button
-        className="h-9 w-9 rounded-full grid place-items-center hover:bg-black/[0.04] transition"
-        aria-label="Page précédente"
-        onClick={() => setPage((p) => Math.max(1, p - 1))}
-      >
-        <ChevronLeft className="h-4 w-4" />
-      </button>
-
-      {Array.from({ length: total }).map((_, i) => {
-        const n = i + 1;
-        const isActive = n === page;
-        return (
-          <button
-            key={n}
-            onClick={() => setPage(n)}
-            className={classNames(
-              "h-9 w-9 rounded-full grid place-items-center text-sm font-medium transition",
-              isActive ? "text-white shadow-sm" : "text-black/60 hover:bg-black/[0.04]"
-            )}
-            style={isActive ? { backgroundColor: ENSAE_RED } : undefined}
-            aria-current={isActive ? "page" : undefined}
-          >
-            {n}
-          </button>
-        );
-      })}
-
-      <button
-        className="h-9 w-9 rounded-full grid place-items-center hover:bg-black/[0.04] transition"
-        aria-label="Page suivante"
-        onClick={() => setPage((p) => Math.min(total, p + 1))}
-      >
-        <ChevronRight className="h-4 w-4" />
-      </button>
+    <div className="space-y-3">
+      <p className="text-xs font-semibold text-black/40 uppercase tracking-wide">
+        Statut par triplet — cliquez pour changer
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {groupes.map((g) => {
+          const Icon = g.icon;
+          return (
+            <div key={g.value} className="flex items-center gap-2 rounded-lg border px-3 py-1.5" style={{ borderColor: g.color + "40", backgroundColor: g.bg }}>
+              <Icon className="h-3 w-3" style={{ color: g.color }} />
+              <span className="text-xs font-medium" style={{ color: g.color }}>{g.label}</span>
+              <span className="text-xs text-black/40">({g.triplets.length})</span>
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-[11px] text-black/35">
+        Cliquez sur un triplet dans la matrice pour le basculer : Libre → Préréservé → Créé → Libre
+      </p>
     </div>
   );
 }
 
-function MobileSidebar({ open, onClose, active, onSelect }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: open ? 1 : 0 }}
-      className={classNames(
-        "fixed inset-0 z-50 md:hidden",
-        open ? "pointer-events-auto" : "pointer-events-none"
-      )}
-      aria-hidden={!open}
-    >
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <motion.div
-        initial={{ x: -280 }}
-        animate={{ x: open ? 0 : -280 }}
-        transition={{ type: "spring", stiffness: 260, damping: 24 }}
-        className="absolute left-0 top-0 h-full"
-      >
-        <div className="h-full">
-          <Sidebar
-            active={active}
-            onSelect={(k) => {
-              onSelect(k);
-              onClose();
-            }}
-          />
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-}
-
+// ── Composant principal ────────────────────────────────────────────────────────
 export default function InterfaceAdminENSAEPlanning() {
-  const [active, setActive] = useState("planning");
-  const [query, setQuery] = useState("");
-  const [page, setPage] = useState(1);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [journeeTypes, setJourneeTypes] = useState([]);
+  const [plannings, setPlannings] = useState([]);
+  const [selectedJT, setSelectedJT] = useState(null);
+  const [blocs, setBlocs] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  const rows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return rowsSeed;
-    return rowsSeed.filter((r) =>
-      [r.time, r.subject, r.candidate, r.examiner, r.room]
-        .join(" ")
-        .toLowerCase()
-        .includes(q)
-    );
-  }, [query]);
+  // Statuts par triplet (k → "LIBRE" | "PRERESERVE" | "CREE")
+  const [tripletStatuts, setTripletStatuts] = useState({});
+
+  // Application au planning
+  const [selPlanningId, setSelPlanningId] = useState("");
+  const [applyDate, setApplyDate] = useState("");
+  const [applying, setApplying] = useState(false);
+  const [applyResult, setApplyResult] = useState(null);
+  const [applyError, setApplyError] = useState("");
+
+  // Chargement initial
+  useEffect(() => {
+    apiFetch("GET", "journee-types/").then(setJourneeTypes).catch(() => {});
+    apiFetch("GET", "plannings/").then(setPlannings).catch(() => {});
+  }, []);
+
+  // Chargement blocs à la sélection JT
+  const loadBlocs = useCallback(async (jt) => {
+    if (!jt) { setBlocs([]); setTripletStatuts({}); return; }
+    setLoading(true);
+    try {
+      const b = await apiFetch("GET", `journee-types/${jt.id}/blocs`);
+      setBlocs(b ?? []);
+      setTripletStatuts({});
+    } catch {
+      setBlocs([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const handleSelectJT = (jt) => {
+    setSelectedJT(jt);
+    setApplyResult(null);
+    setApplyError("");
+    loadBlocs(jt);
+  };
+
+  // Basculer statut d'un triplet : LIBRE → PRERESERVE → CREE → LIBRE
+  const handleTripletClick = useCallback((k) => {
+    setTripletStatuts((prev) => {
+      const current = prev[k] ?? "LIBRE";
+      const next = current === "LIBRE" ? "PRERESERVE" : current === "PRERESERVE" ? "CREE" : "LIBRE";
+      if (next === "LIBRE") {
+        const { [k]: _, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [k]: next };
+    });
+  }, []);
+
+  // Application au planning
+  const handleApply = async () => {
+    if (!selectedJT || !selPlanningId || !applyDate) return;
+    setApplying(true);
+    setApplyResult(null);
+    setApplyError("");
+    try {
+      const res = await apiFetch("POST", `plannings/${selPlanningId}/apply-journee-type`, {
+        journee_type_id: selectedJT.id,
+        date: applyDate,
+      });
+      setApplyResult(res);
+    } catch (e) {
+      setApplyError(e.message);
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const blocGeneration = blocs.filter((b) => b.type_bloc === "GENERATION");
+  const selPlanning = plannings.find((p) => p.id === Number(selPlanningId)) ?? null;
+
+  // N du premier bloc GENERATION
+  const N = blocGeneration[0]?.matieres?.length ?? 0;
+  const Nsq = N * N;
 
   return (
     <div className="min-h-screen bg-[#F5F5F5] text-black">
-      <MobileSidebar
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        active={active}
-        onSelect={setActive}
-      />
+      <div className="max-w-6xl mx-auto px-4 md:px-8 py-8 space-y-6">
 
-      <div className="flex min-h-screen">
-        <div className="hidden md:block">
-          <Sidebar active={active} onSelect={setActive} />
+        {/* ── En-tête ── */}
+        <div className="flex items-center gap-3">
+          <div className="h-9 w-9 rounded-xl grid place-items-center text-white" style={{ backgroundColor: ENSAE_RED }}>
+            <LayoutGrid className="h-5 w-5" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-black/90">Journée type — Vue matricielle</h1>
+            <p className="text-xs text-black/40">Sélectionnez un gabarit pour visualiser et configurer les triplets</p>
+          </div>
         </div>
 
-        <main className="flex-1">
-          {/* Top bar (mobile) */}
-          <div className="md:hidden sticky top-0 z-10 bg-[#F5F5F5]/90 backdrop-blur border-b border-black/5">
-            <div className="px-4 py-3 flex items-center justify-between">
-              <button
-                onClick={() => setSidebarOpen(true)}
-                className="h-10 w-10 rounded-lg bg-white shadow-sm border border-black/5 grid place-items-center"
-                aria-label="Ouvrir le menu"
-              >
-                <Menu className="h-5 w-5" />
-              </button>
-              <div className="text-sm font-semibold">ENSAE — Admin</div>
-              <button
-                onClick={() => setSidebarOpen(false)}
-                className="h-10 w-10 rounded-lg bg-white shadow-sm border border-black/5 grid place-items-center opacity-0"
-                aria-hidden
-              >
-                <X className="h-5 w-5" />
-              </button>
+        {/* ── Sélection journée type ── */}
+        <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-5">
+          <p className="text-xs font-semibold text-black/40 uppercase tracking-wide mb-3">Gabarit de journée</p>
+          {journeeTypes.length === 0 ? (
+            <p className="text-sm text-black/30">Aucune journée type disponible. Créez-en une dans l'onglet "Journées types".</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {journeeTypes.map((jt) => {
+                const isActive = selectedJT?.id === jt.id;
+                return (
+                  <button
+                    key={jt.id}
+                    onClick={() => handleSelectJT(isActive ? null : jt)}
+                    className="flex flex-col items-start px-4 py-2.5 rounded-xl border-2 transition text-left"
+                    style={{
+                      borderColor: isActive ? ENSAE_RED : "transparent",
+                      backgroundColor: isActive ? ENSAE_RED + "08" : "#F9FAFB",
+                    }}
+                  >
+                    <span className="text-sm font-semibold text-black/80">{jt.nom}</span>
+                    <span className="text-[11px] text-black/40 mt-0.5">
+                      {jt.duree_defaut_minutes}min · prép. {jt.preparation_defaut_minutes}min
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-          </div>
+          )}
+        </div>
 
-          <div className="max-w-6xl mx-auto px-4 md:px-8 py-8">
-            <TopTitle title="Lundi 17 Juin" />
+        {/* ── Matrice + panneau droite ── */}
+        <AnimatePresence>
+          {selectedJT && (
+            <motion.div
+              key={selectedJT.id}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              className="flex gap-5 items-start"
+            >
+              {/* Matrice (gauche, flex-1) */}
+              <div className="flex-1 min-w-0 space-y-4">
+                {loading ? (
+                  <div className="flex items-center justify-center py-20">
+                    <RefreshCw className="h-6 w-6 animate-spin text-black/20" />
+                  </div>
+                ) : blocGeneration.length === 0 ? (
+                  <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-10 text-center">
+                    <LayoutGrid className="h-8 w-8 mx-auto mb-3 text-black/15" />
+                    <p className="text-sm text-black/40">Ce gabarit n'a pas de bloc GENERATION.</p>
+                    <p className="text-xs text-black/25 mt-1">Ajoutez un bloc depuis l'onglet "Journées types".</p>
+                  </div>
+                ) : (
+                  <>
+                    {blocGeneration.map((bloc) => (
+                      <MatriceJourneeType
+                        key={bloc.id}
+                        bloc={bloc}
+                        tripletStatuts={tripletStatuts}
+                        onTripletClick={handleTripletClick}
+                      />
+                    ))}
 
-            <div className="mt-6 flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
-              <div className="relative w-full lg:max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-black/45" />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search…"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-lg bg-white shadow-sm border border-black/5 focus:outline-none focus:ring-2 focus:ring-black/10"
-                />
+                    {N > 0 && (
+                      <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-5">
+                        <LegendeStatuts
+                          tripletStatuts={tripletStatuts}
+                          onTripletClick={handleTripletClick}
+                          N={N}
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
 
-              <div className="flex flex-wrap gap-2 justify-start lg:justify-end">
-                <ActionPill label="Nouvelle journée type" onClick={() => alert("Action: Nouvelle journée type")}/>
-                <ActionPill label="Ajouter un créneau" onClick={() => alert("Action: Ajouter un créneau")}/>
-                <ActionPill label="Modifier un créneau" onClick={() => alert("Action: Modifier un créneau")}/>
-              </div>
-            </div>
+              {/* Panneau droite : appliquer au planning */}
+              <div className="w-72 shrink-0 bg-white rounded-2xl border border-black/5 shadow-sm p-5 space-y-4 sticky top-6">
+                <p className="text-xs font-semibold text-black/40 uppercase tracking-wide">
+                  Appliquer au planning
+                </p>
 
-            <div className="mt-6">
-              <Table rows={rows} />
-              <Pagination page={page} setPage={setPage} total={4} />
-            </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-black/50 mb-1 block">Planning</label>
+                    <select
+                      value={selPlanningId}
+                      onChange={(e) => { setSelPlanningId(e.target.value); setApplyResult(null); setApplyError(""); }}
+                      className="w-full rounded-lg border border-black/15 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black/10 bg-white"
+                    >
+                      <option value="">— Choisir —</option>
+                      {plannings.map((p) => (
+                        <option key={p.id} value={p.id}>{p.nom}</option>
+                      ))}
+                    </select>
+                  </div>
 
-            <div className="mt-8 rounded-lg border border-black/5 bg-white p-4 shadow-sm">
-              <div className="text-sm font-semibold">Hint (MVP)</div>
-              <div className="mt-1 text-sm text-black/65">
-                Cette maquette reproduit la structure : sidebar fixe (240px), titre centré avec navigation,
-                barre d’actions (search + 3 boutons), tableau responsive avec scroll horizontal et pagination.
+                  {selPlanning && (
+                    <div>
+                      <label className="text-xs text-black/50 mb-1 block">Date</label>
+                      <input
+                        type="date"
+                        value={applyDate}
+                        min={selPlanning.date_debut}
+                        max={selPlanning.date_fin}
+                        onChange={(e) => { setApplyDate(e.target.value); setApplyResult(null); setApplyError(""); }}
+                        className="w-full rounded-lg border border-black/15 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
+                      />
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleApply}
+                    disabled={applying || !selPlanningId || !applyDate || !selectedJT}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white transition disabled:opacity-40"
+                    style={{ backgroundColor: ENSAE_RED }}
+                  >
+                    {applying
+                      ? <RefreshCw className="h-4 w-4 animate-spin" />
+                      : <Wand2 className="h-4 w-4" />
+                    }
+                    {applying ? "Application…" : "Appliquer ce gabarit"}
+                  </button>
+
+                  {applyResult && (
+                    <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-700">
+                      ✓ {applyResult.demi_journees_created} demi-journée(s) —{" "}
+                      {applyResult.epreuves_created} épreuve(s) créée(s)
+                    </div>
+                  )}
+                  {applyError && (
+                    <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-600">
+                      {applyError}
+                    </div>
+                  )}
+                </div>
+
+                {/* Résumé JT */}
+                {selectedJT && N > 0 && (
+                  <div className="pt-4 border-t border-black/5 space-y-1.5">
+                    <p className="text-[10px] text-black/30 font-semibold uppercase tracking-wide">Résumé</p>
+                    <div className="text-xs text-black/50 space-y-1">
+                      <div className="flex justify-between">
+                        <span>Matières</span>
+                        <span className="font-medium text-black/70">{N}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Créneaux / session</span>
+                        <span className="font-medium text-black/70">{Nsq}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Salles / matière</span>
+                        <span className="font-medium text-black/70">{blocGeneration[0]?.salles_par_matiere ?? 1}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Capacité / session</span>
+                        <span className="font-medium text-black/70">
+                          {Nsq * (blocGeneration[0]?.salles_par_matiere ?? 1)} candidats
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Triplets libres</span>
+                        <span className="font-medium text-emerald-600">
+                          {Nsq - Object.keys(tripletStatuts).length}
+                        </span>
+                      </div>
+                      {Object.keys(tripletStatuts).length > 0 && (
+                        <div className="flex justify-between">
+                          <span>Triplets non-libres</span>
+                          <span className="font-medium text-amber-600">
+                            {Object.keys(tripletStatuts).length}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Nav journée */}
+                {selPlanning && applyDate && (
+                  <div className="pt-3 border-t border-black/5">
+                    <p className="text-[10px] text-black/30 font-semibold uppercase tracking-wide mb-2">Navigation</p>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          const d = new Date(applyDate + "T12:00:00");
+                          d.setDate(d.getDate() - 1);
+                          const s = d.toISOString().slice(0, 10);
+                          if (s >= selPlanning.date_debut) setApplyDate(s);
+                        }}
+                        disabled={applyDate <= selPlanning.date_debut}
+                        className="h-7 w-7 rounded border grid place-items-center disabled:opacity-30 hover:bg-black/[0.03] transition"
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                      </button>
+                      <span className="flex-1 text-center text-xs text-black/60 font-medium">{applyDate}</span>
+                      <button
+                        onClick={() => {
+                          const d = new Date(applyDate + "T12:00:00");
+                          d.setDate(d.getDate() + 1);
+                          const s = d.toISOString().slice(0, 10);
+                          if (s <= selPlanning.date_fin) setApplyDate(s);
+                        }}
+                        disabled={applyDate >= selPlanning.date_fin}
+                        className="h-7 w-7 rounded border grid place-items-center disabled:opacity-30 hover:bg-black/[0.03] transition"
+                      >
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="mt-3 flex flex-wrap gap-2 text-xs text-black/60">
-                <span className="inline-flex items-center gap-1 rounded-full bg-[#F5F5F5] px-3 py-1">
-                  <Upload className="h-3.5 w-3.5" /> Import
-                </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-[#F5F5F5] px-3 py-1">
-                  <Download className="h-3.5 w-3.5" /> Export
-                </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-[#F5F5F5] px-3 py-1">
-                  <LayoutGrid className="h-3.5 w-3.5" /> Dashboard
-                </span>
-              </div>
-            </div>
-          </div>
-        </main>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

@@ -9,6 +9,9 @@ from app.models.inscription import Inscription, InscriptionEpreuve
 from app.models.liste_attente import ListeAttente
 from app.models.note import Note
 from app.models.message_type import MessageType
+from app.models.matiere import Matiere
+from app.models.salle import Salle
+from app.models.examinateur_indisponibilite import ExaminateurIndisponibilite
 
 __all__ = [
     "Planning",
@@ -23,4 +26,7 @@ __all__ = [
     "ListeAttente",
     "Note",
     "MessageType",
+    "Matiere",
+    "Salle",
+    "ExaminateurIndisponibilite",
 ]

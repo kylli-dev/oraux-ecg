@@ -48,6 +48,7 @@ type EpreuveCard = {
   heure_debut: string;
   heure_fin: string;
   statut: string;
+  preparation_minutes?: number | null;
   candidat_id?: number | null;
   candidat_nom?: string | null;
   candidat_prenom?: string | null;
@@ -105,6 +106,18 @@ function addDays(dateStr: string, days: number): string {
 
 function hm(t: string) {
   return t?.slice(0, 5) ?? "";
+}
+
+function hmToMinutes(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+}
+
+function subtractMinutes(timeHM: string, minutes: number): string {
+  const total = hmToMinutes(timeHM) - minutes;
+  const hh = Math.floor(((total % 1440) + 1440) % 1440 / 60);
+  const mm = ((total % 60) + 60) % 60;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
 }
 
 function formatDate(dateStr: string): string {
@@ -260,6 +273,10 @@ function DemiJourneeGrid({
   const accentBg = isMatin ? "#FFFBEB" : "#EEF2FF";
 
   const timeSlots = [...new Set(dj.epreuves.map((e) => e.heure_debut))].sort();
+  // Pas entre créneaux (= duree_minutes quand pause=0) — sert à extrapoler deb_prépa[0]
+  const slotGapMinutes = timeSlots.length > 1
+    ? hmToMinutes(hm(timeSlots[1])) - hmToMinutes(hm(timeSlots[0]))
+    : 0;
   const assigned = dj.epreuves.filter((e) => e.candidat_nom).length;
 
   return (
@@ -295,10 +312,17 @@ function DemiJourneeGrid({
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr style={{ backgroundColor: accentColor + "10" }}>
-              <th
-                className="text-left px-3 py-2 text-xs font-semibold text-black/50 border-b border-black/8 w-[90px]"
-              >
-                Horaire
+              <th className="text-left px-3 py-2 text-xs font-semibold text-black/40 border-b border-black/8 whitespace-nowrap">
+                Dép. prépa
+              </th>
+              <th className="text-left px-3 py-2 text-xs font-semibold text-black/60 border-b border-black/8 whitespace-nowrap">
+                Dép. exam
+              </th>
+              <th className="text-left px-3 py-2 text-xs font-semibold text-black/40 border-b border-black/8 whitespace-nowrap">
+                Fin exam
+              </th>
+              <th className="px-2 py-2 text-xs font-semibold border-b border-black/8 text-center text-black/30 w-[32px]">
+                N°
               </th>
               {matieres.map((m) => (
                 <th
@@ -314,22 +338,41 @@ function DemiJourneeGrid({
           <tbody>
             {timeSlots.map((slot, idx) => {
               const rowEpreuves = dj.epreuves.filter((e) => e.heure_debut === slot);
-              const finExam = rowEpreuves[0]?.heure_fin ?? "";
+              const firstEpreuve = rowEpreuves[0];
+              const debExam = hm(slot);
+              const finExam = firstEpreuve?.heure_fin ? hm(firstEpreuve.heure_fin) : "—";
+              // deb_prépa[i] = deb_exam[i-1] (préparation concurrente)
+              // deb_prépa[0] : extrapolation — timeSlots[0] - gap (gap = timeSlots[1] - timeSlots[0])
+              const debPrepa = idx > 0
+                ? hm(timeSlots[idx - 1])
+                : slotGapMinutes > 0
+                  ? subtractMinutes(debExam, slotGapMinutes)
+                  : debExam;
               return (
                 <tr
                   key={slot}
                   className={idx % 2 === 0 ? "bg-white" : "bg-black/[0.015]"}
                 >
-                  {/* Time column */}
+                  {/* Dép. prépa */}
                   <td className="px-3 py-2 border-b border-black/5 whitespace-nowrap">
-                    <span className="font-mono text-xs font-semibold text-black/60">
-                      {hm(slot)}
+                    <span className="font-mono text-xs text-black/40">{debPrepa}</span>
+                  </td>
+
+                  {/* Dép. exam */}
+                  <td className="px-3 py-2 border-b border-black/5 whitespace-nowrap">
+                    <span className="font-mono text-xs font-semibold text-black/75">{debExam}</span>
+                  </td>
+
+                  {/* Fin exam */}
+                  <td className="px-3 py-2 border-b border-black/5 whitespace-nowrap">
+                    <span className="font-mono text-xs text-black/50">{finExam}</span>
+                  </td>
+
+                  {/* Triplet number column */}
+                  <td className="px-2 py-2 border-b border-black/5 text-center">
+                    <span className="text-[10px] font-mono font-bold text-black/30 bg-black/5 rounded px-1.5 py-0.5">
+                      {idx + 1}
                     </span>
-                    {finExam && (
-                      <span className="font-mono text-[10px] text-black/30 block">
-                        → {hm(finExam)}
-                      </span>
-                    )}
                   </td>
 
                   {/* Matière cells */}
@@ -355,7 +398,7 @@ function DemiJourneeGrid({
             {timeSlots.length === 0 && (
               <tr>
                 <td
-                  colSpan={matieres.length + 1}
+                  colSpan={matieres.length + 4}
                   className="text-center text-xs text-black/30 py-6"
                 >
                   Aucun créneau

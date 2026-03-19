@@ -27,11 +27,35 @@ class Candidat(Base):
     login: Mapped[Optional[str]] = mapped_column(String(100), unique=True, nullable=True)
     password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
+    # Identifiant concours externe (CODE_CANDIDAT de l'établissement)
+    code_candidat: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    # Numéro INE (identifiant national élève)
+    numero_ine: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+
+    # État civil
+    civilite: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    date_naissance: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    tel_portable: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+
+    # Qualité / statut concours
+    qualite: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    handicape: Mapped[Optional[bool]] = mapped_column(nullable=True)
+
+    # Adresse
+    cp: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    ville: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    libelle_pays: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
     # Profil concours (HGG = Histoire-Géographie-Géopolitique, ESH = Économie)
     profil: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
 
-    # Code UAI de l'établissement (détection conflit examinateur même lycée)
-    code_uai: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    # Établissement d'origine
+    classe: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    code_uai: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # NUMERO_RNE
+    etablissement: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    ville_etablissement: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    departement_etablissement: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     # Réinitialisation de mot de passe
     reset_token: Mapped[Optional[str]] = mapped_column(String(100), unique=True, nullable=True)

@@ -19,6 +19,7 @@ class JourneeTypeBlocCreate(BaseModel):
     duree_minutes: Optional[int] = Field(default=None, ge=5, le=240)
     pause_minutes: Optional[int] = Field(default=None, ge=0, le=120)
     preparation_minutes: Optional[int] = Field(default=None, ge=0, le=120)
+    salles_par_matiere: int = Field(default=1, ge=1, le=50)
 
     @field_validator("type_bloc")
     @classmethod
@@ -55,6 +56,7 @@ class JourneeTypeBlocUpdate(BaseModel):
     duree_minutes: Optional[int] = Field(default=None, ge=5, le=240)
     pause_minutes: Optional[int] = Field(default=None, ge=0, le=120)
     preparation_minutes: Optional[int] = Field(default=None, ge=0, le=120)
+    salles_par_matiere: int = Field(default=1, ge=1, le=50)
 
     @field_validator("heure_fin")
     @classmethod
@@ -83,6 +85,7 @@ class JourneeTypeBlocOut(BaseModel):
     duree_minutes: Optional[int]
     pause_minutes: Optional[int]
     preparation_minutes: Optional[int]
+    salles_par_matiere: int
 
     class Config:
         from_attributes = True

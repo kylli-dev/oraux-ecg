@@ -1,7 +1,17 @@
 """
 Portail candidat (routes publiques ou protégées par JWT candidat — pas de clé admin).
 """
-from datetime import date as Date, datetime, timezone
+from datetime import date as Date, datetime, timezone, time
+
+
+def _now_utc() -> datetime:
+    """Retourne l'heure UTC courante en datetime naïf (compatible SQLite)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _ensure_naive(dt: datetime) -> datetime:
+    """S'assure qu'un datetime est naïf (supprime tzinfo si présent)."""
+    return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -95,6 +105,7 @@ class InscriptionIn(BaseModel):
 
 class TripletInscrireIn(BaseModel):
     date: Date
+    heure_debut: time  # nouveau
 
 
 class NoteOut(BaseModel):
@@ -133,6 +144,8 @@ class TripletEpreuveOut(BaseModel):
 
 class TripletOut(BaseModel):
     date: Date
+    heure_debut: time  # nouveau
+    heure_fin: time    # nouveau
     nb_epreuves: int
     epreuves: List[TripletEpreuveOut]
 
@@ -317,7 +330,13 @@ def get_triplets(
     candidat_id: int = Depends(require_candidat),
     db: Session = Depends(get_db),
 ):
-    """Retourne les triplets disponibles à l'inscription (date >= J+1, épreuves LIBRE)."""
+    """
+    Retourne les rotations disponibles à l'inscription (modèle jury rotatif).
+
+    Pour chaque date, calcule les rotations valides : une rotation k est disponible
+    si pour chaque salle i (matière), il existe un créneau LIBRE à l'horaire
+    all_slots[(k + i × offset) % total_slots].
+    """
     c = db.get(Candidat, candidat_id)
     if not c:
         raise HTTPException(status_code=404, detail="Candidat introuvable")
@@ -335,32 +354,79 @@ def get_triplets(
         .all()
     )
 
-    # Grouper par date
     from collections import defaultdict
-    by_date: dict = defaultdict(list)
+
+    djs_by_date: dict = defaultdict(list)
     for dj in djs:
-        epreuves = (
+        djs_by_date[dj.date].append(dj)
+
+    result = []
+    for date in sorted(djs_by_date.keys()):
+        djs_of_day = djs_by_date[date]
+        dj_ids = [dj.id for dj in djs_of_day]
+
+        # Toutes les épreuves du jour (pour reconstituer la grille complète)
+        all_epreuves = (
             db.query(Epreuve)
-            .filter(Epreuve.demi_journee_id == dj.id, Epreuve.statut == "LIBRE")
-            .order_by(Epreuve.heure_debut)
+            .filter(Epreuve.demi_journee_id.in_(dj_ids))
+            .order_by(Epreuve.heure_debut, Epreuve.matiere)
             .all()
         )
-        for e in epreuves:
-            by_date[dj.date].append(
-                TripletEpreuveOut(
-                    id=e.id,
-                    matiere=e.matiere,
-                    heure_debut=str(e.heure_debut)[:5],
-                    heure_fin=str(e.heure_fin)[:5],
-                    demi_journee_type=dj.type,
+        if not all_epreuves:
+            continue
+
+        all_slots = sorted(set(e.heure_debut for e in all_epreuves))
+        matieres_sorted = sorted(set(e.matiere for e in all_epreuves))
+        N_rooms = len(matieres_sorted)
+        total_slots = len(all_slots)
+        offset = total_slots // N_rooms if N_rooms else 1
+
+        # Index rapide : (matiere, heure_debut) → épreuve LIBRE
+        libres: dict = {
+            (e.matiere, e.heure_debut): e
+            for e in all_epreuves
+            if e.statut == "LIBRE"
+        }
+
+        for k in range(total_slots):
+            assigned: list = []
+            valid = True
+            for i, matiere in enumerate(matieres_sorted):
+                slot_idx = (k + i * offset) % total_slots
+                epreuve = libres.get((matiere, all_slots[slot_idx]))
+                if epreuve is None:
+                    valid = False
+                    break
+                dj = next(d for d in djs_of_day if d.id == epreuve.demi_journee_id)
+                assigned.append((epreuve, dj))
+
+            if not valid or not assigned:
+                continue
+
+            heure_fin_last = max(e.heure_fin for e, _ in assigned)
+            epreuves_out = sorted(
+                [
+                    TripletEpreuveOut(
+                        id=e.id,
+                        matiere=e.matiere,
+                        heure_debut=str(e.heure_debut)[:5],
+                        heure_fin=str(e.heure_fin)[:5],
+                        demi_journee_type=dj.type,
+                    )
+                    for e, dj in assigned
+                ],
+                key=lambda x: x.heure_debut,
+            )
+            result.append(
+                TripletOut(
+                    date=date,
+                    heure_debut=all_slots[k],
+                    heure_fin=heure_fin_last,
+                    nb_epreuves=len(assigned),
+                    epreuves=epreuves_out,
                 )
             )
 
-    result = []
-    for d in sorted(by_date.keys()):
-        eps = by_date[d]
-        if eps:
-            result.append(TripletOut(date=d, nb_epreuves=len(eps), epreuves=eps))
     return result
 
 
@@ -425,13 +491,13 @@ def s_inscrire_triplet(
             status_code=403,
             detail="Les inscriptions ne sont pas ouvertes pour ce planning.",
         )
-    now = datetime.now(timezone.utc)
-    if now < planning.date_ouverture_inscriptions:
+    now = _now_utc()
+    if now < _ensure_naive(planning.date_ouverture_inscriptions):
         raise HTTPException(
             status_code=403,
             detail="Les inscriptions n'ont pas encore débuté.",
         )
-    if now > planning.date_fermeture_inscriptions:
+    if now > _ensure_naive(planning.date_fermeture_inscriptions):
         raise HTTPException(
             status_code=403,
             detail="La période d'inscription est terminée.",
@@ -444,7 +510,7 @@ def s_inscrire_triplet(
             detail=f"Les inscriptions pour cette date sont closes (préavis : {planning.heure_previs}).",
         )
 
-    # Épreuves LIBRE sur la date choisie
+    # Récupérer toutes les épreuves du jour pour reconstituer la grille de rotation
     djs = (
         db.query(DemiJournee)
         .filter_by(planning_id=c.planning_id)
@@ -455,14 +521,45 @@ def s_inscrire_triplet(
     if not dj_ids:
         raise HTTPException(status_code=404, detail="Aucune épreuve trouvée pour cette date.")
 
-    epreuves_libres = (
+    all_epreuves_day = (
         db.query(Epreuve)
-        .filter(Epreuve.demi_journee_id.in_(dj_ids), Epreuve.statut == "LIBRE")
-        .order_by(Epreuve.heure_debut)
+        .filter(Epreuve.demi_journee_id.in_(dj_ids))
+        .order_by(Epreuve.heure_debut, Epreuve.matiere)
         .all()
     )
-    if not epreuves_libres:
-        raise HTTPException(status_code=409, detail="Plus aucun créneau disponible pour cette date.")
+    if not all_epreuves_day:
+        raise HTTPException(status_code=404, detail="Aucune épreuve trouvée pour cette date.")
+
+    all_slots = sorted(set(e.heure_debut for e in all_epreuves_day))
+    matieres_sorted = sorted(set(e.matiere for e in all_epreuves_day))
+    N_rooms = len(matieres_sorted)
+    total_slots = len(all_slots)
+    offset = total_slots // N_rooms if N_rooms else 1
+
+    # Trouver k = index du créneau de départ choisi
+    if body.heure_debut not in all_slots:
+        raise HTTPException(status_code=400, detail="Créneau de départ invalide.")
+    k = all_slots.index(body.heure_debut)
+
+    # Index : (matiere, heure_debut) → épreuve LIBRE
+    libres_map = {
+        (e.matiere, e.heure_debut): e
+        for e in all_epreuves_day
+        if e.statut == "LIBRE"
+    }
+
+    # Calculer les épreuves de la rotation k
+    epreuves_a_attribuer = []
+    for i, matiere in enumerate(matieres_sorted):
+        slot_idx = (k + i * offset) % total_slots
+        target_heure = all_slots[slot_idx]
+        epreuve = libres_map.get((matiere, target_heure))
+        if epreuve is None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Créneau indisponible pour {matiere} à {str(target_heure)[:5]}.",
+            )
+        epreuves_a_attribuer.append(epreuve)
 
     # Annuler l'inscription existante (swap atomique)
     ancienne = (
@@ -475,7 +572,7 @@ def s_inscrire_triplet(
             ie.epreuve.candidat_id = None
             ie.epreuve.statut = "LIBRE"
         ancienne.statut = "ANNULEE"
-        ancienne.cancelled_at = datetime.now(timezone.utc)
+        ancienne.cancelled_at = _now_utc()
 
     # Créer la nouvelle inscription
     nouvelle = Inscription(candidat_id=candidat_id, statut="ACTIVE")
@@ -483,7 +580,7 @@ def s_inscrire_triplet(
     db.flush()
 
     epreuves_out = []
-    for e in epreuves_libres:
+    for e in epreuves_a_attribuer:
         e.candidat_id = candidat_id
         e.statut = "ATTRIBUEE"
         db.add(InscriptionEpreuve(inscription_id=nouvelle.id, epreuve_id=e.id))
@@ -505,7 +602,7 @@ def s_inscrire_triplet(
         id=nouvelle.id,
         date=body.date,
         statut="ACTIVE",
-        epreuves=epreuves_out,
+        epreuves=sorted(epreuves_out, key=lambda x: x.heure_debut),
     )
 
 
@@ -523,8 +620,8 @@ def annuler_inscription(
     planning = db.get(Planning, db.get(Candidat, candidat_id).planning_id)
     if planning.statut != "OUVERT":
         raise HTTPException(status_code=403, detail="Les inscriptions ne sont pas ouvertes.")
-    now = datetime.now(timezone.utc)
-    if now > planning.date_fermeture_inscriptions:
+    now = _now_utc()
+    if now > _ensure_naive(planning.date_fermeture_inscriptions):
         raise HTTPException(status_code=403, detail="La période d'inscription est terminée.")
     # Vérifier le préavis sur la date du triplet
     first_dj = db.get(DemiJournee, insc.epreuves[0].epreuve.demi_journee_id)
@@ -539,7 +636,7 @@ def annuler_inscription(
         ie.epreuve.candidat_id = None
         ie.epreuve.statut = "LIBRE"
     insc.statut = "ANNULEE"
-    insc.cancelled_at = datetime.now(timezone.utc)
+    insc.cancelled_at = _now_utc()
     db.commit()
     # TODO: envoyer Message-type Désinscription
 
