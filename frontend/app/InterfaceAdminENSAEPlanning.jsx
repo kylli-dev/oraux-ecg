@@ -3,16 +3,9 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ChevronLeft,
-  ChevronRight,
-  LayoutGrid,
-  Wand2,
-  RefreshCw,
-  Sun,
-  Sunset,
-  CheckCircle2,
-  Lock,
-  EyeOff,
+  ChevronLeft, ChevronRight, LayoutGrid, Wand2, RefreshCw,
+  Sun, Sunset, CheckCircle2, Lock, EyeOff,
+  Plus, Trash2, ChevronUp, ChevronDown, Pencil, Check, X,
 } from "lucide-react";
 
 const ENSAE_RED = "#C62828";
@@ -63,7 +56,6 @@ function buildMatrix(bloc) {
       deb_prepa: minutesToHM(dPrepa),
       deb_exam: minutesToHM(dExam),
       fin_exam: minutesToHM(fExam),
-      // candidat k pour la colonne matière j : k = (i - j*N + Nsq*N) % Nsq
       candidates: matieres.map((_, j) => ((i - j * N) % Nsq + Nsq) % Nsq),
     };
   });
@@ -122,7 +114,6 @@ function MatriceJourneeType({ bloc, tripletStatuts, onTripletClick }) {
 
   return (
     <div className="mb-6">
-      {/* En-tête demi-journée */}
       <div
         className="flex items-center gap-3 px-4 py-2.5 rounded-xl mb-3"
         style={{ backgroundColor: accentBg, borderLeft: `4px solid ${accentColor}` }}
@@ -142,7 +133,6 @@ function MatriceJourneeType({ bloc, tripletStatuts, onTripletClick }) {
         </span>
       </div>
 
-      {/* Grille */}
       <div className="overflow-x-auto rounded-xl border border-black/8 bg-white">
         <table className="w-full border-collapse text-xs">
           <thead>
@@ -171,11 +161,7 @@ function MatriceJourneeType({ bloc, tripletStatuts, onTripletClick }) {
                 </td>
                 {row.candidates.map((k, j) => (
                   <td key={j} className="px-2 py-1.5 text-center">
-                    <TripletCell
-                      k={k}
-                      statut={tripletStatuts[k] ?? "LIBRE"}
-                      onClick={onTripletClick}
-                    />
+                    <TripletCell k={k} statut={tripletStatuts[k] ?? "LIBRE"} onClick={onTripletClick} />
                   </td>
                 ))}
               </tr>
@@ -221,6 +207,317 @@ function LegendeStatuts({ tripletStatuts, onTripletClick, N }) {
   );
 }
 
+// ── Éditeur de blocs ───────────────────────────────────────────────────────────
+function BlocsEditor({ jtId, blocs, onReload }) {
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+  const [addForm, setAddForm] = useState({
+    type_bloc: "GENERATION",
+    heure_debut: "08:00",
+    heure_fin: "12:00",
+    matieres: "",
+  });
+  const [adding, setAdding] = useState(false);
+  const [addErr, setAddErr] = useState("");
+
+  const sorted = [...blocs].sort((a, b) => a.ordre - b.ordre);
+
+  function startEdit(bloc) {
+    setEditingId(bloc.id);
+    setEditForm({
+      heure_debut: bloc.heure_debut?.slice(0, 5) ?? "",
+      heure_fin: bloc.heure_fin?.slice(0, 5) ?? "",
+    });
+    setErr("");
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setErr("");
+  }
+
+  async function saveEdit(bloc) {
+    setSaving(true); setErr("");
+    try {
+      await apiFetch("PUT", `journee-types/blocs/${bloc.id}`, {
+        ordre: bloc.ordre,
+        heure_debut: editForm.heure_debut,
+        heure_fin: editForm.heure_fin,
+        matieres: bloc.matieres,
+        duree_minutes: bloc.duree_minutes,
+        pause_minutes: bloc.pause_minutes,
+        preparation_minutes: bloc.preparation_minutes,
+        salles_par_matiere: bloc.salles_par_matiere ?? 1,
+      });
+      setEditingId(null);
+      onReload();
+    } catch (e) { setErr(e.message); }
+    finally { setSaving(false); }
+  }
+
+  async function moveBloc(bloc, direction) {
+    const idx = sorted.findIndex((b) => b.id === bloc.id);
+    const target = sorted[idx + direction];
+    if (!target) return;
+    // Swap les ordres
+    await Promise.all([
+      apiFetch("PUT", `journee-types/blocs/${bloc.id}`, {
+        ordre: target.ordre,
+        heure_debut: bloc.heure_debut?.slice(0, 5),
+        heure_fin: bloc.heure_fin?.slice(0, 5),
+        matieres: bloc.matieres,
+        duree_minutes: bloc.duree_minutes,
+        pause_minutes: bloc.pause_minutes,
+        preparation_minutes: bloc.preparation_minutes,
+        salles_par_matiere: bloc.salles_par_matiere ?? 1,
+      }),
+      apiFetch("PUT", `journee-types/blocs/${target.id}`, {
+        ordre: bloc.ordre,
+        heure_debut: target.heure_debut?.slice(0, 5),
+        heure_fin: target.heure_fin?.slice(0, 5),
+        matieres: target.matieres,
+        duree_minutes: target.duree_minutes,
+        pause_minutes: target.pause_minutes,
+        preparation_minutes: target.preparation_minutes,
+        salles_par_matiere: target.salles_par_matiere ?? 1,
+      }),
+    ]);
+    onReload();
+  }
+
+  async function deleteBloc(bloc) {
+    if (!confirm(`Supprimer ce créneau (${bloc.type_bloc} ${bloc.heure_debut?.slice(0,5)}–${bloc.heure_fin?.slice(0,5)}) ?`)) return;
+    await apiFetch("DELETE", `journee-types/blocs/${bloc.id}`);
+    onReload();
+  }
+
+  async function addBloc() {
+    setAdding(true); setAddErr("");
+    const matieres = addForm.type_bloc === "GENERATION"
+      ? addForm.matieres.split(",").map((m) => m.trim()).filter(Boolean)
+      : [];
+    const maxOrdre = blocs.length > 0 ? Math.max(...blocs.map((b) => b.ordre)) : 0;
+    try {
+      await apiFetch("POST", `journee-types/${jtId}/blocs`, {
+        type_bloc: addForm.type_bloc,
+        ordre: maxOrdre + 1,
+        heure_debut: addForm.heure_debut,
+        heure_fin: addForm.heure_fin,
+        matieres,
+        salles_par_matiere: 1,
+      });
+      setShowAdd(false);
+      setAddForm({ type_bloc: "GENERATION", heure_debut: "08:00", heure_fin: "12:00", matieres: "" });
+      onReload();
+    } catch (e) { setAddErr(e.message); }
+    finally { setAdding(false); }
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-5 space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-black/40 uppercase tracking-wide">Créneaux du gabarit</p>
+        <button
+          onClick={() => { setShowAdd(true); setAddErr(""); }}
+          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition hover:bg-black/[0.03]"
+          style={{ borderColor: ENSAE_RED + "40", color: ENSAE_RED }}
+        >
+          <Plus className="h-3.5 w-3.5" /> Ajouter un créneau
+        </button>
+      </div>
+
+      {/* Liste des blocs */}
+      <div className="divide-y divide-black/5 rounded-xl border border-black/8 overflow-hidden">
+        {sorted.length === 0 && (
+          <p className="text-sm text-black/30 text-center py-6">Aucun créneau. Cliquez sur "Ajouter un créneau".</p>
+        )}
+        {sorted.map((bloc, idx) => {
+          const isEditing = editingId === bloc.id;
+          const isPause = bloc.type_bloc === "PAUSE";
+          return (
+            <div key={bloc.id} className={`flex items-center gap-3 px-4 py-3 ${isEditing ? "bg-amber-50/60" : "bg-white hover:bg-black/[0.01]"}`}>
+              {/* Badge type */}
+              <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide ${isPause ? "bg-gray-100 text-gray-500" : "bg-blue-50 text-blue-700"}`}>
+                {isPause ? "Pause" : "Génération"}
+              </span>
+
+              {/* Heures — affichage ou édition */}
+              {isEditing ? (
+                <div className="flex items-center gap-2 flex-1">
+                  <input
+                    type="time"
+                    value={editForm.heure_debut}
+                    onChange={(e) => setEditForm((f) => ({ ...f, heure_debut: e.target.value }))}
+                    className="border rounded px-2 py-1 text-sm font-mono w-28 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                  />
+                  <span className="text-black/30">→</span>
+                  <input
+                    type="time"
+                    value={editForm.heure_fin}
+                    onChange={(e) => setEditForm((f) => ({ ...f, heure_fin: e.target.value }))}
+                    className="border rounded px-2 py-1 text-sm font-mono w-28 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                  />
+                  {err && <span className="text-xs text-red-500">{err}</span>}
+                </div>
+              ) : (
+                <div className="flex-1">
+                  <span className="font-mono text-sm font-semibold text-black/80">
+                    {bloc.heure_debut?.slice(0, 5)} → {bloc.heure_fin?.slice(0, 5)}
+                  </span>
+                  {!isPause && bloc.matieres.length > 0 && (
+                    <span className="ml-3 text-xs text-black/40">{bloc.matieres.join(" · ")}</span>
+                  )}
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="flex items-center gap-1 shrink-0">
+                {isEditing ? (
+                  <>
+                    <button
+                      onClick={() => saveEdit(bloc)}
+                      disabled={saving}
+                      className="p-1.5 rounded text-green-600 hover:bg-green-50 transition disabled:opacity-40"
+                      title="Enregistrer"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={cancelEdit}
+                      className="p-1.5 rounded text-black/40 hover:bg-black/5 transition"
+                      title="Annuler"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => startEdit(bloc)}
+                      className="p-1.5 rounded text-black/30 hover:text-black/60 hover:bg-black/5 transition"
+                      title="Modifier l'heure"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => moveBloc(bloc, -1)}
+                      disabled={idx === 0}
+                      className="p-1.5 rounded text-black/30 hover:text-black/60 hover:bg-black/5 transition disabled:opacity-20"
+                      title="Monter"
+                    >
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => moveBloc(bloc, 1)}
+                      disabled={idx === sorted.length - 1}
+                      className="p-1.5 rounded text-black/30 hover:text-black/60 hover:bg-black/5 transition disabled:opacity-20"
+                      title="Descendre"
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={() => deleteBloc(bloc)}
+                      className="p-1.5 rounded text-red-300 hover:text-red-500 hover:bg-red-50 transition"
+                      title="Supprimer"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Formulaire d'ajout */}
+      <AnimatePresence>
+        {showAdd && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="rounded-xl border border-dashed border-black/15 bg-black/[0.015] p-4 space-y-3">
+              <p className="text-xs font-semibold text-black/50">Nouveau créneau</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] text-black/40 mb-1 block">Type</label>
+                  <select
+                    value={addForm.type_bloc}
+                    onChange={(e) => setAddForm((f) => ({ ...f, type_bloc: e.target.value }))}
+                    className="w-full border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-black/10"
+                  >
+                    <option value="GENERATION">Génération</option>
+                    <option value="PAUSE">Pause</option>
+                  </select>
+                </div>
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <label className="text-[11px] text-black/40 mb-1 block">Début</label>
+                    <input
+                      type="time"
+                      value={addForm.heure_debut}
+                      onChange={(e) => setAddForm((f) => ({ ...f, heure_debut: e.target.value }))}
+                      className="w-full border rounded-lg px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-black/10"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-[11px] text-black/40 mb-1 block">Fin</label>
+                    <input
+                      type="time"
+                      value={addForm.heure_fin}
+                      onChange={(e) => setAddForm((f) => ({ ...f, heure_fin: e.target.value }))}
+                      className="w-full border rounded-lg px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-black/10"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {addForm.type_bloc === "GENERATION" && (
+                <div>
+                  <label className="text-[11px] text-black/40 mb-1 block">Matières (séparées par des virgules)</label>
+                  <input
+                    type="text"
+                    value={addForm.matieres}
+                    onChange={(e) => setAddForm((f) => ({ ...f, matieres: e.target.value }))}
+                    placeholder="ex : Maths, Français, HGG"
+                    className="w-full border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-black/10"
+                  />
+                </div>
+              )}
+
+              {addErr && <p className="text-xs text-red-500">{addErr}</p>}
+
+              <div className="flex gap-2">
+                <button
+                  onClick={addBloc}
+                  disabled={adding || (addForm.type_bloc === "GENERATION" && !addForm.matieres.trim())}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white transition disabled:opacity-40"
+                  style={{ backgroundColor: ENSAE_RED }}
+                >
+                  {adding ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                  Ajouter
+                </button>
+                <button
+                  onClick={() => { setShowAdd(false); setAddErr(""); }}
+                  className="px-3 py-1.5 rounded-lg text-sm text-black/50 hover:bg-black/5 transition"
+                >
+                  Annuler
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 // ── Composant principal ────────────────────────────────────────────────────────
 export default function InterfaceAdminENSAEPlanning() {
   const [journeeTypes, setJourneeTypes] = useState([]);
@@ -229,23 +526,18 @@ export default function InterfaceAdminENSAEPlanning() {
   const [blocs, setBlocs] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // Statuts par triplet (k → "LIBRE" | "PRERESERVE" | "CREE")
   const [tripletStatuts, setTripletStatuts] = useState({});
-
-  // Application au planning
   const [selPlanningId, setSelPlanningId] = useState("");
   const [applyDate, setApplyDate] = useState("");
   const [applying, setApplying] = useState(false);
   const [applyResult, setApplyResult] = useState(null);
   const [applyError, setApplyError] = useState("");
 
-  // Chargement initial
   useEffect(() => {
     apiFetch("GET", "journee-types/").then(setJourneeTypes).catch(() => {});
     apiFetch("GET", "plannings/").then(setPlannings).catch(() => {});
   }, []);
 
-  // Chargement blocs à la sélection JT
   const loadBlocs = useCallback(async (jt) => {
     if (!jt) { setBlocs([]); setTripletStatuts({}); return; }
     setLoading(true);
@@ -267,7 +559,6 @@ export default function InterfaceAdminENSAEPlanning() {
     loadBlocs(jt);
   };
 
-  // Basculer statut d'un triplet : LIBRE → PRERESERVE → CREE → LIBRE
   const handleTripletClick = useCallback((k) => {
     setTripletStatuts((prev) => {
       const current = prev[k] ?? "LIBRE";
@@ -280,7 +571,6 @@ export default function InterfaceAdminENSAEPlanning() {
     });
   }, []);
 
-  // Application au planning
   const handleApply = async () => {
     if (!selectedJT || !selPlanningId || !applyDate) return;
     setApplying(true);
@@ -301,8 +591,6 @@ export default function InterfaceAdminENSAEPlanning() {
 
   const blocGeneration = blocs.filter((b) => b.type_bloc === "GENERATION");
   const selPlanning = plannings.find((p) => p.id === Number(selPlanningId)) ?? null;
-
-  // N du premier bloc GENERATION
   const N = blocGeneration[0]?.matieres?.length ?? 0;
   const Nsq = N * N;
 
@@ -310,18 +598,18 @@ export default function InterfaceAdminENSAEPlanning() {
     <div className="min-h-screen bg-[#F5F5F5] text-black">
       <div className="max-w-6xl mx-auto px-4 md:px-8 py-8 space-y-6">
 
-        {/* ── En-tête ── */}
+        {/* En-tête */}
         <div className="flex items-center gap-3">
           <div className="h-9 w-9 rounded-xl grid place-items-center text-white" style={{ backgroundColor: ENSAE_RED }}>
             <LayoutGrid className="h-5 w-5" />
           </div>
           <div>
             <h1 className="text-xl font-bold text-black/90">Journée type — Vue matricielle</h1>
-            <p className="text-xs text-black/40">Sélectionnez un gabarit pour visualiser et configurer les triplets</p>
+            <p className="text-xs text-black/40">Sélectionnez un gabarit pour visualiser et modifier les créneaux</p>
           </div>
         </div>
 
-        {/* ── Sélection journée type ── */}
+        {/* Sélection journée type */}
         <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-5">
           <p className="text-xs font-semibold text-black/40 uppercase tracking-wide mb-3">Gabarit de journée</p>
           {journeeTypes.length === 0 ? (
@@ -351,7 +639,7 @@ export default function InterfaceAdminENSAEPlanning() {
           )}
         </div>
 
-        {/* ── Matrice + panneau droite ── */}
+        {/* Matrice + panneau droite */}
         <AnimatePresence>
           {selectedJT && (
             <motion.div
@@ -361,43 +649,50 @@ export default function InterfaceAdminENSAEPlanning() {
               exit={{ opacity: 0, y: 8 }}
               className="flex gap-5 items-start"
             >
-              {/* Matrice (gauche, flex-1) */}
+              {/* Gauche : matrice + éditeur */}
               <div className="flex-1 min-w-0 space-y-4">
                 {loading ? (
                   <div className="flex items-center justify-center py-20">
                     <RefreshCw className="h-6 w-6 animate-spin text-black/20" />
                   </div>
-                ) : blocGeneration.length === 0 ? (
-                  <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-10 text-center">
-                    <LayoutGrid className="h-8 w-8 mx-auto mb-3 text-black/15" />
-                    <p className="text-sm text-black/40">Ce gabarit n'a pas de bloc GENERATION.</p>
-                    <p className="text-xs text-black/25 mt-1">Ajoutez un bloc depuis l'onglet "Journées types".</p>
-                  </div>
                 ) : (
                   <>
-                    {blocGeneration.map((bloc) => (
-                      <MatriceJourneeType
-                        key={bloc.id}
-                        bloc={bloc}
-                        tripletStatuts={tripletStatuts}
-                        onTripletClick={handleTripletClick}
-                      />
-                    ))}
-
-                    {N > 0 && (
-                      <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-5">
-                        <LegendeStatuts
-                          tripletStatuts={tripletStatuts}
-                          onTripletClick={handleTripletClick}
-                          N={N}
-                        />
+                    {/* Matrice */}
+                    {blocGeneration.length === 0 ? (
+                      <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-10 text-center">
+                        <LayoutGrid className="h-8 w-8 mx-auto mb-3 text-black/15" />
+                        <p className="text-sm text-black/40">Ce gabarit n'a pas de bloc GENERATION.</p>
+                        <p className="text-xs text-black/25 mt-1">Ajoutez un créneau ci-dessous.</p>
                       </div>
+                    ) : (
+                      <>
+                        {blocGeneration.map((bloc) => (
+                          <MatriceJourneeType
+                            key={bloc.id}
+                            bloc={bloc}
+                            tripletStatuts={tripletStatuts}
+                            onTripletClick={handleTripletClick}
+                          />
+                        ))}
+                        {N > 0 && (
+                          <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-5">
+                            <LegendeStatuts tripletStatuts={tripletStatuts} onTripletClick={handleTripletClick} N={N} />
+                          </div>
+                        )}
+                      </>
                     )}
+
+                    {/* Éditeur de créneaux */}
+                    <BlocsEditor
+                      jtId={selectedJT.id}
+                      blocs={blocs}
+                      onReload={() => loadBlocs(selectedJT)}
+                    />
                   </>
                 )}
               </div>
 
-              {/* Panneau droite : appliquer au planning */}
+              {/* Droite : appliquer au planning */}
               <div className="w-72 shrink-0 bg-white rounded-2xl border border-black/5 shadow-sm p-5 space-y-4 sticky top-6">
                 <p className="text-xs font-semibold text-black/40 uppercase tracking-wide">
                   Appliquer au planning
@@ -438,17 +733,13 @@ export default function InterfaceAdminENSAEPlanning() {
                     className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white transition disabled:opacity-40"
                     style={{ backgroundColor: ENSAE_RED }}
                   >
-                    {applying
-                      ? <RefreshCw className="h-4 w-4 animate-spin" />
-                      : <Wand2 className="h-4 w-4" />
-                    }
+                    {applying ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
                     {applying ? "Application…" : "Appliquer ce gabarit"}
                   </button>
 
                   {applyResult && (
                     <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-700">
-                      ✓ {applyResult.demi_journees_created} demi-journée(s) —{" "}
-                      {applyResult.epreuves_created} épreuve(s) créée(s)
+                      ✓ {applyResult.demi_journees_created} demi-journée(s) — {applyResult.epreuves_created} épreuve(s) créée(s)
                     </div>
                   )}
                   {applyError && (
@@ -477,22 +768,16 @@ export default function InterfaceAdminENSAEPlanning() {
                       </div>
                       <div className="flex justify-between">
                         <span>Capacité / session</span>
-                        <span className="font-medium text-black/70">
-                          {Nsq * (blocGeneration[0]?.salles_par_matiere ?? 1)} candidats
-                        </span>
+                        <span className="font-medium text-black/70">{Nsq * (blocGeneration[0]?.salles_par_matiere ?? 1)} candidats</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Triplets libres</span>
-                        <span className="font-medium text-emerald-600">
-                          {Nsq - Object.keys(tripletStatuts).length}
-                        </span>
+                        <span className="font-medium text-emerald-600">{Nsq - Object.keys(tripletStatuts).length}</span>
                       </div>
                       {Object.keys(tripletStatuts).length > 0 && (
                         <div className="flex justify-between">
                           <span>Triplets non-libres</span>
-                          <span className="font-medium text-amber-600">
-                            {Object.keys(tripletStatuts).length}
-                          </span>
+                          <span className="font-medium text-amber-600">{Object.keys(tripletStatuts).length}</span>
                         </div>
                       )}
                     </div>
