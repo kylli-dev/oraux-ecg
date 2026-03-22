@@ -9,7 +9,9 @@ Import : création d'épreuves depuis un fichier Excel.
 """
 import io
 import json
+import re
 import secrets
+import unicodedata
 from datetime import date as date_type, time as time_type
 
 import openpyxl
@@ -454,6 +456,89 @@ def export_template_candidats_complet() -> bytes:
     return buf.getvalue()
 
 
+# ── Normalisation des en-têtes ────────────────────────────────────────────────
+
+def _norm(s: str) -> str:
+    """Normalise un en-tête : majuscules, sans accents, tout séparateur → _."""
+    s = s.upper().strip()
+    # Supprimer les accents
+    s = "".join(
+        c for c in unicodedata.normalize("NFD", s)
+        if unicodedata.category(c) != "Mn"
+    )
+    # Remplacer tout caractère non alphanumérique par _ (couvre °, /, -, espace, N°…)
+    s = re.sub(r"[^A-Z0-9]+", "_", s)
+    s = s.strip("_")
+    return s
+
+
+# Table d'alias : clé canonique → liste d'alias normalisés acceptés
+_COLUMN_ALIASES: dict[str, list[str]] = {
+    "NOM":                      ["NOM", "NOM_DE_FAMILLE", "LASTNAME", "NAME", "FAMILY_NAME"],
+    "PRENOM":                   ["PRENOM", "FIRSTNAME", "FIRST_NAME", "PRENOMS"],
+    "EMAIL":                    ["EMAIL", "E_MAIL", "MAIL", "EMAIL_PERSO", "E_MAIL_PERSO",
+                                 "COURRIEL", "ADRESSE_MAIL", "ADRESSE_EMAIL", "ADRESSE_E_MAIL"],
+    "CODE_CANDIDAT":            ["CODE_CANDIDAT", "N_CANDIDAT", "NO_CANDIDAT", "NUM_CANDIDAT",
+                                 "NUMERO_CANDIDAT", "CODE", "N_DE_DOSSIER", "DOSSIER",
+                                 "NCANDIDAT", "N_CANDIDAT_1", "CODE_CAND"],
+    "NUMERO_INE":               ["NUMERO_INE", "NUM_INE", "INE", "N_INE",
+                                 "IDENTIFIANT_NATIONAL_ELEVE", "N_INE_CANDIDAT"],
+    "CIVILITE":                 ["CIVILITE", "TITRE", "SEXE", "MR_MME", "QUALITE_CIVILE"],
+    "DATE_NAISSANCE":           ["DATE_NAISSANCE", "DATE_DE_NAISSANCE", "DATE_NAISS",
+                                 "NAISSANCE", "DDN", "DATE_NAISS"],
+    "QUALITE":                  ["QUALITE", "STATUT", "STATUS", "QUALITY",
+                                 "TYPE_CANDIDAT", "CATEGORIE"],
+    "HANDICAPE":                ["HANDICAPE", "HANDICAP", "AMENAGEMENT_HANDICAP",
+                                 "TIERS_TEMPS", "PAP", "PPS", "AMENAGEMENT"],
+    "CP":                       ["CP", "CODE_POSTAL", "CODEPOSTAL", "POSTAL_CODE",
+                                 "CODE_POSTAL_DOMICILE"],
+    "VILLE":                    ["VILLE", "COMMUNE", "LOCALITE", "VILLE_DOMICILE",
+                                 "COMMUNE_DOMICILE"],
+    "LIBELLE_PAYS":             ["LIBELLE_PAYS", "PAYS", "COUNTRY", "NATIONALITE",
+                                 "PAYS_DOMICILE"],
+    "TEL_PORTABLE":             ["TEL_PORTABLE", "TELEPHONE", "TEL", "PORTABLE",
+                                 "MOBILE", "PHONE", "TEL_PORT", "TELEPHONE_PORTABLE",
+                                 "TELEPHONE_MOBILE", "NUM_TEL", "NUMERO_TELEPHONE"],
+    "CLASSE":                   ["CLASSE", "LEVEL", "NIVEAU", "FILIERE", "SECTION"],
+    "NUMERO_RNE":               ["NUMERO_RNE", "RNE", "CODE_UAI", "UAI", "CODE_RNE",
+                                 "NUMERO_UAI", "N_RNE", "NUMERO_ETABLISSEMENT"],
+    "ETABLISSEMENT":            ["ETABLISSEMENT", "SCHOOL", "LYCEE", "NOM_ETABLISSEMENT",
+                                 "NOM_LYCEE", "NOM_DE_L_ETABLISSEMENT"],
+    "VILLE_ETABLISSEMENT":      ["VILLE_ETABLISSEMENT", "VILLE_LYCEE",
+                                 "COMMUNE_ETABLISSEMENT", "VILLE_ECOLE"],
+    "DEPARTEMENT_ETABLISSEMENT":["DEPARTEMENT_ETABLISSEMENT", "DEPT_ETABLISSEMENT",
+                                 "DEPARTEMENT", "DEP_ETABLISSEMENT"],
+}
+
+# Reverse mapping alias → canonique
+_ALIAS_TO_CANONICAL: dict[str, str] = {
+    alias: canonical
+    for canonical, aliases in _COLUMN_ALIASES.items()
+    for alias in aliases
+}
+
+
+def _detect_headers(ws) -> tuple[int, dict[str, int]]:
+    """
+    Cherche dans les 5 premières lignes la ligne d'en-têtes (celle qui contient
+    le plus de colonnes reconnues). Retourne (numéro_ligne_1based, mapping_canonique→index).
+    """
+    best_row = 1
+    best_col: dict[str, int] = {}
+    for row_num in range(1, 6):
+        row_cells = list(ws.iter_rows(min_row=row_num, max_row=row_num))[0]
+        raw = [str(c.value or "").strip() for c in row_cells]
+        col_map: dict[str, int] = {}
+        for idx, h in enumerate(raw):
+            canonical = _ALIAS_TO_CANONICAL.get(_norm(h))
+            if canonical and canonical not in col_map:
+                col_map[canonical] = idx
+        if len(col_map) > len(best_col):
+            best_col = col_map
+            best_row = row_num
+    return best_row, best_col
+
+
 def import_candidats_complet(db: Session, planning_id: int, file_bytes: bytes) -> dict:
     """
     Importe des candidats depuis le template complet (18 colonnes).
@@ -461,7 +546,6 @@ def import_candidats_complet(db: Session, planning_id: int, file_bytes: bytes) -
     Si au moins une erreur → retourne la liste des erreurs, rien n'est créé.
     Si zéro erreur → passe 2 : insertion de tous les candidats.
     """
-    import re
     from app.core.auth import hash_password
 
     planning = db.get(Planning, planning_id)
@@ -471,9 +555,20 @@ def import_candidats_complet(db: Session, planning_id: int, file_bytes: bytes) -
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
     ws = wb.active
 
-    # Mapper en-têtes → index colonne (insensible à la casse)
-    headers_row = [str(c.value or "").strip().upper() for c in next(ws.iter_rows(min_row=1, max_row=1))]
-    col = {h: i for i, h in enumerate(headers_row)}
+    # Détection automatique de la ligne d'en-têtes et mapping canonique → index
+    header_row_num, col = _detect_headers(ws)
+    data_start = header_row_num + 1
+
+    if not col:
+        return {
+            "created": 0,
+            "candidats": [],
+            "errors": [
+                "Aucune colonne reconnue dans le fichier. "
+                "Utilisez le modèle fourni (colonnes : NOM, PRENOM, EMAIL, …) "
+                "ou vérifiez que les en-têtes sont bien en ligne 1."
+            ],
+        }
 
     def _get(row, name: str):
         idx = col.get(name)
@@ -508,7 +603,7 @@ def import_candidats_complet(db: Session, planning_id: int, file_bytes: bytes) -
     file_emails: set[str] = set()
     file_codes: set[str] = set()
 
-    for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+    for i, row in enumerate(ws.iter_rows(min_row=data_start, values_only=True), start=data_start):
         if not any(row):
             continue
 
