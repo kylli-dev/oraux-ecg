@@ -38,7 +38,7 @@ function hmToMinutes(t) {
 }
 
 function buildMatrix(bloc, jtDefaults = {}) {
-  const { matieres, duree_minutes, preparation_minutes, pause_minutes, heure_debut } = bloc;
+  const { matieres, duree_minutes, preparation_minutes, pause_minutes, heure_debut, heure_fin } = bloc;
   const N = matieres.length;
   if (N === 0) return [];
   const Nsq = N * N;
@@ -46,19 +46,24 @@ function buildMatrix(bloc, jtDefaults = {}) {
   const prep = preparation_minutes ?? jtDefaults.preparation_defaut_minutes ?? 0;
   const pause = pause_minutes ?? jtDefaults.pause_defaut_minutes ?? 0;
   const start = hmToMinutes(heure_debut);
+  const end = heure_fin ? hmToMinutes(heure_fin) : Infinity;
 
-  return Array.from({ length: Nsq }, (_, i) => {
+  const rows = [];
+  for (let i = 0; i < Nsq; i++) {
     const dPrepa = start + i * (duree + pause);
+    if (dPrepa >= end) break;          // dépasse heure_fin → on arrête
     const dExam = dPrepa + prep;
     const fExam = dExam + duree;
-    return {
+    rows.push({
       index: i,
       deb_prepa: minutesToHM(dPrepa),
       deb_exam: minutesToHM(dExam),
       fin_exam: minutesToHM(fExam),
+      overflow: fExam > end,           // créneau qui déborde
       candidates: matieres.map((_, j) => ((i - j * N) % Nsq + Nsq) % Nsq),
-    };
-  });
+    });
+  }
+  return rows;
 }
 
 const TRIPLET_BG = [
