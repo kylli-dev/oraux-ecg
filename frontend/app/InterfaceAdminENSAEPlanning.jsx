@@ -230,6 +230,9 @@ function BlocsEditor({ jtId, blocs, onReload }) {
     setEditForm({
       heure_debut: bloc.heure_debut?.slice(0, 5) ?? "",
       heure_fin: bloc.heure_fin?.slice(0, 5) ?? "",
+      duree_minutes: bloc.duree_minutes ?? "",
+      preparation_minutes: bloc.preparation_minutes ?? "",
+      pause_minutes: bloc.pause_minutes ?? "",
     });
     setErr("");
   }
@@ -247,9 +250,9 @@ function BlocsEditor({ jtId, blocs, onReload }) {
         heure_debut: editForm.heure_debut,
         heure_fin: editForm.heure_fin,
         matieres: bloc.matieres,
-        duree_minutes: bloc.duree_minutes,
-        pause_minutes: bloc.pause_minutes,
-        preparation_minutes: bloc.preparation_minutes,
+        duree_minutes: editForm.duree_minutes !== "" ? Number(editForm.duree_minutes) : null,
+        pause_minutes: editForm.pause_minutes !== "" ? Number(editForm.pause_minutes) : null,
+        preparation_minutes: editForm.preparation_minutes !== "" ? Number(editForm.preparation_minutes) : null,
         salles_par_matiere: bloc.salles_par_matiere ?? 1,
       });
       setEditingId(null);
@@ -338,59 +341,114 @@ function BlocsEditor({ jtId, blocs, onReload }) {
           const isEditing = editingId === bloc.id;
           const isPause = bloc.type_bloc === "PAUSE";
           return (
-            <div key={bloc.id} className={`flex items-center gap-3 px-4 py-3 ${isEditing ? "bg-amber-50/60" : "bg-white hover:bg-black/[0.01]"}`}>
-              {/* Badge type */}
-              <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide ${isPause ? "bg-gray-100 text-gray-500" : "bg-blue-50 text-blue-700"}`}>
-                {isPause ? "Pause" : "Génération"}
-              </span>
-
-              {/* Heures — affichage ou édition */}
+            <div key={bloc.id} className={`px-4 py-3 ${isEditing ? "bg-amber-50/60 space-y-2" : "bg-white hover:bg-black/[0.01] flex items-center gap-3"}`}>
+              {/* Ligne supérieure en mode édition */}
               {isEditing ? (
-                <div className="flex items-center gap-2 flex-1">
-                  <input
-                    type="time"
-                    value={editForm.heure_debut}
-                    onChange={(e) => setEditForm((f) => ({ ...f, heure_debut: e.target.value }))}
-                    className="border rounded px-2 py-1 text-sm font-mono w-28 focus:outline-none focus:ring-1 focus:ring-amber-400"
-                  />
-                  <span className="text-black/30">→</span>
-                  <input
-                    type="time"
-                    value={editForm.heure_fin}
-                    onChange={(e) => setEditForm((f) => ({ ...f, heure_fin: e.target.value }))}
-                    className="border rounded px-2 py-1 text-sm font-mono w-28 focus:outline-none focus:ring-1 focus:ring-amber-400"
-                  />
+                <div className="flex items-center justify-between">
+                  <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide ${isPause ? "bg-gray-100 text-gray-500" : "bg-blue-50 text-blue-700"}`}>
+                    {isPause ? "Pause" : "Génération"}
+                  </span>
+                </div>
+              ) : (
+                <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide ${isPause ? "bg-gray-100 text-gray-500" : "bg-blue-50 text-blue-700"}`}>
+                  {isPause ? "Pause" : "Génération"}
+                </span>
+              )}
+
+              {/* Champs — affichage ou édition */}
+              {isEditing ? (
+                <div className="flex-1 space-y-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <input
+                      type="time"
+                      value={editForm.heure_debut}
+                      onChange={(e) => setEditForm((f) => ({ ...f, heure_debut: e.target.value }))}
+                      className="border rounded px-2 py-1 text-sm font-mono w-28 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                    />
+                    <span className="text-black/30">→</span>
+                    <input
+                      type="time"
+                      value={editForm.heure_fin}
+                      onChange={(e) => setEditForm((f) => ({ ...f, heure_fin: e.target.value }))}
+                      className="border rounded px-2 py-1 text-sm font-mono w-28 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                    />
+                  </div>
+                  {!isPause && (
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <label className="flex items-center gap-1.5 text-xs text-black/50">
+                        Examen
+                        <input
+                          type="number" min="5" max="240"
+                          value={editForm.duree_minutes}
+                          onChange={(e) => setEditForm((f) => ({ ...f, duree_minutes: e.target.value }))}
+                          placeholder="défaut"
+                          className="border rounded px-2 py-0.5 text-sm w-20 font-mono focus:outline-none focus:ring-1 focus:ring-amber-400"
+                        />
+                        min
+                      </label>
+                      <label className="flex items-center gap-1.5 text-xs text-black/50">
+                        Prépa
+                        <input
+                          type="number" min="0" max="120"
+                          value={editForm.preparation_minutes}
+                          onChange={(e) => setEditForm((f) => ({ ...f, preparation_minutes: e.target.value }))}
+                          placeholder="défaut"
+                          className="border rounded px-2 py-0.5 text-sm w-20 font-mono focus:outline-none focus:ring-1 focus:ring-amber-400"
+                        />
+                        min
+                      </label>
+                      <label className="flex items-center gap-1.5 text-xs text-black/50">
+                        Transition
+                        <input
+                          type="number" min="0" max="120"
+                          value={editForm.pause_minutes}
+                          onChange={(e) => setEditForm((f) => ({ ...f, pause_minutes: e.target.value }))}
+                          placeholder="défaut"
+                          className="border rounded px-2 py-0.5 text-sm w-20 font-mono focus:outline-none focus:ring-1 focus:ring-amber-400"
+                        />
+                        min
+                      </label>
+                    </div>
+                  )}
                   {err && <span className="text-xs text-red-500">{err}</span>}
                 </div>
               ) : (
                 <div className="flex-1">
-                  <span className="font-mono text-sm font-semibold text-black/80">
-                    {bloc.heure_debut?.slice(0, 5)} → {bloc.heure_fin?.slice(0, 5)}
-                  </span>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="font-mono text-sm font-semibold text-black/80">
+                      {bloc.heure_debut?.slice(0, 5)} → {bloc.heure_fin?.slice(0, 5)}
+                    </span>
+                    {!isPause && (
+                      <span className="text-xs text-black/35 flex gap-2">
+                        {bloc.duree_minutes != null && <span>exam {bloc.duree_minutes}min</span>}
+                        {bloc.preparation_minutes != null && <span>· prépa {bloc.preparation_minutes}min</span>}
+                        {bloc.pause_minutes != null && <span>· transition {bloc.pause_minutes}min</span>}
+                      </span>
+                    )}
+                  </div>
                   {!isPause && bloc.matieres.length > 0 && (
-                    <span className="ml-3 text-xs text-black/40">{bloc.matieres.join(" · ")}</span>
+                    <span className="text-xs text-black/40">{bloc.matieres.join(" · ")}</span>
                   )}
                 </div>
               )}
 
               {/* Actions */}
-              <div className="flex items-center gap-1 shrink-0">
+              <div className={`flex items-center gap-1 ${isEditing ? "self-end" : "shrink-0"}`}>
                 {isEditing ? (
                   <>
                     <button
                       onClick={() => saveEdit(bloc)}
                       disabled={saving}
-                      className="p-1.5 rounded text-green-600 hover:bg-green-50 transition disabled:opacity-40"
-                      title="Enregistrer"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition disabled:opacity-40"
+                      style={{ backgroundColor: ENSAE_RED }}
                     >
-                      <Check className="h-3.5 w-3.5" />
+                      <Check className="h-3.5 w-3.5" /> Enregistrer
                     </button>
                     <button
                       onClick={cancelEdit}
-                      className="p-1.5 rounded text-black/40 hover:bg-black/5 transition"
-                      title="Annuler"
+                      className="px-3 py-1.5 rounded-lg text-xs text-black/50 hover:bg-black/5 transition"
                     >
-                      <X className="h-3.5 w-3.5" />
+                      Annuler
                     </button>
                   </>
                 ) : (
