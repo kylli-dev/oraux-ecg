@@ -457,8 +457,11 @@ def export_template_candidats_complet() -> bytes:
 def import_candidats_complet(db: Session, planning_id: int, file_bytes: bytes) -> dict:
     """
     Importe des candidats depuis le template complet (18 colonnes).
-    Colonnes lues par en-tête (insensible à la casse).
+    Validation complète en passe 1 (aucune écriture).
+    Si au moins une erreur → retourne la liste des erreurs, rien n'est créé.
+    Si zéro erreur → passe 2 : insertion de tous les candidats.
     """
+    import re
     from app.core.auth import hash_password
 
     planning = db.get(Planning, planning_id)
@@ -468,81 +471,141 @@ def import_candidats_complet(db: Session, planning_id: int, file_bytes: bytes) -
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
     ws = wb.active
 
-    # Lire les en-têtes (ligne 1) pour mapper colonne → index
+    # Mapper en-têtes → index colonne (insensible à la casse)
     headers_row = [str(c.value or "").strip().upper() for c in next(ws.iter_rows(min_row=1, max_row=1))]
     col = {h: i for i, h in enumerate(headers_row)}
 
-    def _get(row, name: str) -> str | None:
+    def _get(row, name: str):
         idx = col.get(name)
         if idx is None or idx >= len(row):
             return None
         v = row[idx]
         return str(v).strip() if v is not None else None
 
-    def _bool(val: str | None) -> bool | None:
+    def _bool(val):
         if val is None:
             return None
         return val.upper() in ("OUI", "1", "TRUE", "VRAI", "YES")
 
-    created = []
+    EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    # Valeurs acceptées pour la civilité (insensible à la casse)
+    CIVILITE_OK = {"M.", "MME.", "MONSIEUR", "MADAME", "AUTRE", "M", "MME"}
+
+    # Chargement des doublons déjà en base pour ce planning
+    existing_emails: set[str] = {
+        c.email.lower()
+        for c in db.query(Candidat).filter_by(planning_id=planning_id).all()
+    }
+    existing_codes: set[str] = {
+        c.code_candidat
+        for c in db.query(Candidat).filter_by(planning_id=planning_id).all()
+        if c.code_candidat
+    }
+
+    # ── Passe 1 : validation ──────────────────────────────────────────────────
     errors: list[str] = []
+    valid_rows: list[tuple[int, tuple]] = []
+    file_emails: set[str] = set()
+    file_codes: set[str] = set()
 
     for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
         if not any(row):
             continue
-        try:
-            nom = _get(row, "NOM")
-            prenom = _get(row, "PRENOM")
-            email = _get(row, "EMAIL")
 
-            if not all([nom, prenom, email]):
-                errors.append(f"Ligne {i} : NOM, PRENOM et EMAIL sont obligatoires")
-                continue
+        nom = _get(row, "NOM")
+        prenom = _get(row, "PRENOM")
+        email = _get(row, "EMAIL")
+        code_candidat = _get(row, "CODE_CANDIDAT")
+        civilite = _get(row, "CIVILITE")
+        label = f"{nom or '?'} {prenom or '?'}"
+        row_errors: list[str] = []
 
-            plain_pwd = secrets.token_urlsafe(8)
-            profil = _get(row, "QUALITE")  # mapping simplifié
+        # Champs obligatoires
+        if not nom:
+            row_errors.append("NOM manquant")
+        if not prenom:
+            row_errors.append("PRÉNOM manquant")
+        if not email:
+            row_errors.append("EMAIL manquant")
+        else:
+            if not EMAIL_RE.match(email):
+                row_errors.append(f"format EMAIL invalide : « {email} »")
+            else:
+                email_low = email.lower()
+                if email_low in file_emails:
+                    row_errors.append(f"EMAIL en doublon dans le fichier : « {email} »")
+                elif email_low in existing_emails:
+                    row_errors.append(f"EMAIL déjà présent en base : « {email} »")
+                else:
+                    file_emails.add(email_low)
 
-            c = Candidat(
-                planning_id=planning_id,
-                nom=nom,
-                prenom=prenom,
-                email=email,
-                login=email,
-                password_hash=hash_password(plain_pwd),
-                statut="INSCRIT",
-                # Champs import complet
-                code_candidat=_get(row, "CODE_CANDIDAT"),
-                numero_ine=_get(row, "NUMERO_INE"),
-                civilite=_get(row, "CIVILITE"),
-                date_naissance=_get(row, "DATE_NAISSANCE"),
-                tel_portable=_get(row, "TEL_PORTABLE"),
-                qualite=_get(row, "QUALITE"),
-                handicape=_bool(_get(row, "HANDICAPE")),
-                cp=_get(row, "CP"),
-                ville=_get(row, "VILLE"),
-                libelle_pays=_get(row, "LIBELLE_PAYS"),
-                classe=_get(row, "CLASSE"),
-                code_uai=_get(row, "NUMERO_RNE"),
-                etablissement=_get(row, "ETABLISSEMENT"),
-                ville_etablissement=_get(row, "VILLE_ETABLISSEMENT"),
-                departement_etablissement=_get(row, "DEPARTEMENT_ETABLISSEMENT"),
+        # Doublon CODE_CANDIDAT
+        if code_candidat:
+            if code_candidat in file_codes:
+                row_errors.append(f"CODE_CANDIDAT en doublon dans le fichier : « {code_candidat} »")
+            elif code_candidat in existing_codes:
+                row_errors.append(f"CODE_CANDIDAT déjà présent en base : « {code_candidat} »")
+            else:
+                file_codes.add(code_candidat)
+
+        # Civilité
+        if civilite and civilite.upper() not in CIVILITE_OK:
+            row_errors.append(
+                f"CIVILITE invalide : « {civilite} » "
+                f"(valeurs acceptées : M., Mme., Monsieur, Madame, Autre)"
             )
-            db.add(c)
-            db.flush()
-            created.append({
-                "id": c.id,
-                "nom": nom,
-                "prenom": prenom,
-                "email": email,
-                "login": email,
-                "password_provisoire": plain_pwd,
-                "code_candidat": c.code_candidat,
-            })
-        except Exception as ex:
-            errors.append(f"Ligne {i} : {ex}")
+
+        if row_errors:
+            errors.append(f"Ligne {i} ({label}) : " + " ; ".join(row_errors))
+        else:
+            valid_rows.append((i, row))
+
+    # ── Si erreurs → aucune insertion ────────────────────────────────────────
+    if errors:
+        return {"created": 0, "candidats": [], "errors": errors}
+
+    # ── Passe 2 : insertion (zéro erreur garantie) ────────────────────────────
+    created = []
+    for _i, row in valid_rows:
+        plain_pwd = secrets.token_urlsafe(8)
+        c = Candidat(
+            planning_id=planning_id,
+            nom=_get(row, "NOM"),
+            prenom=_get(row, "PRENOM"),
+            email=_get(row, "EMAIL"),
+            login=_get(row, "EMAIL"),
+            password_hash=hash_password(plain_pwd),
+            statut="INSCRIT",
+            code_candidat=_get(row, "CODE_CANDIDAT"),
+            numero_ine=_get(row, "NUMERO_INE"),
+            civilite=_get(row, "CIVILITE"),
+            date_naissance=_get(row, "DATE_NAISSANCE"),
+            tel_portable=_get(row, "TEL_PORTABLE"),
+            qualite=_get(row, "QUALITE"),
+            handicape=_bool(_get(row, "HANDICAPE")),
+            cp=_get(row, "CP"),
+            ville=_get(row, "VILLE"),
+            libelle_pays=_get(row, "LIBELLE_PAYS"),
+            classe=_get(row, "CLASSE"),
+            code_uai=_get(row, "NUMERO_RNE"),
+            etablissement=_get(row, "ETABLISSEMENT"),
+            ville_etablissement=_get(row, "VILLE_ETABLISSEMENT"),
+            departement_etablissement=_get(row, "DEPARTEMENT_ETABLISSEMENT"),
+        )
+        db.add(c)
+        db.flush()
+        created.append({
+            "id": c.id,
+            "nom": _get(row, "NOM"),
+            "prenom": _get(row, "PRENOM"),
+            "email": _get(row, "EMAIL"),
+            "login": _get(row, "EMAIL"),
+            "password_provisoire": plain_pwd,
+            "code_candidat": c.code_candidat,
+        })
 
     db.commit()
-    return {"created": len(created), "candidats": created, "errors": errors}
+    return {"created": len(created), "candidats": created, "errors": []}
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

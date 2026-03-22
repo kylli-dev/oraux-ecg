@@ -391,15 +391,15 @@ function ImportExcelModal({
           </a>
         </div>
 
-        {/* File picker */}
-        {!result && (
+        {/* File picker — visible si pas encore de résultat OU si erreurs bloquantes */}
+        {(!result || (result.errors?.length > 0 && result.created === 0)) && (
           <div>
             <input
               ref={inputRef}
               type="file"
               accept=".xlsx,.xls"
               className="hidden"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null); }}
             />
             <div
               onClick={() => inputRef.current?.click()}
@@ -424,25 +424,33 @@ function ImportExcelModal({
         {error && <div className="rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600">{error}</div>}
 
         {/* Résultat */}
-        {result && (
+        {result && result.errors?.length > 0 && result.created === 0 && (
+          <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3">
+            <p className="text-sm font-semibold text-red-700 mb-2">
+              ✗ Import bloqué — {result.errors.length} erreur(s) détectée(s). Aucune ligne créée.
+            </p>
+            <p className="text-xs text-red-600 mb-2">Corrigez le fichier puis réessayez.</p>
+            <ul className="text-xs text-red-600 space-y-1 max-h-64 overflow-y-auto">
+              {result.errors.map((e: string, i: number) => (
+                <li key={i} className="flex gap-1.5">
+                  <span className="shrink-0 font-bold">•</span>
+                  <span>{e}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {result && result.created > 0 && (
           <div className="rounded-xl bg-green-50 border border-green-100 px-4 py-3">
             <p className="text-sm font-semibold text-green-800 mb-2">
-              ✓ Import terminé — {result.created} ligne(s) créée(s)
+              ✓ Import terminé — {result.created} candidat(s) créé(s)
             </p>
-            {result.errors?.length > 0 && (
-              <div className="mt-2">
-                <p className="text-xs font-medium text-amber-700 mb-1">{result.errors.length} avertissement(s) :</p>
-                <ul className="text-xs text-amber-700 space-y-0.5">
-                  {result.errors.map((e: string, i: number) => <li key={i}>• {e}</li>)}
-                </ul>
-              </div>
-            )}
             {resultRenderer && resultRenderer(result)}
           </div>
         )}
 
         {/* Actions */}
-        {!result && (
+        {(!result || (result.errors?.length > 0 && result.created === 0)) && (
           <div className="flex gap-2 justify-end">
             <button onClick={handleClose} className="text-sm text-gray-500 px-4 py-2 rounded-lg hover:bg-gray-100 transition">
               Annuler
@@ -453,11 +461,11 @@ function ImportExcelModal({
               className="flex items-center gap-2 text-sm font-semibold bg-[#C62828] text-white px-4 py-2 rounded-lg hover:bg-[#b71c1c] transition disabled:opacity-50"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              Importer
+              {result?.errors?.length > 0 ? "Réessayer" : "Importer"}
             </button>
           </div>
         )}
-        {result && (
+        {result && result.created > 0 && (
           <div className="flex justify-end">
             <button onClick={handleClose} className="text-sm font-semibold bg-[#C62828] text-white px-4 py-2 rounded-lg hover:bg-[#b71c1c] transition">
               Fermer
