@@ -37,14 +37,14 @@ function hmToMinutes(t) {
   return h * 60 + m;
 }
 
-function buildMatrix(bloc) {
+function buildMatrix(bloc, jtDefaults = {}) {
   const { matieres, duree_minutes, preparation_minutes, pause_minutes, heure_debut } = bloc;
   const N = matieres.length;
   if (N === 0) return [];
   const Nsq = N * N;
-  const duree = duree_minutes;
-  const prep = preparation_minutes ?? 0;
-  const pause = pause_minutes ?? 0;
+  const duree = duree_minutes ?? jtDefaults.duree_defaut_minutes ?? 20;
+  const prep = preparation_minutes ?? jtDefaults.preparation_defaut_minutes ?? 0;
+  const pause = pause_minutes ?? jtDefaults.pause_defaut_minutes ?? 0;
   const start = hmToMinutes(heure_debut);
 
   return Array.from({ length: Nsq }, (_, i) => {
@@ -102,8 +102,8 @@ function TripletCell({ k, statut, onClick }) {
 }
 
 // ── Matrice journée type ───────────────────────────────────────────────────────
-function MatriceJourneeType({ bloc, tripletStatuts, onTripletClick }) {
-  const matrix = buildMatrix(bloc);
+function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick }) {
+  const matrix = buildMatrix(bloc, jt);
   const N = bloc.matieres.length;
   const Nsq = N * N;
   const isMatin = hmToMinutes(bloc.heure_debut) < 12 * 60;
@@ -670,6 +670,7 @@ export default function InterfaceAdminENSAEPlanning() {
                           <MatriceJourneeType
                             key={bloc.id}
                             bloc={bloc}
+                            jt={selectedJT}
                             tripletStatuts={tripletStatuts}
                             onTripletClick={handleTripletClick}
                           />
