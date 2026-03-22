@@ -34,6 +34,7 @@ import {
   FileSpreadsheet,
   Send,
   LogOut,
+  Building2,
 } from "lucide-react";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -123,6 +124,10 @@ type EpreuveFlat = {
   examinateur_id: number | null;
   examinateur_nom: string | null;
   examinateur_prenom: string | null;
+  salle_id: number | null;
+  salle_intitule: string | null;
+  salle_preparation_id: number | null;
+  salle_preparation_intitule: string | null;
 };
 
 type Examinateur = {
@@ -164,7 +169,13 @@ type DashboardData = {
   by_date: { date: string; count: number }[];
 };
 
-type SectionKey = "plannings" | "journeeTypes" | "candidats" | "examinateurs" | "dashboard" | "conflits" | "parametrages" | "notes";
+type SectionKey = "plannings" | "journeeTypes" | "candidats" | "examinateurs" | "dashboard" | "conflits" | "parametrages" | "notes" | "salles";
+
+type Salle = {
+  id: number;
+  intitule: string;
+  active: boolean;
+};
 
 type MessageType = {
   code: string;
@@ -4942,6 +4953,7 @@ function Sidebar({
       { key: "examinateurs", label: "Examinateurs", icon: GraduationCap },
       { key: "dashboard", label: "Tableau de bord", icon: BarChart3 },
       { key: "conflits", label: "Conflits", icon: AlertTriangle, badge: nbConflits },
+      { key: "salles", label: "Salles", icon: Building2 },
       { key: "notes", label: "Notes", icon: FileSpreadsheet },
       { key: "parametrages", label: "Paramétrages", icon: Settings2 },
     ];
@@ -5028,6 +5040,281 @@ function LogoutButton() {
       <LogOut className="h-3.5 w-3.5" />
       {loading ? "Déconnexion…" : "Se déconnecter"}
     </button>
+  );
+}
+
+// ── Gestion des salles ─────────────────────────────────────────────────────────
+function SallesSection() {
+  const [plannings, setPlannings] = useState<Planning[]>([]);
+  const [planningId, setPlanningId] = useState<number | "">("");
+  const [salles, setSalles] = useState<Salle[]>([]);
+  const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState<number | null>(null);
+  const [newSalle, setNewSalle] = useState("");
+  const [addingS, setAddingS] = useState(false);
+  const [addErr, setAddErr] = useState("");
+  const [filterMatiere, setFilterMatiere] = useState("");
+
+  const reloadSalles = useCallback(() => {
+    get<Salle[]>("parametrages/salles/").then(setSalles).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    get<Planning[]>("plannings/").then(setPlannings).catch(() => {});
+    reloadSalles();
+  }, [reloadSalles]);
+
+  useEffect(() => {
+    if (!planningId) { setEpreuves([]); return; }
+    setLoading(true);
+    get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`)
+      .then(setEpreuves)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [planningId]);
+
+  async function assignSalle(
+    epreuveId: number,
+    field: "salle_id" | "salle_preparation_id",
+    value: number | null
+  ) {
+    setSaving(epreuveId);
+    try {
+      await patch(`plannings/${planningId}/epreuves/${epreuveId}`, { [field]: value });
+      const intituleField = field === "salle_id" ? "salle_intitule" : "salle_preparation_intitule";
+      const salle = salles.find((s) => s.id === value) ?? null;
+      setEpreuves((prev) =>
+        prev.map((e) =>
+          e.id === epreuveId
+            ? { ...e, [field]: value, [intituleField]: salle?.intitule ?? null }
+            : e
+        )
+      );
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  async function createSalle() {
+    if (!newSalle.trim()) return;
+    setAddingS(true); setAddErr("");
+    try {
+      const s = await post<Salle>("parametrages/salles/", { intitule: newSalle.trim(), active: true });
+      setSalles((prev) => [...prev, s].sort((a, b) => a.intitule.localeCompare(b.intitule)));
+      setNewSalle("");
+    } catch (e: unknown) {
+      setAddErr(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setAddingS(false);
+    }
+  }
+
+  async function toggleSalle(s: Salle) {
+    await patch(`parametrages/salles/${s.id}`, { active: !s.active });
+    setSalles((prev) => prev.map((x) => (x.id === s.id ? { ...x, active: !x.active } : x)));
+  }
+
+  async function deleteSalle(id: number) {
+    if (!confirm("Supprimer cette salle ?")) return;
+    await del(`parametrages/salles/${id}`);
+    setSalles((prev) => prev.filter((s) => s.id !== id));
+  }
+
+  // Grouper par date
+  const matieres = Array.from(new Set(epreuves.map((e) => e.matiere))).sort();
+  const filtered = filterMatiere ? epreuves.filter((e) => e.matiere === filterMatiere) : epreuves;
+  const byDate = filtered.reduce<Record<string, EpreuveFlat[]>>((acc, e) => {
+    (acc[e.date] ??= []).push(e);
+    return acc;
+  }, {});
+  const dates = Object.keys(byDate).sort();
+
+  const activeSalles = salles.filter((s) => s.active);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <div className="h-9 w-9 rounded-xl grid place-items-center text-white" style={{ backgroundColor: RED }}>
+          <Building2 className="h-5 w-5" />
+        </div>
+        <div>
+          <h2 className="text-xl font-bold text-black/90">Gestion des salles</h2>
+          <p className="text-xs text-black/40">Affectez une salle d'examen et une salle de préparation à chaque créneau</p>
+        </div>
+      </div>
+
+      <div className="flex gap-5 items-start">
+        {/* Panneau salles */}
+        <div className="w-64 shrink-0 bg-white rounded-2xl border border-black/5 shadow-sm p-4 space-y-3">
+          <p className="text-xs font-semibold text-black/40 uppercase tracking-wide">Salles disponibles</p>
+
+          {/* Ajouter une salle */}
+          <div className="flex gap-1.5">
+            <input
+              type="text"
+              value={newSalle}
+              onChange={(e) => setNewSalle(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && createSalle()}
+              placeholder="ex : 2042"
+              className="flex-1 border rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-black/15"
+            />
+            <button
+              onClick={createSalle}
+              disabled={addingS || !newSalle.trim()}
+              className="px-2.5 py-1.5 rounded-lg text-white text-sm font-medium disabled:opacity-40"
+              style={{ backgroundColor: RED }}
+            >
+              {addingS ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            </button>
+          </div>
+          {addErr && <p className="text-xs text-red-500">{addErr}</p>}
+
+          {/* Liste */}
+          <div className="divide-y divide-black/5 rounded-xl border border-black/8 overflow-hidden">
+            {salles.length === 0 && (
+              <p className="text-sm text-black/30 text-center py-4">Aucune salle</p>
+            )}
+            {salles.map((s) => (
+              <div key={s.id} className="flex items-center gap-2 px-3 py-2 bg-white hover:bg-black/[0.01]">
+                <button
+                  onClick={() => toggleSalle(s)}
+                  title={s.active ? "Désactiver" : "Activer"}
+                  className={`h-4 w-4 rounded border flex-shrink-0 transition ${s.active ? "bg-emerald-500 border-emerald-500" : "border-black/20"}`}
+                >
+                  {s.active && <CheckCircle2 className="h-3 w-3 text-white m-auto" />}
+                </button>
+                <span className={`flex-1 text-sm font-mono ${s.active ? "text-black/80" : "text-black/30 line-through"}`}>
+                  {s.intitule}
+                </span>
+                <button
+                  onClick={() => deleteSalle(s.id)}
+                  className="p-1 rounded text-red-300 hover:text-red-500 hover:bg-red-50 transition"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-black/30">
+            {activeSalles.length} salle(s) active(s) · Cochez pour activer/désactiver
+          </p>
+        </div>
+
+        {/* Panneau épreuves */}
+        <div className="flex-1 min-w-0 space-y-4">
+          {/* Sélection planning + filtre matière */}
+          <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-4 flex gap-3 flex-wrap">
+            <div className="flex-1 min-w-[180px]">
+              <label className="text-xs text-black/40 mb-1 block">Planning</label>
+              <select
+                value={planningId}
+                onChange={(e) => setPlanningId(e.target.value ? Number(e.target.value) : "")}
+                className="w-full border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-black/15"
+              >
+                <option value="">— Choisir un planning —</option>
+                {plannings.map((p) => (
+                  <option key={p.id} value={p.id}>{p.nom}</option>
+                ))}
+              </select>
+            </div>
+            {matieres.length > 0 && (
+              <div className="flex-1 min-w-[140px]">
+                <label className="text-xs text-black/40 mb-1 block">Filtrer par matière</label>
+                <select
+                  value={filterMatiere}
+                  onChange={(e) => setFilterMatiere(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-black/15"
+                >
+                  <option value="">Toutes</option>
+                  {matieres.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* Tableau */}
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="h-6 w-6 animate-spin text-black/20" />
+            </div>
+          ) : !planningId ? (
+            <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-12 text-center">
+              <Building2 className="h-10 w-10 mx-auto mb-3 text-black/10" />
+              <p className="text-sm text-black/40">Sélectionnez un planning pour affecter les salles</p>
+            </div>
+          ) : dates.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-12 text-center">
+              <p className="text-sm text-black/30">Aucun créneau trouvé pour ce planning.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {dates.map((date) => (
+                <div key={date} className="bg-white rounded-2xl border border-black/5 shadow-sm overflow-hidden">
+                  <div className="px-4 py-2.5 bg-black/[0.02] border-b border-black/5">
+                    <span className="text-xs font-semibold text-black/50">
+                      {new Date(date + "T12:00:00").toLocaleDateString("fr-FR", {
+                        weekday: "long", day: "numeric", month: "long",
+                      })}
+                    </span>
+                  </div>
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-black/5">
+                        <th className="text-left px-4 py-2 text-black/40 font-medium w-20">Heure</th>
+                        <th className="text-left px-4 py-2 text-black/40 font-medium w-32">Matière</th>
+                        <th className="text-left px-4 py-2 text-black/60 font-semibold">Salle d'examen</th>
+                        <th className="text-left px-4 py-2 text-black/40 font-medium">Salle de préparation</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {byDate[date]
+                        .sort((a, b) => a.heure_debut.localeCompare(b.heure_debut))
+                        .map((e) => (
+                          <tr key={e.id} className="border-b border-black/[0.04] last:border-0 hover:bg-black/[0.01]">
+                            <td className="px-4 py-2 font-mono text-black/60">{e.heure_debut}</td>
+                            <td className="px-4 py-2 font-medium text-black/70">{e.matiere}</td>
+                            <td className="px-4 py-2">
+                              <select
+                                value={e.salle_id ?? ""}
+                                onChange={(ev) =>
+                                  assignSalle(e.id, "salle_id", ev.target.value ? Number(ev.target.value) : null)
+                                }
+                                disabled={saving === e.id}
+                                className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[120px]"
+                              >
+                                <option value="">— Aucune —</option>
+                                {activeSalles.map((s) => (
+                                  <option key={s.id} value={s.id}>{s.intitule}</option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="px-4 py-2">
+                              <select
+                                value={e.salle_preparation_id ?? ""}
+                                onChange={(ev) =>
+                                  assignSalle(e.id, "salle_preparation_id", ev.target.value ? Number(ev.target.value) : null)
+                                }
+                                disabled={saving === e.id}
+                                className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[120px]"
+                              >
+                                <option value="">— Aucune —</option>
+                                {activeSalles.map((s) => (
+                                  <option key={s.id} value={s.id}>{s.intitule}</option>
+                                ))}
+                              </select>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -5121,6 +5408,7 @@ export default function AdminPage() {
             {section === "examinateurs" && <ExaminateursSection />}
             {section === "dashboard" && <DashboardSection />}
             {section === "conflits" && <ConflitsSection />}
+            {section === "salles" && <SallesSection />}
             {section === "notes" && <NotesSection />}
             {section === "parametrages" && <ParametragesSection />}
           </div>

@@ -38,6 +38,8 @@ class EpreuveCreate(BaseModel):
 class EpreuveUpdate(BaseModel):
     statut: Optional[str] = None
     matiere: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    salle_id: Optional[int] = None
+    salle_preparation_id: Optional[int] = None
 
     @field_validator("statut")
     @classmethod
@@ -63,6 +65,10 @@ class EpreuveOut(BaseModel):
     examinateur_id: Optional[int] = None
     examinateur_nom: Optional[str] = None
     examinateur_prenom: Optional[str] = None
+    salle_id: Optional[int] = None
+    salle_intitule: Optional[str] = None
+    salle_preparation_id: Optional[int] = None
+    salle_preparation_intitule: Optional[str] = None
 
     class Config:
         from_attributes = True

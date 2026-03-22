@@ -135,9 +135,12 @@ def list_epreuves_planning(
         q = q.filter(Epreuve.examinateur_id == examinateur_id)
     rows = q.order_by(DemiJournee.date, Epreuve.heure_debut).all()
     result = []
+    from app.models.salle import Salle as SalleModel
     for epreuve, dj in rows:
         candidat = db.get(Candidat, epreuve.candidat_id) if epreuve.candidat_id else None
         examinateur = db.get(ExaminateurModel, epreuve.examinateur_id) if epreuve.examinateur_id else None
+        salle = db.get(SalleModel, epreuve.salle_id) if epreuve.salle_id else None
+        salle_prep = db.get(SalleModel, epreuve.salle_preparation_id) if epreuve.salle_preparation_id else None
         result.append({
             "id": epreuve.id,
             "date": str(dj.date),
@@ -153,6 +156,10 @@ def list_epreuves_planning(
             "examinateur_id": examinateur.id if examinateur else None,
             "examinateur_nom": examinateur.nom if examinateur else None,
             "examinateur_prenom": examinateur.prenom if examinateur else None,
+            "salle_id": salle.id if salle else None,
+            "salle_intitule": salle.intitule if salle else None,
+            "salle_preparation_id": salle_prep.id if salle_prep else None,
+            "salle_preparation_intitule": salle_prep.intitule if salle_prep else None,
         })
     return result
 

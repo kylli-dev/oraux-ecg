@@ -115,6 +115,9 @@ def _run_migrations():
         "ALTER TABLE candidat ADD COLUMN etablissement VARCHAR(200)",
         "ALTER TABLE candidat ADD COLUMN ville_etablissement VARCHAR(100)",
         "ALTER TABLE candidat ADD COLUMN departement_etablissement VARCHAR(100)",
+        # Salles sur épreuve
+        "ALTER TABLE epreuve ADD COLUMN salle_id INTEGER REFERENCES salle(id) ON DELETE SET NULL",
+        "ALTER TABLE epreuve ADD COLUMN salle_preparation_id INTEGER REFERENCES salle(id) ON DELETE SET NULL",
     ]
     with engine.connect() as conn:
         for sql in migrations:
