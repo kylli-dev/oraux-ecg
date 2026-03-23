@@ -612,6 +612,11 @@ def import_candidats_complet(db: Session, planning_id: int, file_bytes: bytes) -
         email = _get(row, "EMAIL")
         code_candidat = _get(row, "CODE_CANDIDAT")
         civilite = _get(row, "CIVILITE")
+
+        # Ligne sans aucun champ identifiant → ligne vide ou métadonnée, on l'ignore
+        if not nom and not prenom and not email:
+            continue
+
         label = f"{nom or '?'} {prenom or '?'}"
         row_errors: list[str] = []
 
