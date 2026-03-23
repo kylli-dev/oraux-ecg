@@ -17,46 +17,49 @@ async function proxy(req: NextRequest, pathSegments: string[]) {
   const contentType = req.headers.get("content-type") ?? "";
   const isMultipart = contentType.includes("multipart/form-data");
 
-  let fetchBody: BodyInit | undefined;
-  if (!["GET", "HEAD"].includes(req.method)) {
-    if (isMultipart) {
-      // Transmettre le body brut avec le Content-Type original (boundary inclus)
-      // req.formData() recrée un nouveau FormData avec un nouveau boundary → peut bloquer
-      fetchBody = await req.arrayBuffer();
-      headers["Content-Type"] = contentType;
-    } else {
-      const text = await req.text();
-      if (text) {
-        fetchBody = text;
-        headers["Content-Type"] = "application/json";
-      }
-    }
-  }
-
   let res: Response;
   try {
-    res = await fetch(upstream, {
-      method: req.method,
-      headers,
-      body: fetchBody,
-      cache: "no-store",
-    });
-  } catch (e: any) {
-    return NextResponse.json(
-      { detail: `Backend inaccessible : ${e.message}` },
-      { status: 502 }
-    );
+    if (!["GET", "HEAD"].includes(req.method)) {
+      if (isMultipart) {
+        // Lire le body entier en mémoire puis le renvoyer avec le Content-Type original.
+        // req.body (ReadableStream) nécessite duplex:"half" non supporté partout ;
+        // arrayBuffer() est plus fiable en prod mais peut être lent — acceptable pour 200 Ko.
+        const buf = await req.arrayBuffer();
+        res = await fetch(upstream, {
+          method: req.method,
+          headers: { ...headers, "Content-Type": contentType },
+          body: buf,
+          cache: "no-store",
+        });
+      } else {
+        const text = await req.text();
+        res = await fetch(upstream, {
+          method: req.method,
+          headers: text ? { ...headers, "Content-Type": "application/json" } : headers,
+          body: text || undefined,
+          cache: "no-store",
+        });
+      }
+    } else {
+      res = await fetch(upstream, {
+        method: req.method,
+        headers,
+        cache: "no-store",
+      });
+    }
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ detail: `Backend inaccessible : ${msg}` }, { status: 502 });
   }
 
   if (res.status === 204) return new NextResponse(null, { status: 204 });
 
-  // Stream binary responses (e.g. Excel export) transparently
   const upstreamContentType = res.headers.get("content-type") ?? "application/json";
   const contentDisposition = res.headers.get("content-disposition");
-  const buf = await res.arrayBuffer();
+  const resBuf = await res.arrayBuffer();
   const responseHeaders: Record<string, string> = { "Content-Type": upstreamContentType };
   if (contentDisposition) responseHeaders["Content-Disposition"] = contentDisposition;
-  return new NextResponse(buf, { status: res.status, headers: responseHeaders });
+  return new NextResponse(resBuf, { status: res.status, headers: responseHeaders });
 }
 
 type Ctx = { params: Promise<{ path: string[] }> };
