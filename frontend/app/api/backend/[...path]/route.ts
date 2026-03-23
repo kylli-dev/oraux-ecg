@@ -20,8 +20,10 @@ async function proxy(req: NextRequest, pathSegments: string[]) {
   let fetchBody: BodyInit | undefined;
   if (!["GET", "HEAD"].includes(req.method)) {
     if (isMultipart) {
-      // Forward as FormData — let fetch set Content-Type with boundary
-      fetchBody = await req.formData();
+      // Transmettre le body brut avec le Content-Type original (boundary inclus)
+      // req.formData() recrée un nouveau FormData avec un nouveau boundary → peut bloquer
+      fetchBody = await req.arrayBuffer();
+      headers["Content-Type"] = contentType;
     } else {
       const text = await req.text();
       if (text) {
