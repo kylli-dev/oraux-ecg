@@ -45,14 +45,14 @@ def template():
 
 
 @router.post("/plannings/{planning_id}/import")
-async def import_excel(
+def import_excel(
     planning_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
     if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(status_code=400, detail="Fichier Excel (.xlsx) requis")
-    content = await file.read()
+    content = file.file.read()
     try:
         result = import_epreuves(db, planning_id, content)
     except ValueError as e:
@@ -73,14 +73,14 @@ def template_candidats():
 
 
 @router.post("/plannings/{planning_id}/candidats/import")
-async def import_candidats_excel(
+def import_candidats_excel(
     planning_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
     if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(status_code=400, detail="Fichier Excel (.xlsx) requis")
-    content = await file.read()
+    content = file.file.read()
     try:
         result = import_candidats(db, planning_id, content)
     except ValueError as e:
@@ -100,7 +100,7 @@ def template_candidats_complet():
 
 
 @router.post("/plannings/{planning_id}/candidats/import-complet")
-async def import_candidats_complet_excel(
+def import_candidats_complet_excel(
     planning_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -108,7 +108,7 @@ async def import_candidats_complet_excel(
     """Importe les candidats depuis le template complet 18 colonnes."""
     if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(status_code=400, detail="Fichier Excel (.xlsx) requis")
-    content = await file.read()
+    content = file.file.read()
     try:
         result = import_candidats_complet(db, planning_id, content)
     except ValueError as e:
@@ -129,14 +129,14 @@ def template_examinateurs():
 
 
 @router.post("/plannings/{planning_id}/examinateurs/import")
-async def import_examinateurs_excel(
+def import_examinateurs_excel(
     planning_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
     if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(status_code=400, detail="Fichier Excel (.xlsx) requis")
-    content = await file.read()
+    content = file.file.read()
     try:
         result = import_examinateurs(db, planning_id, content)
     except ValueError as e:

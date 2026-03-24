@@ -665,7 +665,8 @@ def import_candidats_complet(db: Session, planning_id: int, file_bytes: bytes) -
         return {"created": 0, "candidats": [], "errors": errors}
 
     # ── Passe 2 : insertion (zéro erreur garantie) ────────────────────────────
-    created = []
+    # Prépare tous les objets + mots de passe sans toucher la DB
+    pending: list[tuple[Candidat, str]] = []
     for _i, row in valid_rows:
         plain_pwd = secrets.token_urlsafe(8)
         c = Candidat(
@@ -693,18 +694,24 @@ def import_candidats_complet(db: Session, planning_id: int, file_bytes: bytes) -
             departement_etablissement=_get(row, "DEPARTEMENT_ETABLISSEMENT"),
         )
         db.add(c)
-        db.flush()
-        created.append({
+        pending.append((c, plain_pwd))
+
+    # Un seul flush pour tous les INSERTs → récupère les IDs auto-générés
+    db.flush()
+    db.commit()
+
+    created = [
+        {
             "id": c.id,
-            "nom": _get(row, "NOM"),
-            "prenom": _get(row, "PRENOM"),
-            "email": _get(row, "EMAIL"),
-            "login": _get(row, "EMAIL"),
+            "nom": c.nom,
+            "prenom": c.prenom,
+            "email": c.email,
+            "login": c.login,
             "password_provisoire": plain_pwd,
             "code_candidat": c.code_candidat,
-        })
-
-    db.commit()
+        }
+        for c, plain_pwd in pending
+    ]
     return {"created": len(created), "candidats": created, "errors": []}
 
 

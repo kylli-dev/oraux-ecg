@@ -41,6 +41,7 @@ from app.api.conflits import router as conflits_router
 from app.api.parametrages import router as parametrages_router
 from app.api.notes import router as notes_router
 from app.api.excel import router as excel_router
+from app.api.gestion_candidats import router as gestion_candidats_router
 
 app = FastAPI(title="Oraux Platform")
 
@@ -68,6 +69,7 @@ app.include_router(conflits_router)
 app.include_router(parametrages_router)
 app.include_router(notes_router)
 app.include_router(excel_router)
+app.include_router(gestion_candidats_router)
 
 
 @app.get("/")

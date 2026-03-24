@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, field_validator
 ALLOWED_STATUT = {
     "CREE",
     "LIBRE",
+    "PRERESERVEE",
     "ATTRIBUEE",
     "EN_EVALUATION",
     "FINALISEE",

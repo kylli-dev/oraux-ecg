@@ -177,6 +177,58 @@ type Salle = {
   active: boolean;
 };
 
+type CandidatListeItem = {
+  id: number;
+  nom: string;
+  prenom: string;
+  email: string;
+  code_candidat: string | null;
+  civilite: string | null;
+  is_inscrit: boolean;
+  inscription_id: number | null;
+  is_liste_attente: boolean;
+  statut: string;
+};
+
+type TripletEpreuveGestion = {
+  id: number;
+  matiere: string;
+  heure_debut: string;
+  heure_fin: string;
+};
+
+type TripletDisponible = {
+  date: string;
+  heure_debut: string;
+  epreuves: TripletEpreuveGestion[];
+  type_slot: "LIBRE" | "PRERESERVEE";
+};
+
+type InscriptionGestion = {
+  id: number;
+  date: string;
+  epreuves: TripletEpreuveGestion[];
+};
+
+type FicheCandidat = {
+  id: number;
+  nom: string;
+  prenom: string;
+  email: string;
+  civilite: string | null;
+  code_candidat: string | null;
+  numero_ine: string | null;
+  profil: string | null;
+  tel_portable: string | null;
+  handicape: boolean | null;
+  classe: string | null;
+  etablissement: string | null;
+  ville_etablissement: string | null;
+  qualite: string | null;
+  inscription: InscriptionGestion | null;
+  liste_attente: { date: string }[];
+};
+
 type MessageType = {
   code: string;
   sujet: string;
@@ -2817,8 +2869,9 @@ function CandidatsSection() {
   const [loading, setLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
-  const [tab, setTab] = useState<"liste" | "affectation">("liste");
+  const [tab, setTab] = useState<"liste" | "affectation" | "gestion">("liste");
   const [error, setError] = useState("");
+  const [searchCand, setSearchCand] = useState("");
 
   useEffect(() => {
     get<Planning[]>("plannings/")
@@ -2901,7 +2954,7 @@ function CandidatsSection() {
         <>
           {/* Onglets */}
           <div className="flex border-b border-gray-200 mb-5">
-            {(["liste", "affectation"] as const).map((t) => (
+            {(["liste", "gestion", "affectation"] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -2911,13 +2964,22 @@ function CandidatsSection() {
                     : "border-transparent text-black/50 hover:text-black"
                 }`}
               >
-                {t === "liste" ? "Liste" : "Affectation aux épreuves"}
+                {t === "liste" ? "Liste" : t === "gestion" ? "Gestion inscriptions" : "Affectation aux épreuves"}
               </button>
             ))}
           </div>
 
           {tab === "liste" && (
             <>
+              <div className="mb-3">
+                <input
+                  type="text"
+                  placeholder="Rechercher par nom ou prénom…"
+                  value={searchCand}
+                  onChange={(e) => setSearchCand(e.target.value)}
+                  className="w-full max-w-sm border border-black/15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300"
+                />
+              </div>
               {loading ? (
                 <div className="flex justify-center py-16 text-black/30"><Spinner /></div>
               ) : error ? (
@@ -2935,7 +2997,11 @@ function CandidatsSection() {
                       </tr>
                     </thead>
                     <tbody>
-                      {candidats.map((c) => (
+                      {candidats.filter((c) => {
+                        if (!searchCand.trim()) return true;
+                        const q = searchCand.trim().toLowerCase();
+                        return c.nom.toLowerCase().includes(q) || c.prenom.toLowerCase().includes(q);
+                      }).map((c) => (
                         <tr key={c.id} className="border-t border-black/5 hover:bg-black/[0.012] transition">
                           <td className="px-5 py-3.5 font-medium">{c.nom}</td>
                           <td className="px-5 py-3.5">{c.prenom}</td>
@@ -2960,6 +3026,10 @@ function CandidatsSection() {
                 </div>
               )}
             </>
+          )}
+
+          {tab === "gestion" && (
+            <GestionCandidatsTab planningId={planningId as number} />
           )}
 
           {tab === "affectation" && (
@@ -3061,6 +3131,294 @@ function CreateCandidatForm({
         onClick={submit}
         disabled={loading || !form.nom || !form.prenom}
       />
+    </div>
+  );
+}
+
+// ── GestionCandidatsTab ────────────────────────────────────────────────────────
+function GestionCandidatsTab({ planningId }: { planningId: number }) {
+  const [liste, setListe] = useState<CandidatListeItem[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [fiche, setFiche] = useState<FicheCandidat | null>(null);
+  const [triplets, setTriplets] = useState<TripletDisponible[]>([]);
+  const [search, setSearch] = useState("");
+  const [loadingAction, setLoadingAction] = useState(false);
+
+  const loadListe = useCallback(() => {
+    get<CandidatListeItem[]>(`gestion-candidats/${planningId}/candidats`)
+      .then(setListe)
+      .catch(() => {});
+  }, [planningId]);
+
+  const loadTriplets = useCallback(() => {
+    get<TripletDisponible[]>(`gestion-candidats/${planningId}/triplets`)
+      .then(setTriplets)
+      .catch(() => {});
+  }, [planningId]);
+
+  const loadFiche = useCallback(() => {
+    if (!selectedId) { setFiche(null); return; }
+    get<FicheCandidat>(`gestion-candidats/candidat/${selectedId}/fiche`)
+      .then(setFiche)
+      .catch(() => {});
+  }, [selectedId]);
+
+  useEffect(() => { loadListe(); loadTriplets(); }, [loadListe, loadTriplets]);
+  useEffect(() => { loadFiche(); }, [loadFiche]);
+
+  const refresh = () => { loadListe(); loadTriplets(); loadFiche(); };
+
+  const doInscrire = async (t: TripletDisponible) => {
+    if (!selectedId) return;
+    setLoadingAction(true);
+    try {
+      await post(`gestion-candidats/candidat/${selectedId}/inscrire`, { date: t.date, heure_debut: t.heure_debut });
+      refresh();
+    } catch (e) { alert(e instanceof Error ? e.message : String(e)); }
+    finally { setLoadingAction(false); }
+  };
+
+  const doAction = async (endpoint: string, confirm_msg: string) => {
+    if (!selectedId) return;
+    if (!confirm(confirm_msg)) return;
+    setLoadingAction(true);
+    try {
+      await post(`gestion-candidats/candidat/${selectedId}/${endpoint}`, {});
+      refresh();
+    } catch (e) { alert(e instanceof Error ? e.message : String(e)); }
+    finally { setLoadingAction(false); }
+  };
+
+  const fmt_date = (d: string) =>
+    new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+
+  const filtered = liste.filter(c => {
+    const q = search.toLowerCase();
+    return !q || `${c.nom} ${c.prenom} ${c.email} ${c.code_candidat ?? ""}`.toLowerCase().includes(q);
+  });
+
+  // Group triplets by date
+  const tripletsByDate: Record<string, TripletDisponible[]> = {};
+  for (const t of triplets) {
+    if (!tripletsByDate[t.date]) tripletsByDate[t.date] = [];
+    tripletsByDate[t.date].push(t);
+  }
+  const matieres = fiche?.inscription?.epreuves.map(e => e.matiere) ?? (triplets[0]?.epreuves.map(e => e.matiere) ?? []);
+
+  return (
+    <div className="flex gap-4" style={{ height: "calc(100vh - 220px)" }}>
+      {/* ── Colonne gauche : liste candidats ── */}
+      <div className="w-60 flex-shrink-0 flex flex-col border rounded-xl bg-white shadow-sm overflow-hidden">
+        <div className="p-2.5 border-b">
+          <input
+            type="text"
+            placeholder="Rechercher…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full text-xs px-2.5 py-1.5 border rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-[#C62828]"
+          />
+        </div>
+        <div className="overflow-y-auto flex-1 divide-y divide-black/5">
+          {filtered.map(c => (
+            <button
+              key={c.id}
+              onClick={() => setSelectedId(c.id === selectedId ? null : c.id)}
+              className={`w-full text-left px-3 py-2.5 text-xs hover:bg-black/[0.03] transition ${
+                selectedId === c.id ? "bg-red-50 border-l-2 border-[#C62828]" : ""
+              }`}
+            >
+              <div className="font-medium truncate">{c.nom} {c.prenom}</div>
+              <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                {c.code_candidat && <span className="font-mono text-black/30">{c.code_candidat}</span>}
+                {c.is_inscrit && <span className="bg-green-100 text-green-700 px-1 py-0 rounded text-[10px]">Inscrit</span>}
+                {c.is_liste_attente && <span className="bg-amber-100 text-amber-700 px-1 py-0 rounded text-[10px]">L.A.</span>}
+              </div>
+            </button>
+          ))}
+          {filtered.length === 0 && (
+            <p className="p-4 text-xs text-black/30 text-center">Aucun candidat</p>
+          )}
+        </div>
+        <div className="px-3 py-2 border-t bg-black/[0.02] text-[10px] text-black/40 flex justify-between">
+          <span>{liste.filter(c => c.is_inscrit).length} inscrit(s)</span>
+          <span>{liste.filter(c => c.is_liste_attente).length} en L.A.</span>
+        </div>
+      </div>
+
+      {/* ── Zone principale ── */}
+      {!selectedId || !fiche ? (
+        <div className="flex-1 flex items-center justify-center text-sm text-black/30">
+          Sélectionnez un candidat dans la liste
+        </div>
+      ) : (
+        <div className="flex-1 flex gap-4 overflow-hidden min-w-0">
+          {/* ── Fiche candidat ── */}
+          <div className="w-64 flex-shrink-0 flex flex-col gap-3 overflow-y-auto">
+            <div className="rounded-xl border bg-white shadow-sm p-5">
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  {fiche.civilite && <p className="text-xs text-black/40">{fiche.civilite}</p>}
+                  <h3 className="text-base font-bold leading-tight">{fiche.nom}</h3>
+                  <p className="text-sm">{fiche.prenom}</p>
+                </div>
+                {fiche.profil && (
+                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-medium">{fiche.profil}</span>
+                )}
+              </div>
+              <dl className="space-y-1.5 text-xs">
+                {fiche.code_candidat && (
+                  <div className="flex gap-1"><dt className="text-black/40 shrink-0">N°</dt><dd className="font-mono">{fiche.code_candidat}</dd></div>
+                )}
+                <div className="flex gap-1"><dt className="text-black/40 shrink-0">Email</dt><dd className="truncate">{fiche.email}</dd></div>
+                {fiche.tel_portable && (
+                  <div className="flex gap-1"><dt className="text-black/40 shrink-0">Tél.</dt><dd>{fiche.tel_portable}</dd></div>
+                )}
+                {fiche.handicape !== null && fiche.handicape !== undefined && (
+                  <div className="flex gap-1"><dt className="text-black/40 shrink-0">Handicap</dt><dd>{fiche.handicape ? "Oui" : "Non"}</dd></div>
+                )}
+                {fiche.classe && (
+                  <div className="flex gap-1"><dt className="text-black/40 shrink-0">Classe</dt><dd>{fiche.classe}</dd></div>
+                )}
+                {fiche.etablissement && (
+                  <div className="flex gap-1"><dt className="text-black/40 shrink-0">Établ.</dt><dd className="truncate">{fiche.etablissement}</dd></div>
+                )}
+                {fiche.qualite && (
+                  <div className="flex gap-1"><dt className="text-black/40 shrink-0">Qualité</dt><dd>{fiche.qualite}</dd></div>
+                )}
+                {fiche.numero_ine && (
+                  <div className="flex gap-1"><dt className="text-black/40 shrink-0">INE</dt><dd className="font-mono">{fiche.numero_ine}</dd></div>
+                )}
+              </dl>
+            </div>
+
+            {/* Liste d'attente */}
+            {fiche.liste_attente.length > 0 && (
+              <div className="rounded-xl border bg-white shadow-sm p-4">
+                <p className="text-xs font-semibold text-black/50 mb-2">Liste d&apos;attente</p>
+                <div className="flex flex-wrap gap-1">
+                  {fiche.liste_attente.map(la => (
+                    <span key={la.date} className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded">
+                      {new Date(la.date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Panneau inscription ── */}
+          <div className="flex-1 overflow-y-auto min-w-0 space-y-4">
+            {/* Inscription courante */}
+            {fiche.inscription && (
+              <div className="rounded-xl border bg-white shadow-sm p-5">
+                <p className="text-sm font-semibold text-green-700 mb-3">✓ Inscrit(e) aux créneaux suivants</p>
+                <div className="rounded-lg border overflow-hidden text-sm mb-4">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-gray-50 text-left">
+                        <th className="px-3 py-2 text-xs font-semibold text-black/40">Jour</th>
+                        {fiche.inscription.epreuves.map(e => (
+                          <th key={e.id} className="px-3 py-2 text-xs font-semibold text-black/40">{e.matiere}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="px-3 py-2 font-medium capitalize">{fmt_date(fiche.inscription.date)}</td>
+                        {fiche.inscription.epreuves.map(e => (
+                          <td key={e.id} className="px-3 py-2">{e.heure_debut}</td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => doAction("desinscrire", `Désinscrire ${fiche.nom} ${fiche.prenom} ?`)}
+                    disabled={loadingAction}
+                    className="text-xs px-3 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition disabled:opacity-50"
+                  >
+                    Désinscrire
+                  </button>
+                  <button
+                    onClick={() => doAction("desinscrire-prereserver", `Désinscrire et préréserver les créneaux ?`)}
+                    disabled={loadingAction}
+                    className="text-xs px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 transition disabled:opacity-50"
+                  >
+                    Désinscrire + Préréserver
+                  </button>
+                  <button
+                    onClick={() => doAction("casser-triplet", `Casser le triplet de ${fiche.nom} ${fiche.prenom} ? Les 3 créneaux seront libérés individuellement.`)}
+                    disabled={loadingAction}
+                    className="text-xs px-3 py-1.5 bg-gray-100 text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-200 transition disabled:opacity-50"
+                  >
+                    Casser le triplet
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Triplets disponibles */}
+            <div className="rounded-xl border bg-white shadow-sm p-5">
+              <p className="text-sm font-semibold mb-3">Créneaux disponibles à l&apos;inscription</p>
+              {Object.keys(tripletsByDate).length === 0 ? (
+                <p className="text-sm text-black/40">Aucun créneau disponible</p>
+              ) : (
+                <div className="space-y-5">
+                  {Object.entries(tripletsByDate).map(([date, trips]) => {
+                    const allMatieres = trips[0]?.epreuves.map(e => e.matiere) ?? matieres;
+                    return (
+                      <div key={date}>
+                        <p className="text-xs font-semibold text-black/50 mb-2 capitalize">{fmt_date(date)}</p>
+                        <div className="rounded-lg border overflow-hidden">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="bg-gray-50 text-left">
+                                <th className="px-3 py-2 text-black/40 font-semibold">Heure</th>
+                                {allMatieres.map(m => (
+                                  <th key={m} className="px-3 py-2 text-black/40 font-semibold">{m}</th>
+                                ))}
+                                <th className="px-3 py-2"></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {trips.map((t, idx) => (
+                                <tr
+                                  key={idx}
+                                  className={`border-t border-black/5 ${t.type_slot === "PRERESERVEE" ? "bg-amber-50/60" : ""}`}
+                                >
+                                  <td className="px-3 py-2 font-medium">{t.heure_debut}</td>
+                                  {t.epreuves.map(e => (
+                                    <td key={e.id} className="px-3 py-2">{e.heure_debut}</td>
+                                  ))}
+                                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                                    {t.type_slot === "PRERESERVEE" && (
+                                      <span className="mr-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                                        Préréservé
+                                      </span>
+                                    )}
+                                    <button
+                                      onClick={() => doInscrire(t)}
+                                      disabled={loadingAction}
+                                      className="text-[10px] px-2.5 py-1 rounded-lg text-white transition disabled:opacity-50 bg-[#C62828] hover:bg-[#B71C1C]"
+                                    >
+                                      Inscrire
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3861,6 +4219,7 @@ function ExaminateursSection() {
   const [showImportEx, setShowImportEx] = useState(false);
   const [loading, setLoading] = useState(false);
   const [filterActif, setFilterActif] = useState<"tous" | "actif" | "inactif">("tous");
+  const [searchEx, setSearchEx] = useState("");
   const [tab, setTab] = useState<"fiche" | "affectation">("fiche");
 
   useEffect(() => {
@@ -3882,9 +4241,13 @@ function ExaminateursSection() {
 
   useEffect(() => { loadExaminateurs(); }, [loadExaminateurs]);
 
-  const filtered = examinateurs.filter((ex) =>
-    filterActif === "tous" ? true : filterActif === "actif" ? ex.actif : !ex.actif
-  );
+  const filtered = examinateurs.filter((ex) => {
+    const actifOk = filterActif === "tous" ? true : filterActif === "actif" ? ex.actif : !ex.actif;
+    if (!actifOk) return false;
+    if (!searchEx.trim()) return true;
+    const q = searchEx.trim().toLowerCase();
+    return ex.nom.toLowerCase().includes(q) || ex.prenom.toLowerCase().includes(q);
+  });
 
   return (
     <div className="space-y-4">
@@ -3935,7 +4298,7 @@ function ExaminateursSection() {
         <div className="flex bg-white rounded-xl shadow-sm overflow-hidden border" style={{ minHeight: 560 }}>
           {/* Colonne gauche : liste */}
           <div className="w-56 shrink-0 border-r flex flex-col">
-            <div className="p-3 border-b">
+            <div className="p-3 border-b space-y-2">
               <div className="flex rounded-lg border overflow-hidden text-xs w-full">
                 {(["tous", "actif", "inactif"] as const).map((f) => (
                   <button key={f} onClick={() => setFilterActif(f)}
@@ -3945,6 +4308,13 @@ function ExaminateursSection() {
                   </button>
                 ))}
               </div>
+              <input
+                type="text"
+                placeholder="Rechercher…"
+                value={searchEx}
+                onChange={(e) => setSearchEx(e.target.value)}
+                className="w-full border border-black/15 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-red-300"
+              />
             </div>
             <div className="flex-1 overflow-y-auto divide-y">
               {loading ? <div className="p-4 text-center"><Spinner /></div> :

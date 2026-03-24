@@ -37,7 +37,7 @@ function hmToMinutes(t) {
   return h * 60 + m;
 }
 
-function buildMatrix(bloc, jtDefaults = {}) {
+function buildMatrix(bloc, jtDefaults = {}, tripletOffset = 0) {
   const { matieres, duree_minutes, preparation_minutes, pause_minutes, heure_debut, heure_fin } = bloc;
   const N = matieres.length;
   if (N === 0) return [];
@@ -51,7 +51,7 @@ function buildMatrix(bloc, jtDefaults = {}) {
   const rows = [];
   for (let i = 0; i < Nsq; i++) {
     const dPrepa = start + i * (duree + pause);
-    if (dPrepa >= end) break;          // dépasse heure_fin → on arrête
+    if (dPrepa >= end) break;
     const dExam = dPrepa + prep;
     const fExam = dExam + duree;
     rows.push({
@@ -59,8 +59,9 @@ function buildMatrix(bloc, jtDefaults = {}) {
       deb_prepa: minutesToHM(dPrepa),
       deb_exam: minutesToHM(dExam),
       fin_exam: minutesToHM(fExam),
-      overflow: fExam > end,           // créneau qui déborde
-      candidates: matieres.map((_, j) => ((i - j * N) % Nsq + Nsq) % Nsq),
+      overflow: fExam > end,
+      // offset décale les indices pour que chaque bloc ait ses propres triplets
+      candidates: matieres.map((_, j) => tripletOffset + ((i - j * N) % Nsq + Nsq) % Nsq),
     });
   }
   return rows;
@@ -107,8 +108,8 @@ function TripletCell({ k, statut, onClick }) {
 }
 
 // ── Matrice journée type ───────────────────────────────────────────────────────
-function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick }) {
-  const matrix = buildMatrix(bloc, jt);
+function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletOffset = 0 }) {
+  const matrix = buildMatrix(bloc, jt, tripletOffset);
   const N = bloc.matieres.length;
   const Nsq = N * N;
   const isMatin = hmToMinutes(bloc.heure_debut) < 12 * 60;
@@ -179,11 +180,10 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick }) {
 }
 
 // ── Légende statuts ────────────────────────────────────────────────────────────
-function LegendeStatuts({ tripletStatuts, onTripletClick, N }) {
-  const Nsq = N * N;
+function LegendeStatuts({ tripletStatuts, onTripletClick, totalNsq }) {
   const groupes = STATUT_OPTIONS.map((opt) => ({
     ...opt,
-    triplets: Array.from({ length: Nsq }, (_, k) => k).filter(
+    triplets: Array.from({ length: totalNsq }, (_, k) => k).filter(
       (k) => (tripletStatuts[k] ?? "LIBRE") === opt.value
     ),
   })).filter((g) => g.triplets.length > 0);
@@ -655,7 +655,8 @@ export default function InterfaceAdminENSAEPlanning() {
   const blocGeneration = blocs.filter((b) => b.type_bloc === "GENERATION");
   const selPlanning = plannings.find((p) => p.id === Number(selPlanningId)) ?? null;
   const N = blocGeneration[0]?.matieres?.length ?? 0;
-  const Nsq = N * N;
+  // Nsq total = somme des N² de chaque bloc (chaque bloc a ses propres triplets)
+  const Nsq = blocGeneration.reduce((s, b) => s + b.matieres.length ** 2, 0) || N * N;
 
   return (
     <div className="min-h-screen bg-[#F5F5F5] text-black">
@@ -729,18 +730,25 @@ export default function InterfaceAdminENSAEPlanning() {
                       </div>
                     ) : (
                       <>
-                        {blocGeneration.map((bloc) => (
-                          <MatriceJourneeType
-                            key={bloc.id}
-                            bloc={bloc}
-                            jt={selectedJT}
-                            tripletStatuts={tripletStatuts}
-                            onTripletClick={handleTripletClick}
-                          />
-                        ))}
-                        {N > 0 && (
+                        {blocGeneration.reduce((acc, bloc) => {
+                          const offset = acc.offset;
+                          const Nb = bloc.matieres.length;
+                          acc.els.push(
+                            <MatriceJourneeType
+                              key={bloc.id}
+                              bloc={bloc}
+                              jt={selectedJT}
+                              tripletStatuts={tripletStatuts}
+                              onTripletClick={handleTripletClick}
+                              tripletOffset={offset}
+                            />
+                          );
+                          acc.offset += Nb * Nb;
+                          return acc;
+                        }, { els: [], offset: 0 }).els}
+                        {Nsq > 0 && (
                           <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-5">
-                            <LegendeStatuts tripletStatuts={tripletStatuts} onTripletClick={handleTripletClick} N={N} />
+                            <LegendeStatuts tripletStatuts={tripletStatuts} onTripletClick={handleTripletClick} totalNsq={Nsq} />
                           </div>
                         )}
                       </>
