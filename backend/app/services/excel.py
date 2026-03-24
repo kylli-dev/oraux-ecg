@@ -596,6 +596,12 @@ def import_candidats_complet(db: Session, planning_id: int, file_bytes: bytes) -
         for c in db.query(Candidat).filter_by(planning_id=planning_id).all()
         if c.code_candidat
     }
+    # Logins déjà pris globalement (login = email, colonne unique globale)
+    existing_logins_global: set[str] = {
+        c.login.lower()
+        for c in db.query(Candidat.login).filter(Candidat.login.isnot(None)).all()
+        if c.login
+    }
 
     # ── Passe 1 : validation ──────────────────────────────────────────────────
     errors: list[str] = []
@@ -635,7 +641,12 @@ def import_candidats_complet(db: Session, planning_id: int, file_bytes: bytes) -
                 if email_low in file_emails:
                     row_errors.append(f"EMAIL en doublon dans le fichier : « {email} »")
                 elif email_low in existing_emails:
-                    row_errors.append(f"EMAIL déjà présent en base : « {email} »")
+                    row_errors.append(f"EMAIL déjà présent en base pour ce planning : « {email} »")
+                elif email_low in existing_logins_global:
+                    row_errors.append(
+                        f"EMAIL déjà utilisé comme login dans un autre planning : « {email} » "
+                        f"(ce candidat est peut-être déjà inscrit dans un autre planning)"
+                    )
                 else:
                     file_emails.add(email_low)
 

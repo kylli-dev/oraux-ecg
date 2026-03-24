@@ -284,7 +284,9 @@ async function apiCall<T = unknown>(
     cache: "no-store",
   });
   if (res.status === 204) return null as T;
-  const data = await res.json();
+  const text = await res.text();
+  let data: any;
+  try { data = JSON.parse(text); } catch { data = { detail: text || `Erreur ${res.status}` }; }
   if (!res.ok) {
     const detail = data.detail;
     const msg = Array.isArray(detail)
@@ -2906,6 +2908,13 @@ function CandidatsSection() {
     }
   };
 
+  const handleDeleteAll = async () => {
+    if (!planningId || candidats.length === 0) return;
+    if (!confirm(`Supprimer les ${candidats.length} candidat(s) de ce planning ? Cette action est irréversible.`)) return;
+    await Promise.allSettled(candidats.map((c) => del(`candidats/${c.id}`)));
+    loadCandidats();
+  };
+
   return (
     <div className="max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-6">
@@ -2920,6 +2929,14 @@ function CandidatsSection() {
             onClick={() => setShowImport(true)}
             disabled={!planningId}
             variant="ghost"
+            small
+          />
+          <Btn
+            label="Tout supprimer"
+            icon={Trash2}
+            onClick={handleDeleteAll}
+            disabled={!planningId || candidats.length === 0}
+            variant="danger"
             small
           />
           <Btn

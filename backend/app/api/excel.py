@@ -55,8 +55,8 @@ def import_excel(
     content = file.file.read()
     try:
         result = import_epreuves(db, planning_id, content)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    except (ValueError, Exception) as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return result
 
 
@@ -83,8 +83,8 @@ def import_candidats_excel(
     content = file.file.read()
     try:
         result = import_candidats(db, planning_id, content)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return result
 
 
@@ -111,8 +111,8 @@ def import_candidats_complet_excel(
     content = file.file.read()
     try:
         result = import_candidats_complet(db, planning_id, content)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return result
 
 

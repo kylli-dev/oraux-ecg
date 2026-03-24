@@ -223,10 +223,17 @@ function BlocsEditor({ jtId, blocs, onReload }) {
     type_bloc: "GENERATION",
     heure_debut: "08:00",
     heure_fin: "12:00",
-    matieres: "",
+    matieres: [],
   });
   const [adding, setAdding] = useState(false);
   const [addErr, setAddErr] = useState("");
+  const [allMatieres, setAllMatieres] = useState([]);
+
+  useEffect(() => {
+    apiFetch("GET", "parametrages/matieres/")
+      .then((ms) => setAllMatieres((ms ?? []).filter((m) => m.active)))
+      .catch(() => {});
+  }, []);
 
   const sorted = [...blocs].sort((a, b) => a.ordre - b.ordre);
 
@@ -238,6 +245,7 @@ function BlocsEditor({ jtId, blocs, onReload }) {
       duree_minutes: bloc.duree_minutes ?? "",
       preparation_minutes: bloc.preparation_minutes ?? "",
       pause_minutes: bloc.pause_minutes ?? "",
+      matieres: bloc.matieres ?? [],
     });
     setErr("");
   }
@@ -254,7 +262,7 @@ function BlocsEditor({ jtId, blocs, onReload }) {
         ordre: bloc.ordre,
         heure_debut: editForm.heure_debut,
         heure_fin: editForm.heure_fin,
-        matieres: bloc.matieres,
+        matieres: editForm.matieres ?? bloc.matieres,
         duree_minutes: editForm.duree_minutes !== "" ? Number(editForm.duree_minutes) : null,
         pause_minutes: editForm.pause_minutes !== "" ? Number(editForm.pause_minutes) : null,
         preparation_minutes: editForm.preparation_minutes !== "" ? Number(editForm.preparation_minutes) : null,
@@ -304,9 +312,7 @@ function BlocsEditor({ jtId, blocs, onReload }) {
 
   async function addBloc() {
     setAdding(true); setAddErr("");
-    const matieres = addForm.type_bloc === "GENERATION"
-      ? addForm.matieres.split(",").map((m) => m.trim()).filter(Boolean)
-      : [];
+    const matieres = addForm.type_bloc === "GENERATION" ? addForm.matieres : [];
     const maxOrdre = blocs.length > 0 ? Math.max(...blocs.map((b) => b.ordre)) : 0;
     try {
       await apiFetch("POST", `journee-types/${jtId}/blocs`, {
@@ -318,7 +324,7 @@ function BlocsEditor({ jtId, blocs, onReload }) {
         salles_par_matiere: 1,
       });
       setShowAdd(false);
-      setAddForm({ type_bloc: "GENERATION", heure_debut: "08:00", heure_fin: "12:00", matieres: "" });
+      setAddForm({ type_bloc: "GENERATION", heure_debut: "08:00", heure_fin: "12:00", matieres: [] });
       onReload();
     } catch (e) { setAddErr(e.message); }
     finally { setAdding(false); }
@@ -413,6 +419,38 @@ function BlocsEditor({ jtId, blocs, onReload }) {
                         />
                         min
                       </label>
+                    </div>
+                  )}
+                  {!isPause && allMatieres.length > 0 && (
+                    <div>
+                      <label className="text-[11px] text-black/40 mb-1 block">
+                        Matières ({(editForm.matieres ?? []).length})
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {allMatieres.map((m) => {
+                          const sel = (editForm.matieres ?? []).includes(m.intitule);
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => setEditForm((f) => ({
+                                ...f,
+                                matieres: sel
+                                  ? (f.matieres ?? []).filter((x) => x !== m.intitule)
+                                  : [...(f.matieres ?? []), m.intitule],
+                              }))}
+                              className="px-2.5 py-1 rounded-lg text-xs font-medium border-2 transition"
+                              style={{
+                                borderColor: sel ? ENSAE_RED : "transparent",
+                                backgroundColor: sel ? ENSAE_RED + "12" : "#F3F4F6",
+                                color: sel ? ENSAE_RED : "#666",
+                              }}
+                            >
+                              {m.intitule}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                   {err && <span className="text-xs text-red-500">{err}</span>}
@@ -543,14 +581,38 @@ function BlocsEditor({ jtId, blocs, onReload }) {
 
               {addForm.type_bloc === "GENERATION" && (
                 <div>
-                  <label className="text-[11px] text-black/40 mb-1 block">Matières (séparées par des virgules)</label>
-                  <input
-                    type="text"
-                    value={addForm.matieres}
-                    onChange={(e) => setAddForm((f) => ({ ...f, matieres: e.target.value }))}
-                    placeholder="ex : Maths, Français, HGG"
-                    className="w-full border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-black/10"
-                  />
+                  <label className="text-[11px] text-black/40 mb-1 block">
+                    Matières sélectionnées ({addForm.matieres.length})
+                  </label>
+                  {allMatieres.length === 0 ? (
+                    <p className="text-xs text-black/30 italic">Aucune matière configurée (voir Paramètres → Matières)</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {allMatieres.map((m) => {
+                        const sel = addForm.matieres.includes(m.intitule);
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setAddForm((f) => ({
+                              ...f,
+                              matieres: sel
+                                ? f.matieres.filter((x) => x !== m.intitule)
+                                : [...f.matieres, m.intitule],
+                            }))}
+                            className="px-2.5 py-1 rounded-lg text-xs font-medium border-2 transition"
+                            style={{
+                              borderColor: sel ? ENSAE_RED : "transparent",
+                              backgroundColor: sel ? ENSAE_RED + "12" : "#F3F4F6",
+                              color: sel ? ENSAE_RED : "#666",
+                            }}
+                          >
+                            {m.intitule}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -559,7 +621,7 @@ function BlocsEditor({ jtId, blocs, onReload }) {
               <div className="flex gap-2">
                 <button
                   onClick={addBloc}
-                  disabled={adding || (addForm.type_bloc === "GENERATION" && !addForm.matieres.trim())}
+                  disabled={adding || (addForm.type_bloc === "GENERATION" && addForm.matieres.length === 0)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white transition disabled:opacity-40"
                   style={{ backgroundColor: ENSAE_RED }}
                 >

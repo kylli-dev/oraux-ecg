@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// Désactive le body parser intégré de Next.js pour ce segment
+// (on lit le body manuellement selon le content-type)
+export const dynamic = "force-dynamic";
+
 async function proxy(req: NextRequest, pathSegments: string[]) {
   const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
   const adminKey = process.env.ADMIN_API_KEY!;
@@ -17,18 +21,18 @@ async function proxy(req: NextRequest, pathSegments: string[]) {
   const contentType = req.headers.get("content-type") ?? "";
   const isMultipart = contentType.includes("multipart/form-data");
 
-  let res: Response;
   try {
+    let res: Response;
+
     if (!["GET", "HEAD"].includes(req.method)) {
       if (isMultipart) {
-        // Lire le body entier en mémoire puis le renvoyer avec le Content-Type original.
-        // req.body (ReadableStream) nécessite duplex:"half" non supporté partout ;
-        // arrayBuffer() est plus fiable en prod mais peut être lent — acceptable pour 200 Ko.
         const buf = await req.arrayBuffer();
         res = await fetch(upstream, {
           method: req.method,
           headers: { ...headers, "Content-Type": contentType },
           body: buf,
+          // @ts-expect-error — Node.js fetch nécessite duplex pour les streams
+          duplex: "half",
           cache: "no-store",
         });
       } else {
@@ -47,19 +51,21 @@ async function proxy(req: NextRequest, pathSegments: string[]) {
         cache: "no-store",
       });
     }
+
+    if (res.status === 204) return new NextResponse(null, { status: 204 });
+
+    const upstreamContentType = res.headers.get("content-type") ?? "application/json";
+    const contentDisposition = res.headers.get("content-disposition");
+    const resBuf = await res.arrayBuffer();
+    const responseHeaders: Record<string, string> = { "Content-Type": upstreamContentType };
+    if (contentDisposition) responseHeaders["Content-Disposition"] = contentDisposition;
+    return new NextResponse(resBuf, { status: res.status, headers: responseHeaders });
+
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
+    console.error("[proxy] erreur:", msg);
     return NextResponse.json({ detail: `Backend inaccessible : ${msg}` }, { status: 502 });
   }
-
-  if (res.status === 204) return new NextResponse(null, { status: 204 });
-
-  const upstreamContentType = res.headers.get("content-type") ?? "application/json";
-  const contentDisposition = res.headers.get("content-disposition");
-  const resBuf = await res.arrayBuffer();
-  const responseHeaders: Record<string, string> = { "Content-Type": upstreamContentType };
-  if (contentDisposition) responseHeaders["Content-Disposition"] = contentDisposition;
-  return new NextResponse(resBuf, { status: res.status, headers: responseHeaders });
 }
 
 type Ctx = { params: Promise<{ path: string[] }> };

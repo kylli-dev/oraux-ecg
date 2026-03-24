@@ -7,6 +7,9 @@ from app.core.admin_guard import require_admin
 from app.db.deps import get_db
 from app.models.candidat import Candidat
 from app.models.epreuve import Epreuve
+from app.models.inscription import Inscription, InscriptionEpreuve
+from app.models.liste_attente import ListeAttente
+from app.models.note import Note
 from app.schemas.candidat import (
     CandidatCreate,
     CandidatOut,
@@ -60,6 +63,27 @@ def update_candidat(candidat_id: int, body: CandidatUpdate, db: Session = Depend
     return c
 
 
+@router.delete("/planning/{planning_id}/all", status_code=200)
+def delete_all_candidats(planning_id: int, db: Session = Depends(get_db)):
+    """Supprime tous les candidats d'un planning (désassigne les épreuves d'abord)."""
+    candidats = db.query(Candidat).filter_by(planning_id=planning_id).all()
+    count = len(candidats)
+    candidat_ids = [c.id for c in candidats]
+    if candidat_ids:
+        db.query(Epreuve).filter(Epreuve.candidat_id.in_(candidat_ids)).update(
+            {"candidat_id": None, "statut": "LIBRE"}, synchronize_session="fetch"
+        )
+        insc_ids = [i.id for i in db.query(Inscription.id).filter(Inscription.candidat_id.in_(candidat_ids)).all()]
+        if insc_ids:
+            db.query(InscriptionEpreuve).filter(InscriptionEpreuve.inscription_id.in_(insc_ids)).delete(synchronize_session="fetch")
+        db.query(Inscription).filter(Inscription.candidat_id.in_(candidat_ids)).delete(synchronize_session="fetch")
+        db.query(ListeAttente).filter(ListeAttente.candidat_id.in_(candidat_ids)).delete(synchronize_session="fetch")
+        db.query(Note).filter(Note.candidat_id.in_(candidat_ids)).delete(synchronize_session="fetch")
+        db.query(Candidat).filter_by(planning_id=planning_id).delete(synchronize_session="fetch")
+    db.commit()
+    return {"deleted": count}
+
+
 @router.delete("/{candidat_id}", status_code=204)
 def delete_candidat(candidat_id: int, db: Session = Depends(get_db)):
     c = db.get(Candidat, candidat_id)
@@ -69,6 +93,13 @@ def delete_candidat(candidat_id: int, db: Session = Depends(get_db)):
     db.query(Epreuve).filter_by(candidat_id=candidat_id).update(
         {"candidat_id": None, "statut": "LIBRE"}
     )
+    # Supprimer les enregistrements liés (cascade ORM manuelle)
+    insc_ids = [i.id for i in db.query(Inscription).filter_by(candidat_id=candidat_id).all()]
+    if insc_ids:
+        db.query(InscriptionEpreuve).filter(InscriptionEpreuve.inscription_id.in_(insc_ids)).delete(synchronize_session="fetch")
+    db.query(Inscription).filter_by(candidat_id=candidat_id).delete()
+    db.query(ListeAttente).filter_by(candidat_id=candidat_id).delete()
+    db.query(Note).filter_by(candidat_id=candidat_id).delete()
     db.delete(c)
     db.commit()
 
