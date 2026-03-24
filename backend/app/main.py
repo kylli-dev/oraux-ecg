@@ -72,12 +72,12 @@ app.include_router(excel_router)
 app.include_router(gestion_candidats_router)
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def root():
     return {"service": "oraux-ecg", "status": "ok"}
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 def health():
     return {"status": "ok"}
 
