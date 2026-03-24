@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 // Désactive le body parser intégré de Next.js pour ce segment
 // (on lit le body manuellement selon le content-type)
 export const dynamic = "force-dynamic";
+// Permet jusqu'à 60 s d'attente vers le backend (cold start Render, gros imports)
+export const maxDuration = 60;
 
 async function proxy(req: NextRequest, pathSegments: string[]) {
   const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
