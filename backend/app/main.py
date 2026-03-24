@@ -110,6 +110,8 @@ def _run_migrations():
         "ALTER TABLE candidat ADD COLUMN tel_portable VARCHAR(30)",
         "ALTER TABLE candidat ADD COLUMN qualite VARCHAR(50)",
         "ALTER TABLE candidat ADD COLUMN handicape INTEGER",
+        # Fix type mismatch: PostgreSQL needs BOOLEAN not INTEGER for handicape
+        "ALTER TABLE candidat ALTER COLUMN handicape TYPE BOOLEAN USING handicape::boolean",
         "ALTER TABLE candidat ADD COLUMN cp VARCHAR(10)",
         "ALTER TABLE candidat ADD COLUMN ville VARCHAR(100)",
         "ALTER TABLE candidat ADD COLUMN libelle_pays VARCHAR(100)",
