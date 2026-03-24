@@ -130,11 +130,17 @@ def _run_migrations():
                 conn.rollback()
 
 
+def _init_db():
+    try:
+        Base.metadata.create_all(bind=engine)
+        _run_migrations()
+        print("[startup] DB init OK", flush=True)
+    except Exception as e:
+        print(f"[startup] DB init error: {e}", flush=True)
+
+
 @app.on_event("startup")
 def on_startup():
     if engine is not None:
-        try:
-            Base.metadata.create_all(bind=engine)
-            _run_migrations()
-        except Exception as e:
-            print(f"[startup] DB init error: {e}", flush=True)
+        import threading
+        threading.Thread(target=_init_db, daemon=True).start()
