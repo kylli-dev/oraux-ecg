@@ -16,8 +16,8 @@ RESET_TOKEN_EXPIRE_MINUTES = 30
 
 # ── Mot de passe ────────────────────────────────────────────────────────────
 
-def hash_password(plain: str) -> str:
-    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
+def hash_password(plain: str, rounds: int = 12) -> str:
+    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt(rounds)).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
