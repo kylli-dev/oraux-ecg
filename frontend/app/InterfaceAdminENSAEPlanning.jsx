@@ -872,8 +872,15 @@ export default function InterfaceAdminENSAEPlanning() {
                   </button>
 
                   {applyResult && (
-                    <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-700">
-                      ✓ {applyResult.demi_journees_created} demi-journée(s) — {applyResult.epreuves_created} épreuve(s) créée(s)
+                    <div className="flex flex-col gap-1">
+                      <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-700">
+                        ✓ {applyResult.demi_journees_created} demi-journée(s) — {applyResult.epreuves_created} épreuve(s) créée(s)
+                      </div>
+                      {applyResult.warnings?.map((w, i) => (
+                        <div key={i} className="rounded-lg bg-amber-50 border border-amber-300 px-3 py-2 text-xs text-amber-800">
+                          ⚠ {w}
+                        </div>
+                      ))}
                     </div>
                   )}
                   {applyError && (

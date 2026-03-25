@@ -232,7 +232,17 @@ def generate_in_range(
         slots_placed += 1
         t = t + slot_advance + pause
 
-    return count
+    warning = None
+    if slots_placed < n_slots_max:
+        duree_requise = preparation_minutes + n_slots_max * duree_minutes
+        warning = (
+            f"Fenêtre trop courte : {slots_placed}/{n_slots_max} créneaux générés "
+            f"({debut.strftime('%H:%M')}→{fin.strftime('%H:%M')}). "
+            f"Il faudrait {duree_requise} min ({preparation_minutes} prépa + "
+            f"{n_slots_max}×{duree_minutes} exam) pour le modèle N²={n_slots_max} complet."
+        )
+
+    return count, warning
 
 
 # ── Phase 2 : Exécution (écritures DB) ───────────────────────────────────────
@@ -291,9 +301,10 @@ def _apply_periode_plan(
 
     matiere_offset = 0
     total = 0
+    warnings: List[str] = []
 
     for bloc in plan.blocs:
-        n = generate_in_range(
+        n, warn = generate_in_range(
             db=db,
             demi_journee_id=dj.id,
             debut=bloc.heure_debut,
@@ -308,8 +319,10 @@ def _apply_periode_plan(
         )
         total += n
         matiere_offset += n
+        if warn:
+            warnings.append(warn)
 
-    return total
+    return total, warnings
 
 
 # ── API publique ──────────────────────────────────────────────────────────────
@@ -328,7 +341,7 @@ def generate_for_demi_journee(
     matieres = params.resolved_matieres()
     db.query(Epreuve).filter(Epreuve.demi_journee_id == demi_journee.id).delete()
 
-    count = generate_in_range(
+    count, _ = generate_in_range(
         db=db,
         demi_journee_id=demi_journee.id,
         debut=demi_journee.heure_debut,
@@ -363,12 +376,19 @@ def apply_journee_type(
 
     dj_created = 0
     ep_created = 0
+    all_warnings: List[str] = []
 
     for plan in plans:
         dj, is_new = _upsert_demi_journee(db, planning_id, target_date, plan)
         if is_new:
             dj_created += 1
-        ep_created += _apply_periode_plan(db, dj, plan, journee_type.statut_initial)
+        n, warns = _apply_periode_plan(db, dj, plan, journee_type.statut_initial)
+        ep_created += n
+        all_warnings.extend(warns)
 
     db.commit()
-    return {"demi_journees_created": dj_created, "epreuves_created": ep_created}
+    return {
+        "demi_journees_created": dj_created,
+        "epreuves_created": ep_created,
+        "warnings": all_warnings,
+    }
