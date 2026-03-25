@@ -21,6 +21,12 @@ class Note(Base):
 
     valeur: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
+    # Note harmonisée saisie par le service des admissions
+    note_harmonisee: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # Commentaire de l'examinateur
+    commentaire: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
     # BROUILLON = saisie en cours, non visible candidat ; PUBLIE = visible candidat
     statut: Mapped[str] = mapped_column(String(20), nullable=False, default="BROUILLON")
 

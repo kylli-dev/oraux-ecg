@@ -142,6 +142,8 @@ def list_epreuves_planning(
         examinateur2 = db.get(ExaminateurModel, epreuve.examinateur2_id) if epreuve.examinateur2_id else None
         salle = db.get(SalleModel, epreuve.salle_id) if epreuve.salle_id else None
         salle_prep = db.get(SalleModel, epreuve.salle_preparation_id) if epreuve.salle_preparation_id else None
+        from app.models.planche import Planche as PlancheModel
+        planche = db.get(PlancheModel, epreuve.planche_id) if epreuve.planche_id else None
         result.append({
             "id": epreuve.id,
             "date": str(dj.date),
@@ -164,6 +166,8 @@ def list_epreuves_planning(
             "salle_intitule": salle.intitule if salle else None,
             "salle_preparation_id": salle_prep.id if salle_prep else None,
             "salle_preparation_intitule": salle_prep.intitule if salle_prep else None,
+            "planche_id": planche.id if planche else None,
+            "planche_nom": planche.nom if planche else None,
         })
     return result
 

@@ -57,6 +57,12 @@ class Epreuve(Base):
     )
     salle_preparation = relationship("Salle", foreign_keys=[salle_preparation_id])
 
+    planche_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("planche.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    planche = relationship("Planche", foreign_keys=[planche_id])
+
     __table_args__ = (
         CheckConstraint("heure_debut < heure_fin", name="chk_epreuve_hours"),
     )

@@ -28,6 +28,7 @@ from app.models import (  # noqa: F401
     Salle,
     ExaminateurIndisponibilite,
     Surveillant,  # noqa: F401
+    Planche,  # noqa: F401
 )
 
 from app.api.plannings import router as plannings_router
@@ -44,6 +45,7 @@ from app.api.notes import router as notes_router
 from app.api.excel import router as excel_router
 from app.api.gestion_candidats import router as gestion_candidats_router
 from app.api.surveillants import router as surveillants_router
+from app.api.planches import router as planches_router
 
 app = FastAPI(title="Oraux Platform")
 
@@ -73,6 +75,7 @@ app.include_router(notes_router)
 app.include_router(excel_router)
 app.include_router(gestion_candidats_router)
 app.include_router(surveillants_router)
+app.include_router(planches_router)
 
 
 @app.api_route("/", methods=["GET", "HEAD"])
@@ -127,6 +130,11 @@ def _run_migrations():
         "ALTER TABLE epreuve ADD COLUMN salle_preparation_id INTEGER REFERENCES salle(id) ON DELETE SET NULL",
         # Second examiner slot
         "ALTER TABLE epreuve ADD COLUMN examinateur2_id INTEGER REFERENCES examinateur(id) ON DELETE SET NULL",
+        # Planche (sujet PDF) assignée à une épreuve
+        "ALTER TABLE epreuve ADD COLUMN planche_id INTEGER REFERENCES planche(id) ON DELETE SET NULL",
+        # Note harmonisée + commentaire
+        "ALTER TABLE note ADD COLUMN note_harmonisee DOUBLE PRECISION",
+        "ALTER TABLE note ADD COLUMN commentaire VARCHAR(500)",
     ]
     with engine.connect() as conn:
         for sql in migrations:

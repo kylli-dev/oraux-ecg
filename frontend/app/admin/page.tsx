@@ -40,6 +40,7 @@ import {
   Key,
   Copy,
   Mail,
+  FileText,
 } from "lucide-react";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -136,6 +137,21 @@ type EpreuveFlat = {
   salle_intitule: string | null;
   salle_preparation_id: number | null;
   salle_preparation_intitule: string | null;
+  planche_id: number | null;
+  planche_nom: string | null;
+};
+
+type PlancheItem = {
+  id: number;
+  nom: string;
+  fichier_path: string;
+  matiere_id: number | null;
+  matiere_intitule: string | null;
+  examinateur_id: number | null;
+  examinateur_nom: string | null;
+  statut: string;
+  assignee: boolean;
+  created_at: string;
 };
 
 type Examinateur = {
@@ -177,7 +193,7 @@ type DashboardData = {
   by_date: { date: string; count: number }[];
 };
 
-type SectionKey = "plannings" | "journeeTypes" | "candidats" | "examinateurs" | "surveillants" | "dashboard" | "conflits" | "parametrages" | "notes" | "salles";
+type SectionKey = "plannings" | "journeeTypes" | "candidats" | "examinateurs" | "surveillants" | "dashboard" | "conflits" | "parametrages" | "notes" | "salles" | "planches";
 
 type Surveillant = {
   id: number;
@@ -5690,10 +5706,105 @@ type NoteAdmin = {
   candidat_prenom: string;
   matiere: string;
   valeur: number | null;
+  note_harmonisee: number | null;
+  commentaire: string | null;
   statut: "BROUILLON" | "PUBLIE";
 };
 
+type NoteCell = {
+  note_id: number;
+  valeur: number | null;
+  note_harmonisee: number | null;
+  ecart: number | null;
+  commentaire: string | null;
+  statut: string;
+};
+
+type TableauCandidat = {
+  id: number;
+  nom: string;
+  prenom: string;
+  code_candidat: string | null;
+  handicape: boolean | null;
+  date: string;
+  notes: Record<string, NoteCell>;
+};
+
+type TableauData = {
+  matieres: string[];
+  candidats: TableauCandidat[];
+};
+
 function NotesSection() {
+  const toast = useToast();
+  const [tab, setTab] = useState<"tableau" | "publication">("tableau");
+
+  // ── Tableau tab state ────────────────────────────────────────────────────────
+  const [plannings, setPlannings] = useState<Planning[]>([]);
+  const [planningId, setPlanningId] = useState<number | "">("");
+  const [tableau, setTableau] = useState<TableauData | null>(null);
+  const [loadingT, setLoadingT] = useState(false);
+  // Inline edit: note_id → draft value
+  const [editHarm, setEditHarm] = useState<Record<number, string>>({});
+  const [savingHarm, setSavingHarm] = useState<Record<number, boolean>>({});
+
+  useEffect(() => {
+    get<Planning[]>("plannings/").then(setPlannings).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!planningId) { setTableau(null); return; }
+    setLoadingT(true);
+    get<TableauData>(`notes/tableau?planning_id=${planningId}`)
+      .then(setTableau)
+      .catch(() => {})
+      .finally(() => setLoadingT(false));
+  }, [planningId]);
+
+  async function saveHarm(noteId: number, raw: string) {
+    const val = raw === "" ? null : parseFloat(raw);
+    if (raw !== "" && (isNaN(val!) || val! < 0 || val! > 20)) {
+      toast.error("Note harmonisée invalide (0–20)");
+      return;
+    }
+    setSavingHarm((s) => ({ ...s, [noteId]: true }));
+    try {
+      await patch(`notes/${noteId}/harmoniser`, { note_harmonisee: val });
+      // Update tableau in place
+      setTableau((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          candidats: prev.candidats.map((c) => ({
+            ...c,
+            notes: Object.fromEntries(
+              Object.entries(c.notes).map(([mat, n]) => {
+                if (n.note_id !== noteId) return [mat, n];
+                const nh = val;
+                const ecart = nh !== null && n.valeur !== null ? Math.round((nh - n.valeur) * 100) / 100 : null;
+                return [mat, { ...n, note_harmonisee: nh, ecart }];
+              })
+            ),
+          })),
+        };
+      });
+      setEditHarm((e) => { const next = { ...e }; delete next[noteId]; return next; });
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingHarm((s) => ({ ...s, [noteId]: false }));
+    }
+  }
+
+  function doExport() {
+    if (!planningId) return;
+    const a = document.createElement("a");
+    a.href = `/api/backend/notes/tableau/export?planning_id=${planningId}`;
+    a.download = `notes_planning_${planningId}.xlsx`;
+    a.click();
+  }
+
+  // ── Publication tab state ─────────────────────────────────────────────────
   const [notes, setNotes] = useState<NoteAdmin[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -5713,7 +5824,7 @@ function NotesSection() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (tab === "publication") load(); }, [load, tab]);
 
   async function publierNote(note: NoteAdmin) {
     setPublishing((p) => ({ ...p, [note.id]: true }));
@@ -5750,36 +5861,155 @@ function NotesSection() {
   }, {});
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div className="max-w-6xl mx-auto">
+      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Publication des notes</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            {brouillons.length} note{brouillons.length !== 1 ? "s" : ""} en brouillon · {publiees.length} publiée{publiees.length !== 1 ? "s" : ""}
-          </p>
+          <h2 className="text-xl font-semibold">Notes</h2>
+          <p className="text-sm text-black/40 mt-0.5">Consultation du tableau de notes et publication</p>
         </div>
         <div className="flex items-center gap-2">
+        {tab === "tableau" && planningId !== "" && (
+          <Btn label="Exporter .xlsx" icon={Download} variant="ghost" onClick={doExport} />
+        )}
+        {tab === "publication" && brouillons.length > 0 && (
           <button
-            onClick={load}
-            disabled={loading}
-            className="flex items-center gap-2 text-sm text-gray-500 border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50 transition disabled:opacity-50"
+            onClick={publierTout}
+            disabled={publishingAll}
+            className="flex items-center gap-2 text-sm bg-green-600 text-white rounded-lg px-4 py-2 hover:bg-green-700 transition disabled:opacity-50 font-semibold"
           >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Actualiser
+            {publishingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            Tout publier ({brouillons.length})
           </button>
-          {brouillons.length > 0 && (
-            <button
-              onClick={publierTout}
-              disabled={publishingAll}
-              className="flex items-center gap-2 text-sm bg-green-600 text-white rounded-lg px-4 py-2 hover:bg-green-700 transition disabled:opacity-50 font-semibold"
-            >
-              {publishingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              Tout publier ({brouillons.length})
-            </button>
-          )}
+        )}
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-1 mb-6 bg-black/5 p-1 rounded-xl w-fit">
+        {(["tableau", "publication"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${
+              tab === t ? "bg-white shadow text-black" : "text-black/50 hover:text-black/70"
+            }`}
+          >
+            {t === "tableau" ? "Tableau des notes" : "Publication"}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Tableau des notes ────────────────────────────────────────────────── */}
+      {tab === "tableau" && (
+        <div className="space-y-5">
+          <div className="flex items-end gap-4">
+            <Field label="Planning">
+              <Select value={planningId} onChange={(e) => setPlanningId(e.target.value === "" ? "" : Number(e.target.value))}>
+                <option value="">— Sélectionner un planning</option>
+                {plannings.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
+              </Select>
+            </Field>
+          </div>
+
+          {!planningId ? (
+            <Empty message="Sélectionnez un planning" />
+          ) : loadingT ? (
+            <div className="flex justify-center py-12 text-black/30"><Spinner /></div>
+          ) : !tableau || tableau.candidats.length === 0 ? (
+            <Empty message="Aucune note disponible pour ce planning" sub="Les notes apparaîtront ici dès leur saisie par les examinateurs." />
+          ) : (
+            <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
+              <table className="text-xs border-collapse min-w-full">
+                <thead>
+                  {/* Row 1 : fixed cols + matière headers */}
+                  <tr className="bg-[#1A237E]">
+                    {["Nom", "Prénom", "N° Cand.", "Date"].map((h) => (
+                      <th key={h} rowSpan={2} className="px-3 py-2.5 text-left text-white font-semibold border border-[#283593] align-bottom whitespace-nowrap">{h}</th>
+                    ))}
+                    {tableau.matieres.map((mat) => (
+                      <th key={mat} colSpan={3} className="px-3 py-2 text-center text-white font-semibold border border-[#283593] whitespace-nowrap">{mat}</th>
+                    ))}
+                  </tr>
+                  {/* Row 2 : sub-headers */}
+                  <tr className="bg-[#E8EAF6]">
+                    {tableau.matieres.flatMap((mat) => (
+                      ["Note", "Harm.", "Écart"].map((sub) => (
+                        <th key={`${mat}-${sub}`} className="px-2 py-1.5 text-center text-[#1A237E] font-semibold border border-[#C5CAE9] whitespace-nowrap">{sub}</th>
+                      ))
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {tableau.candidats.map((cand, ri) => (
+                    <tr key={cand.id} className={ri % 2 === 0 ? "bg-white" : "bg-[#FAFAFA]"}>
+                      <td className="px-3 py-2 font-semibold border border-black/8 whitespace-nowrap">{cand.nom.toUpperCase()}</td>
+                      <td className="px-3 py-2 border border-black/8 whitespace-nowrap">{cand.prenom}</td>
+                      <td className="px-3 py-2 text-black/50 border border-black/8">{cand.code_candidat ?? "—"}</td>
+                      <td className="px-3 py-2 text-black/50 border border-black/8 whitespace-nowrap">{cand.date}</td>
+                      {tableau.matieres.map((mat) => {
+                        const n = cand.notes[mat];
+                        if (!n) {
+                          return (
+                            <React.Fragment key={mat}>
+                              <td className="px-2 py-2 text-center text-black/20 border border-black/8" colSpan={3}>—</td>
+                            </React.Fragment>
+                          );
+                        }
+                        const isEditingH = editHarm[n.note_id] !== undefined;
+                        const ecartColor = n.ecart === null ? "" : n.ecart > 0 ? "text-green-600" : n.ecart < 0 ? "text-red-500" : "text-black/40";
+                        return (
+                          <React.Fragment key={mat}>
+                            <td className="px-2 py-2 text-center border border-black/8 font-medium">
+                              {n.valeur !== null ? n.valeur.toFixed(1) : <span className="text-black/25">—</span>}
+                            </td>
+                            <td className="px-1 py-1 text-center border border-black/8 min-w-[64px]">
+                              {isEditingH ? (
+                                <div className="flex items-center gap-1">
+                                  <input
+                                    autoFocus
+                                    type="number"
+                                    min={0} max={20} step={0.5}
+                                    value={editHarm[n.note_id]}
+                                    onChange={(e) => setEditHarm((prev) => ({ ...prev, [n.note_id]: e.target.value }))}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") saveHarm(n.note_id, editHarm[n.note_id]);
+                                      if (e.key === "Escape") setEditHarm((prev) => { const next = { ...prev }; delete next[n.note_id]; return next; });
+                                    }}
+                                    className="w-14 px-1 py-0.5 rounded border border-blue-300 text-xs text-center"
+                                  />
+                                  {savingHarm[n.note_id] && <Loader2 className="h-3 w-3 animate-spin text-blue-500 shrink-0" />}
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setEditHarm((prev) => ({ ...prev, [n.note_id]: n.note_harmonisee !== null ? String(n.note_harmonisee) : "" }))}
+                                  className="w-full text-center hover:bg-blue-50 rounded px-1 py-0.5 transition group"
+                                  title="Cliquer pour saisir la note harmonisée"
+                                >
+                                  {n.note_harmonisee !== null
+                                    ? <span className="font-semibold text-blue-700">{n.note_harmonisee.toFixed(1)}</span>
+                                    : <span className="text-black/20 group-hover:text-blue-400">—</span>}
+                                </button>
+                              )}
+                            </td>
+                            <td className={`px-2 py-2 text-center border border-black/8 text-xs font-medium ${ecartColor}`}>
+                              {n.ecart !== null ? (n.ecart > 0 ? `+${n.ecart.toFixed(1)}` : n.ecart.toFixed(1)) : "—"}
+                            </td>
+                          </React.Fragment>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Publication ───────────────────────────────────────────────────────── */}
+      {tab === "publication" && (
+      <div className="space-y-4">
       {error && (
         <div className="mb-4 rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600">{error}</div>
       )}
@@ -5861,6 +6091,8 @@ function NotesSection() {
             </div>
           )}
         </div>
+      )}
+      </div>
       )}
     </div>
   );
@@ -6744,6 +6976,7 @@ function Sidebar({
       { key: "surveillants", label: "Surveillants", icon: Shield },
       { key: "dashboard", label: "Tableau de bord", icon: BarChart3 },
       { key: "conflits", label: "Conflits", icon: AlertTriangle, badge: nbConflits },
+      { key: "planches", label: "Planches", icon: FileText },
       { key: "salles", label: "Salles", icon: Building2 },
       { key: "notes", label: "Notes", icon: FileSpreadsheet },
       { key: "parametrages", label: "Paramétrages", icon: Settings2 },
@@ -6831,6 +7064,759 @@ function LogoutButton() {
       <LogOut className="h-3.5 w-3.5" />
       {loading ? "Déconnexion…" : "Se déconnecter"}
     </button>
+  );
+}
+
+// ── Gestion des planches ───────────────────────────────────────────────────────
+function PlanchesSection() {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const matieres = useMatieres();
+  const [tab, setTab] = useState<"sujets" | "assignation" | "impression">("sujets");
+
+  // ── Onglet Sujets ────────────────────────────────────────────────────────────
+  const [planches, setPlanches] = useState<PlancheItem[]>([]);
+  const [loadingP, setLoadingP] = useState(true);
+  const [showUpload, setShowUpload] = useState(false);
+
+  // Upload state
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [uploadMatiereId, setUploadMatiereId] = useState<number | "">("");
+  const [uploadExamId, setUploadExamId] = useState<number | "">("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState("");
+  const uploadRef = useRef<HTMLInputElement>(null);
+
+  // Inline edit
+  const [editRow, setEditRow] = useState<number | null>(null);
+  const [editNom, setEditNom] = useState("");
+  const [editMatiereId, setEditMatiereId] = useState<number | "">("");
+  const [editExamId, setEditExamId] = useState<number | "">("");
+  const [editStatut, setEditStatut] = useState("ACTIF");
+  const [savingRow, setSavingRow] = useState(false);
+
+  // Examinateurs list
+  const [examinateurs, setExaminateurs] = useState<Examinateur[]>([]);
+
+  // ── Onglet Impression ────────────────────────────────────────────────────────
+  const [impPlanningId, setImpPlanningId] = useState<number | "">("");
+  const [impDate, setImpDate] = useState("");
+  const [impMatiere, setImpMatiere] = useState("");
+  const [impEpreuves, setImpEpreuves] = useState<EpreuveFlat[]>([]);
+  const [impLoading, setImpLoading] = useState(false);
+  const [impSelected, setImpSelected] = useState<Set<number>>(new Set());
+  const [impDownloading, setImpDownloading] = useState(false);
+
+  // ── Onglet Assignation ───────────────────────────────────────────────────────
+  const [plannings, setPlannings] = useState<Planning[]>([]);
+  const [planningId, setPlanningId] = useState<number | "">("");
+  const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
+  const [loadingEp, setLoadingEp] = useState(false);
+  const [assignModal, setAssignModal] = useState<EpreuveFlat | null>(null);
+  const [filterMatAss, setFilterMatAss] = useState("");
+  const [assigning, setAssigning] = useState(false);
+
+  const loadPlanches = useCallback(() => {
+    setLoadingP(true);
+    get<PlancheItem[]>("planches/")
+      .then(setPlanches)
+      .catch(() => {})
+      .finally(() => setLoadingP(false));
+  }, []);
+
+  useEffect(() => {
+    loadPlanches();
+    get<Planning[]>("plannings/").then(setPlannings).catch(() => {});
+    // Fetch all examinateurs (no planning filter needed here)
+    get<Examinateur[]>("examinateurs/?planning_id=0").catch(() => {});
+  }, [loadPlanches]);
+
+  // Load examinateurs without planning filter
+  useEffect(() => {
+    // Try fetching examinateurs from all plannings
+    if (plannings.length > 0) {
+      get<Examinateur[]>(`examinateurs/?planning_id=${plannings[0].id}`)
+        .then(setExaminateurs)
+        .catch(() => {});
+    }
+  }, [plannings]);
+
+  useEffect(() => {
+    if (!planningId) { setEpreuves([]); return; }
+    setLoadingEp(true);
+    get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`)
+      .then(setEpreuves)
+      .catch(() => {})
+      .finally(() => setLoadingEp(false));
+  }, [planningId]);
+
+  async function doUpload() {
+    if (uploadFiles.length === 0) return;
+    setUploading(true);
+    setUploadErr("");
+    try {
+      const fd = new FormData();
+      uploadFiles.forEach((f) => fd.append("files", f));
+      if (uploadMatiereId !== "") fd.append("matiere_id", String(uploadMatiereId));
+      if (uploadExamId !== "") fd.append("examinateur_id", String(uploadExamId));
+      const res = await fetch("/api/backend/planches/upload", {
+        method: "POST",
+        body: fd,
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.detail ?? "Erreur lors de l'upload");
+      }
+      const created = await res.json() as PlancheItem[];
+      toast.success(`${created.length} planche(s) injectée(s)`);
+      setUploadFiles([]);
+      setShowUpload(false);
+      loadPlanches();
+    } catch (e: unknown) {
+      setUploadErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function startEdit(p: PlancheItem) {
+    setEditRow(p.id);
+    setEditNom(p.nom);
+    setEditMatiereId(p.matiere_id ?? "");
+    setEditExamId(p.examinateur_id ?? "");
+    setEditStatut(p.statut);
+  }
+
+  async function saveEdit(id: number) {
+    setSavingRow(true);
+    try {
+      await patch(`planches/${id}`, {
+        nom: editNom,
+        matiere_id: editMatiereId !== "" ? editMatiereId : null,
+        examinateur_id: editExamId !== "" ? editExamId : null,
+        statut: editStatut,
+      });
+      setEditRow(null);
+      loadPlanches();
+      toast.success("Planche mise à jour");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingRow(false);
+    }
+  }
+
+  async function doDelete(id: number) {
+    if (!await confirm("Supprimer cette planche ?", { confirmLabel: "Supprimer", danger: true })) return;
+    try {
+      await del(`planches/${id}`);
+      loadPlanches();
+      toast.success("Planche supprimée");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function doAssign(epreuveId: number, plancheId: number) {
+    setAssigning(true);
+    try {
+      await post(`planches/epreuves/${epreuveId}/assigner`, { planche_id: plancheId });
+      setEpreuves((prev) =>
+        prev.map((e) => {
+          if (e.id !== epreuveId) return e;
+          const p = planches.find((pl) => pl.id === plancheId);
+          return { ...e, planche_id: plancheId, planche_nom: p?.nom ?? null };
+        })
+      );
+      setAssignModal(null);
+      toast.success("Planche assignée");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAssigning(false);
+    }
+  }
+
+  async function doDesassign(epreuveId: number) {
+    try {
+      await del(`planches/epreuves/${epreuveId}/assigner`);
+      setEpreuves((prev) =>
+        prev.map((e) => e.id === epreuveId ? { ...e, planche_id: null, planche_nom: null } : e)
+      );
+      toast.success("Planche retirée");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  // ── Logique impression ───────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!impPlanningId || !impDate) { setImpEpreuves([]); setImpSelected(new Set()); return; }
+    setImpLoading(true);
+    get<EpreuveFlat[]>(`plannings/${impPlanningId}/epreuves`)
+      .then((all) => {
+        const filtered = all.filter(
+          (e) => e.date === impDate && e.planche_id !== null && (impMatiere === "" || e.matiere === impMatiere)
+        );
+        setImpEpreuves(filtered);
+        // Pré-sélectionner toutes les épreuves avec candidat + planche
+        setImpSelected(new Set(filtered.filter((e) => e.candidat_id && e.planche_id).map((e) => e.id)));
+      })
+      .catch(() => {})
+      .finally(() => setImpLoading(false));
+  }, [impPlanningId, impDate, impMatiere]);
+
+  async function doDownloadBatch() {
+    const ids = Array.from(impSelected);
+    if (ids.length === 0) return;
+    setImpDownloading(true);
+    try {
+      const res = await fetch("/api/backend/planches/batch-cartouche", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ epreuve_ids: ids }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.detail ?? "Erreur lors du téléchargement");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const cd = res.headers.get("content-disposition") ?? "";
+      const fnMatch = cd.match(/filename="([^"]+)"/);
+      a.download = fnMatch ? fnMatch[1] : `planches_${impDate}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`${ids.length} planche(s) téléchargée(s)`);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setImpDownloading(false);
+    }
+  }
+
+  // Planches filtrées par matière pour la modale d'assignation
+  const planchesForAssign = assignModal
+    ? planches.filter(
+        (p) =>
+          p.statut === "ACTIF" &&
+          (assignModal.matiere
+            ? p.matiere_intitule === assignModal.matiere
+            : true)
+      )
+    : [];
+
+  const epreuvesFiltrees = filterMatAss
+    ? epreuves.filter((e) => e.matiere === filterMatAss)
+    : epreuves;
+
+  const matiereOptions = Array.from(new Set(epreuves.map((e) => e.matiere))).sort();
+
+  return (
+    <div className="max-w-6xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-xl font-semibold">Planches</h2>
+          <p className="text-sm text-black/40 mt-0.5">Gestion des sujets PDF et assignation aux épreuves</p>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 mb-6 bg-black/5 p-1 rounded-xl w-fit">
+        {(["sujets", "assignation", "impression"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${
+              tab === t ? "bg-white shadow text-black" : "text-black/50 hover:text-black/70"
+            }`}
+          >
+            {t === "sujets" ? "Gestion des sujets" : t === "assignation" ? "Assignation" : "Impression"}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Onglet Sujets ────────────────────────────────────────────────────── */}
+      {tab === "sujets" && (
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <Btn label="+ Injecter des sujets" icon={Upload} onClick={() => setShowUpload(true)} />
+          </div>
+
+          {/* Upload modal */}
+          <Modal open={showUpload} onClose={() => { setShowUpload(false); setUploadFiles([]); setUploadErr(""); }} title="Injecter des sujets PDF">
+            <div className="space-y-4">
+              <div>
+                <input
+                  ref={uploadRef}
+                  type="file"
+                  accept=".pdf"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => setUploadFiles(Array.from(e.target.files ?? []))}
+                />
+                <div
+                  onClick={() => uploadRef.current?.click()}
+                  className="cursor-pointer rounded-xl border-2 border-dashed border-gray-200 hover:border-[#C62828] transition p-8 text-center"
+                >
+                  {uploadFiles.length > 0 ? (
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">{uploadFiles.length} fichier(s) sélectionné(s)</p>
+                      <p className="text-xs text-gray-400 mt-1">{uploadFiles.map((f) => f.name).join(", ")}</p>
+                      <p className="text-xs text-gray-400 mt-1">Cliquer pour changer</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <Upload className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                      <p className="text-sm text-gray-500">Cliquer pour sélectionner des PDFs</p>
+                      <p className="text-xs text-gray-400 mt-1">Plusieurs fichiers acceptés · PDF uniquement</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <Field label="Matière (optionnel)">
+                <Select value={uploadMatiereId} onChange={(e) => setUploadMatiereId(e.target.value === "" ? "" : Number(e.target.value))}>
+                  <option value="">— Choisir une matière</option>
+                  {matieres.filter((m) => m.active).map((m) => (
+                    <option key={m.id} value={m.id}>{m.intitule}</option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Auteur (optionnel)">
+                <Select value={uploadExamId} onChange={(e) => setUploadExamId(e.target.value === "" ? "" : Number(e.target.value))}>
+                  <option value="">— Choisir un examinateur</option>
+                  {examinateurs.map((ex) => (
+                    <option key={ex.id} value={ex.id}>{ex.prenom} {ex.nom}</option>
+                  ))}
+                </Select>
+              </Field>
+              {uploadErr && <ErrorMsg msg={uploadErr} />}
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => { setShowUpload(false); setUploadFiles([]); setUploadErr(""); }} className="text-sm text-gray-500 px-4 py-2 rounded-lg hover:bg-gray-100 transition">Annuler</button>
+                <Btn label="Injecter" disabled={uploadFiles.length === 0 || uploading} icon={uploading ? Loader2 : Upload} onClick={doUpload} />
+              </div>
+            </div>
+          </Modal>
+
+          {/* Table */}
+          {loadingP ? (
+            <div className="flex justify-center py-12 text-black/30"><Spinner /></div>
+          ) : planches.length === 0 ? (
+            <Empty message="Aucun sujet chargé" sub="Cliquez sur « Injecter des sujets » pour importer des PDFs." />
+          ) : (
+            <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[#F5F5F5]">
+                    {["Nom", "Matière", "Auteur", "Statut", "Assignée", ""].map((h) => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-black/50 tracking-wide">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {planches.map((p) => (
+                    <tr key={p.id} className="border-t border-black/5 hover:bg-black/[0.012]">
+                      {editRow === p.id ? (
+                        <>
+                          <td className="px-4 py-2">
+                            <input
+                              value={editNom}
+                              onChange={(e) => setEditNom(e.target.value)}
+                              className="w-full px-2 py-1 rounded border border-black/15 text-sm"
+                            />
+                          </td>
+                          <td className="px-4 py-2">
+                            <select
+                              value={editMatiereId}
+                              onChange={(e) => setEditMatiereId(e.target.value === "" ? "" : Number(e.target.value))}
+                              className="w-full px-2 py-1 rounded border border-black/15 text-sm bg-white"
+                            >
+                              <option value="">—</option>
+                              {matieres.filter((m) => m.active).map((m) => (
+                                <option key={m.id} value={m.id}>{m.intitule}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-4 py-2">
+                            <select
+                              value={editExamId}
+                              onChange={(e) => setEditExamId(e.target.value === "" ? "" : Number(e.target.value))}
+                              className="w-full px-2 py-1 rounded border border-black/15 text-sm bg-white"
+                            >
+                              <option value="">—</option>
+                              {examinateurs.map((ex) => (
+                                <option key={ex.id} value={ex.id}>{ex.prenom} {ex.nom}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-4 py-2">
+                            <select
+                              value={editStatut}
+                              onChange={(e) => setEditStatut(e.target.value)}
+                              className="px-2 py-1 rounded border border-black/15 text-sm bg-white"
+                            >
+                              <option value="ACTIF">Actif</option>
+                              <option value="INACTIF">Inactif</option>
+                            </select>
+                          </td>
+                          <td className="px-4 py-2" />
+                          <td className="px-4 py-2 text-right">
+                            <div className="flex gap-2 justify-end">
+                              <Btn label="Sauv." small onClick={() => saveEdit(p.id)} disabled={savingRow} />
+                              <Btn label="Annuler" small variant="ghost" onClick={() => setEditRow(null)} />
+                            </div>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-4 py-3 font-medium text-sm">
+                            <div className="flex items-center gap-2">
+                              <FileText className="h-4 w-4 text-black/30 shrink-0" />
+                              {p.nom}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-sm text-black/60">{p.matiere_intitule ?? <span className="text-black/30 italic">—</span>}</td>
+                          <td className="px-4 py-3 text-sm text-black/60">{p.examinateur_nom ?? <span className="text-black/30 italic">—</span>}</td>
+                          <td className="px-4 py-3">
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${p.statut === "ACTIF" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                              {p.statut === "ACTIF" ? "Actif" : "Inactif"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${p.assignee ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-400"}`}>
+                              {p.assignee ? "Oui" : "Non"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex gap-1.5 justify-end">
+                              <a
+                                href={`/api/backend/planches/${p.id}/download`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 text-xs text-black/50 hover:text-black/80 px-2 py-1 rounded hover:bg-black/5 transition"
+                              >
+                                <Download className="h-3.5 w-3.5" />
+                                PDF
+                              </a>
+                              <Btn label="Modifier" small variant="ghost" icon={Edit2} onClick={() => startEdit(p)} />
+                              <button
+                                onClick={() => doDelete(p.id)}
+                                disabled={p.assignee}
+                                title={p.assignee ? "Assignée à une épreuve — non supprimable" : "Supprimer"}
+                                className="inline-flex items-center gap-1 text-xs text-red-500 px-2 py-1 rounded hover:bg-red-50 transition disabled:opacity-30 disabled:cursor-not-allowed"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Onglet Assignation ───────────────────────────────────────────────── */}
+      {tab === "assignation" && (
+        <div className="space-y-5">
+          <div className="flex items-end gap-4 flex-wrap">
+            <Field label="Planning">
+              <Select value={planningId} onChange={(e) => setPlanningId(e.target.value === "" ? "" : Number(e.target.value))} className="min-w-[220px]">
+                <option value="">— Sélectionner un planning</option>
+                {plannings.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
+              </Select>
+            </Field>
+            {matiereOptions.length > 0 && (
+              <Field label="Filtrer par matière">
+                <Select value={filterMatAss} onChange={(e) => setFilterMatAss(e.target.value)}>
+                  <option value="">Toutes</option>
+                  {matiereOptions.map((m) => <option key={m} value={m}>{m}</option>)}
+                </Select>
+              </Field>
+            )}
+          </div>
+
+          {!planningId ? (
+            <Empty message="Sélectionnez un planning" />
+          ) : loadingEp ? (
+            <div className="flex justify-center py-12 text-black/30"><Spinner /></div>
+          ) : epreuvesFiltrees.length === 0 ? (
+            <Empty message="Aucune épreuve" />
+          ) : (
+            <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[#F5F5F5]">
+                    {["Date", "Matière", "Horaire", "Candidat", "Planche assignée", ""].map((h) => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-black/50 tracking-wide">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {epreuvesFiltrees.map((ep) => (
+                    <tr key={ep.id} className="border-t border-black/5 hover:bg-black/[0.012]">
+                      <td className="px-4 py-3 text-xs text-black/50">{ep.date}</td>
+                      <td className="px-4 py-3 font-medium">{ep.matiere}</td>
+                      <td className="px-4 py-3 text-xs text-black/60">{hm(ep.heure_debut)} → {hm(ep.heure_fin)}</td>
+                      <td className="px-4 py-3 text-sm">
+                        {ep.candidat_nom
+                          ? <span className="font-medium">{ep.candidat_nom} {ep.candidat_prenom}</span>
+                          : <span className="text-black/30 italic">—</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        {ep.planche_nom ? (
+                          <div className="flex items-center gap-2">
+                            <FileText className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                            <span className="text-sm text-blue-700 font-medium">{ep.planche_nom}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-black/30 italic">Non assignée</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex gap-1.5 justify-end">
+                          <Btn
+                            label={ep.planche_nom ? "Changer" : "Assigner"}
+                            small
+                            variant={ep.planche_nom ? "ghost" : "primary"}
+                            icon={FileText}
+                            onClick={() => setAssignModal(ep)}
+                          />
+                          {ep.planche_nom && (
+                            <>
+                              {ep.candidat_id && (
+                                <a
+                                  href={`/api/backend/planches/epreuves/${ep.id}/cartouche`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 hover:bg-green-100 px-2 py-1 rounded transition font-medium"
+                                >
+                                  <Download className="h-3.5 w-3.5" />
+                                  Cartouche
+                                </a>
+                              )}
+                              <button
+                                onClick={() => doDesassign(ep.id)}
+                                className="inline-flex items-center gap-1 text-xs text-red-500 px-2 py-1 rounded hover:bg-red-50 transition"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Modale assignation */}
+          <Modal open={!!assignModal} onClose={() => setAssignModal(null)} title={`Assigner une planche — ${assignModal?.matiere ?? ""}`} wide>
+            {assignModal && (
+              <div className="space-y-3">
+                <p className="text-sm text-black/50">
+                  Épreuve : <strong>{assignModal.matiere}</strong> · {assignModal.date} · {hm(assignModal.heure_debut)}
+                  {assignModal.candidat_nom && <> · {assignModal.candidat_nom} {assignModal.candidat_prenom}</>}
+                </p>
+                {planchesForAssign.length === 0 ? (
+                  <Empty
+                    message="Aucune planche disponible pour cette matière"
+                    sub="Assurez-vous d'avoir injecté des sujets actifs avec la matière correspondante."
+                  />
+                ) : (
+                  <div className="rounded-xl border overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-[#F5F5F5]">
+                          {["Nom", "Auteur", ""].map((h) => (
+                            <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-black/50">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {planchesForAssign.map((p) => (
+                          <tr key={p.id} className={`border-t border-black/5 ${assignModal.planche_id === p.id ? "bg-blue-50" : "hover:bg-black/[0.012]"}`}>
+                            <td className="px-4 py-2.5 font-medium">
+                              <div className="flex items-center gap-2">
+                                <FileText className="h-4 w-4 text-black/30 shrink-0" />
+                                {p.nom}
+                              </div>
+                            </td>
+                            <td className="px-4 py-2.5 text-black/50 text-xs">{p.examinateur_nom ?? "—"}</td>
+                            <td className="px-4 py-2.5 text-right">
+                              {assignModal.planche_id === p.id ? (
+                                <span className="text-xs text-blue-600 font-medium">Actuelle</span>
+                              ) : (
+                                <Btn
+                                  label="Assigner"
+                                  small
+                                  disabled={assigning}
+                                  onClick={() => doAssign(assignModal.id, p.id)}
+                                />
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </Modal>
+        </div>
+      )}
+
+      {/* ── Onglet Impression ────────────────────────────────────────────────── */}
+      {tab === "impression" && (
+        <div className="space-y-5">
+          {/* Filtres */}
+          <div className="flex items-end gap-4 flex-wrap">
+            <Field label="Planning">
+              <Select
+                value={impPlanningId}
+                onChange={(e) => { setImpPlanningId(e.target.value === "" ? "" : Number(e.target.value)); setImpDate(""); setImpMatiere(""); }}
+              >
+                <option value="">— Sélectionner un planning</option>
+                {plannings.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
+              </Select>
+            </Field>
+            {impPlanningId !== "" && (
+              <Field label="Date">
+                <Input
+                  type="date"
+                  value={impDate}
+                  onChange={(e) => setImpDate(e.target.value)}
+                />
+              </Field>
+            )}
+            {impEpreuves.length > 0 && (
+              <Field label="Matière">
+                <Select value={impMatiere} onChange={(e) => setImpMatiere(e.target.value)}>
+                  <option value="">Toutes</option>
+                  {Array.from(new Set(impEpreuves.map((e) => e.matiere))).sort().map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </Select>
+              </Field>
+            )}
+          </div>
+
+          {/* Résumé + action */}
+          {impEpreuves.length > 0 && (
+            <div className="flex items-center justify-between rounded-xl bg-blue-50 border border-blue-100 px-4 py-3">
+              <div className="text-sm text-blue-800">
+                <span className="font-semibold">{impSelected.size}</span> planche(s) sélectionnée(s) sur {impEpreuves.filter((e) => e.candidat_id && e.planche_id).length} disponible(s)
+              </div>
+              <Btn
+                label={impDownloading ? "Génération…" : `Télécharger le ZIP (${impSelected.size})`}
+                icon={impDownloading ? Loader2 : Download}
+                disabled={impSelected.size === 0 || impDownloading}
+                onClick={doDownloadBatch}
+              />
+            </div>
+          )}
+
+          {!impPlanningId || !impDate ? (
+            <Empty message="Sélectionnez un planning et une date" />
+          ) : impLoading ? (
+            <div className="flex justify-center py-12 text-black/30"><Spinner /></div>
+          ) : impEpreuves.length === 0 ? (
+            <Empty
+              message="Aucune planche assignée pour cette sélection"
+              sub="Assurez-vous d'avoir assigné des planches aux épreuves dans l'onglet Assignation."
+            />
+          ) : (
+            <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[#F5F5F5]">
+                    <th className="px-4 py-3 w-10">
+                      <input
+                        type="checkbox"
+                        checked={
+                          impEpreuves.filter((e) => e.candidat_id && e.planche_id).length > 0 &&
+                          impEpreuves.filter((e) => e.candidat_id && e.planche_id).every((e) => impSelected.has(e.id))
+                        }
+                        onChange={(ev) => {
+                          const printable = impEpreuves.filter((e) => e.candidat_id && e.planche_id).map((e) => e.id);
+                          setImpSelected(ev.target.checked ? new Set(printable) : new Set());
+                        }}
+                        className="rounded"
+                      />
+                    </th>
+                    {["Matière", "Heure prépa", "Heure passage", "Candidat", "Planche", "Examinateur"].map((h) => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-black/50 tracking-wide">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {impEpreuves.map((ep) => {
+                    const printable = !!(ep.candidat_id && ep.planche_id);
+                    const checked = impSelected.has(ep.id);
+                    // Heure préparation si preparation_minutes renseigné
+                    let heurePrepa = "—";
+                    if (ep.preparation_minutes && ep.heure_debut) {
+                      const [h, m] = ep.heure_debut.split(":").map(Number);
+                      const total = h * 60 + m - ep.preparation_minutes;
+                      heurePrepa = `${String(Math.floor(total / 60)).padStart(2, "0")}h${String(total % 60).padStart(2, "0")}`;
+                    }
+                    return (
+                      <tr
+                        key={ep.id}
+                        className={`border-t border-black/5 transition ${
+                          !printable ? "opacity-40" : checked ? "bg-blue-50/50" : "hover:bg-black/[0.012]"
+                        }`}
+                      >
+                        <td className="px-4 py-3">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={!printable}
+                            onChange={(ev) => {
+                              const next = new Set(impSelected);
+                              ev.target.checked ? next.add(ep.id) : next.delete(ep.id);
+                              setImpSelected(next);
+                            }}
+                            className="rounded"
+                          />
+                        </td>
+                        <td className="px-4 py-3 font-medium">{ep.matiere}</td>
+                        <td className="px-4 py-3 text-sm text-black/60">{heurePrepa}</td>
+                        <td className="px-4 py-3 text-sm text-black/60">{hm(ep.heure_debut)}</td>
+                        <td className="px-4 py-3 text-sm">
+                          {ep.candidat_nom
+                            ? <span className="font-medium">{ep.candidat_nom} {ep.candidat_prenom}</span>
+                            : <span className="text-black/30 italic">Non attribué</span>}
+                        </td>
+                        <td className="px-4 py-3">
+                          {ep.planche_nom
+                            ? <div className="flex items-center gap-1.5"><FileText className="h-3.5 w-3.5 text-blue-400 shrink-0" /><span className="text-sm">{ep.planche_nom}</span></div>
+                            : <span className="text-black/30 italic text-xs">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-black/60">
+                          {ep.examinateur_nom
+                            ? `${ep.examinateur_prenom ?? ""} ${ep.examinateur_nom}`.trim()
+                            : <span className="text-black/30 italic">—</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -7204,6 +8190,7 @@ export default function AdminPage() {
             {section === "surveillants" && <SurveillantsSection />}
             {section === "dashboard" && <DashboardSection />}
             {section === "conflits" && <ConflitsSection />}
+            {section === "planches" && <PlanchesSection />}
             {section === "salles" && <SallesSection />}
             {section === "notes" && <NotesSection />}
             {section === "parametrages" && <ParametragesSection />}

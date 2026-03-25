@@ -13,6 +13,7 @@ from app.models.matiere import Matiere
 from app.models.salle import Salle
 from app.models.examinateur_indisponibilite import ExaminateurIndisponibilite
 from app.models.surveillant import Surveillant
+from app.models.planche import Planche
 
 __all__ = [
     "Planning",
@@ -31,4 +32,5 @@ __all__ = [
     "Salle",
     "ExaminateurIndisponibilite",
     "Surveillant",
+    "Planche",
 ]
