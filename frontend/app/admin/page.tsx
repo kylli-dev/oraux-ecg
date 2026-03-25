@@ -2414,6 +2414,7 @@ function buildMatrix(p: WizardParams): MatrixRow[] {
 // ── Wizard création journée type (2 étapes) ────────────────────────────────────
 function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
   const [step, setStep] = useState<1 | 2>(1);
+  const allMatieres = useMatieres();
   const [p, setP] = useState<WizardParams>({
     nom: "",
     matieres: [],
@@ -2428,6 +2429,12 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Auto-sync matieres with all active matieres from DB
+  useEffect(() => {
+    const active = allMatieres.filter(m => m.active).map(m => m.intitule);
+    if (active.length > 0) setP(prev => ({ ...prev, matieres: active }));
+  }, [allMatieres]);
+
   const set = (k: keyof WizardParams, v: any) =>
     setP((prev) => ({ ...prev, [k]: v }));
 
@@ -2436,7 +2443,7 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
 
   const handleGenerate = () => {
     if (!p.nom.trim()) { setError("Nom requis"); return; }
-    if (!N) { setError("Sélectionnez au moins une matière"); return; }
+    if (!N) { setError("Aucune matière active — configurez-en dans Paramétrages → Matières"); return; }
     setError("");
     setMatrix(buildMatrix(p));
     setStep(2);
@@ -2498,19 +2505,18 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
         <Field label="Nom">
           <Input value={p.nom} onChange={(e) => set("nom", e.target.value)} placeholder="Journée standard ECG" />
         </Field>
-        <Field label="Matières">
-          <MatieresSelector selected={p.matieres} onChange={(v) => set("matieres", v)} />
-          {N > 0 && (
-            <p className="text-xs text-black/40 mt-1.5">
-              {N} matière(s) → <strong>{Nsq} créneaux</strong> par session
-            </p>
-          )}
-        </Field>
+        {N > 0 ? (
+          <p className="text-xs text-black/40">
+            Matières actives : <strong className="text-black/60">{p.matieres.join(", ")}</strong> — {N} matière(s) → <strong>{Nsq} créneaux</strong> par session
+          </p>
+        ) : (
+          <p className="text-xs text-amber-600">Aucune matière active — configurez-en dans Paramétrages → Matières.</p>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <Field label="Heure de début">
             <Input type="time" value={p.heure_debut} onChange={(e) => set("heure_debut", e.target.value)} />
           </Field>
-          <Field label="Salles / matière">
+          <Field label="Salles">
             <Input type="number" value={p.salles_par_matiere} onChange={(e) => set("salles_par_matiere", Number(e.target.value))} min={1} max={50} />
           </Field>
         </div>
