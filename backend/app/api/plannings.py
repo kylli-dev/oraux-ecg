@@ -139,6 +139,7 @@ def list_epreuves_planning(
     for epreuve, dj in rows:
         candidat = db.get(Candidat, epreuve.candidat_id) if epreuve.candidat_id else None
         examinateur = db.get(ExaminateurModel, epreuve.examinateur_id) if epreuve.examinateur_id else None
+        examinateur2 = db.get(ExaminateurModel, epreuve.examinateur2_id) if epreuve.examinateur2_id else None
         salle = db.get(SalleModel, epreuve.salle_id) if epreuve.salle_id else None
         salle_prep = db.get(SalleModel, epreuve.salle_preparation_id) if epreuve.salle_preparation_id else None
         result.append({
@@ -156,6 +157,9 @@ def list_epreuves_planning(
             "examinateur_id": examinateur.id if examinateur else None,
             "examinateur_nom": examinateur.nom if examinateur else None,
             "examinateur_prenom": examinateur.prenom if examinateur else None,
+            "examinateur2_id": examinateur2.id if examinateur2 else None,
+            "examinateur2_nom": examinateur2.nom if examinateur2 else None,
+            "examinateur2_prenom": examinateur2.prenom if examinateur2 else None,
             "salle_id": salle.id if salle else None,
             "salle_intitule": salle.intitule if salle else None,
             "salle_preparation_id": salle_prep.id if salle_prep else None,

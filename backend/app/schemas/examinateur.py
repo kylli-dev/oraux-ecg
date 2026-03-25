@@ -48,6 +48,24 @@ class ExaminateurOut(BaseModel):
 
 class AssignerExaminateurIn(BaseModel):
     examinateur_id: Optional[int] = None
+    slot: int = 1  # 1 or 2
+
+
+class AssignBulkIn(BaseModel):
+    examinateur_id: int
+    epreuve_ids: List[int]
+
+
+class ConflictItem(BaseModel):
+    epreuve_id: int
+    reason: str
+    date: str
+    heure: str
+
+
+class AssignBulkOut(BaseModel):
+    assigned: List[int]
+    conflicts: List[ConflictItem]
 
 
 # ── Indisponibilités ──────────────────────────────────────────────────────────

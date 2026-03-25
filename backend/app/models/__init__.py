@@ -12,6 +12,7 @@ from app.models.message_type import MessageType
 from app.models.matiere import Matiere
 from app.models.salle import Salle
 from app.models.examinateur_indisponibilite import ExaminateurIndisponibilite
+from app.models.surveillant import Surveillant
 
 __all__ = [
     "Planning",
@@ -29,4 +30,5 @@ __all__ = [
     "Matiere",
     "Salle",
     "ExaminateurIndisponibilite",
+    "Surveillant",
 ]

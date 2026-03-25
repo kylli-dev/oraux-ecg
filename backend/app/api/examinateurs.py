@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -6,9 +7,11 @@ from app.db.deps import get_db
 from app.models.examinateur import Examinateur
 from app.models.examinateur_indisponibilite import ExaminateurIndisponibilite
 from app.models.epreuve import Epreuve
+from app.models.demi_journee import DemiJournee
 from app.schemas.examinateur import (
     ExaminateurCreate, ExaminateurOut, ExaminateurUpdate, AssignerExaminateurIn,
     IndisponibiliteCreate, IndisponibiliteUpdate, IndisponibiliteOut,
+    AssignBulkIn, AssignBulkOut, ConflictItem,
 )
 
 router = APIRouter(
@@ -80,6 +83,7 @@ def delete_examinateur(examinateur_id: int, db: Session = Depends(get_db)):
     if not ex:
         raise HTTPException(status_code=404, detail="Examinateur not found")
     db.query(Epreuve).filter_by(examinateur_id=examinateur_id).update({"examinateur_id": None})
+    db.query(Epreuve).filter_by(examinateur2_id=examinateur_id).update({"examinateur2_id": None})
     db.delete(ex)
     db.commit()
 
@@ -92,14 +96,89 @@ def assigner_examinateur(epreuve_id: int, body: AssignerExaminateurIn, db: Sessi
     if not e:
         raise HTTPException(status_code=404, detail="Epreuve not found")
     if body.examinateur_id is None:
-        e.examinateur_id = None
+        # Deassign from specified slot
+        if body.slot == 2:
+            e.examinateur2_id = None
+        else:
+            e.examinateur_id = None
     else:
         ex = db.get(Examinateur, body.examinateur_id)
         if not ex:
             raise HTTPException(status_code=404, detail="Examinateur not found")
-        e.examinateur_id = body.examinateur_id
+        if body.slot == 2:
+            e.examinateur2_id = body.examinateur_id
+        else:
+            e.examinateur_id = body.examinateur_id
     db.commit()
-    return {"epreuve_id": epreuve_id, "examinateur_id": e.examinateur_id}
+    return {"epreuve_id": epreuve_id, "examinateur_id": e.examinateur_id, "examinateur2_id": e.examinateur2_id}
+
+
+@router.post("/assign-bulk", response_model=AssignBulkOut)
+def assign_bulk(body: AssignBulkIn, db: Session = Depends(get_db)):
+    """Affecte un examinateur à plusieurs épreuves en vérifiant ses indisponibilités."""
+    ex = db.get(Examinateur, body.examinateur_id)
+    if not ex:
+        raise HTTPException(status_code=404, detail="Examinateur not found")
+
+    indispos = (
+        db.query(ExaminateurIndisponibilite)
+        .filter_by(examinateur_id=body.examinateur_id)
+        .all()
+    )
+
+    assigned = []
+    conflicts = []
+
+    for epreuve_id in body.epreuve_ids:
+        e = db.get(Epreuve, epreuve_id)
+        if not e:
+            continue
+        dj = db.get(DemiJournee, e.demi_journee_id)
+        if not dj:
+            continue
+
+        exam_start = datetime.combine(dj.date, e.heure_debut)
+        exam_end = datetime.combine(dj.date, e.heure_fin)
+        heure_str = f"{str(e.heure_debut)[:5]}–{str(e.heure_fin)[:5]}"
+        date_str = str(dj.date)
+
+        # Check indisponibilité
+        conflict_found = False
+        for ind in indispos:
+            if exam_start < ind.fin and exam_end > ind.debut:
+                conflicts.append(ConflictItem(
+                    epreuve_id=epreuve_id,
+                    reason="Indisponibilité",
+                    date=date_str,
+                    heure=heure_str,
+                ))
+                conflict_found = True
+                break
+        if conflict_found:
+            continue
+
+        # Already assigned to this examiner (either slot)
+        if e.examinateur_id == body.examinateur_id or e.examinateur2_id == body.examinateur_id:
+            assigned.append(epreuve_id)
+            continue
+
+        # Assign to available slot
+        if e.examinateur_id is None:
+            e.examinateur_id = body.examinateur_id
+            assigned.append(epreuve_id)
+        elif e.examinateur2_id is None:
+            e.examinateur2_id = body.examinateur_id
+            assigned.append(epreuve_id)
+        else:
+            conflicts.append(ConflictItem(
+                epreuve_id=epreuve_id,
+                reason="Créneau complet",
+                date=date_str,
+                heure=heure_str,
+            ))
+
+    db.commit()
+    return AssignBulkOut(assigned=assigned, conflicts=conflicts)
 
 
 # ── Indisponibilités ──────────────────────────────────────────────────────────

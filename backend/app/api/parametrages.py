@@ -83,6 +83,19 @@ MESSAGE_TYPE_DEFAULTS = {
             "<p>Cordialement,<br>Le service des admissions</p>"
         ),
     },
+    "SURVEILLANT_IDENTIFIANTS": {
+        "sujet": "Accès à la plateforme des oraux ECG — vos identifiants",
+        "corps_html": (
+            "<p>Bonjour {prenom} {nom},</p>"
+            "<p>Vous avez été ajouté(e) comme surveillant(e) sur la plateforme des oraux ECG.</p>"
+            "<p>Vos identifiants de connexion :</p>"
+            "<ul><li><strong>Login :</strong> {login}</li>"
+            "<li><strong>Mot de passe :</strong> {password}</li></ul>"
+            "<p>Accédez à la plateforme : <a href=\"{url}\">{url}</a></p>"
+            "<p>Nous vous recommandons de modifier votre mot de passe dès la première connexion.</p>"
+            "<p>Cordialement,<br>Le service des admissions</p>"
+        ),
+    },
 }
 
 

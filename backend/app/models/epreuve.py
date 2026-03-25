@@ -39,6 +39,12 @@ class Epreuve(Base):
     )
     examinateur = relationship("Examinateur", foreign_keys=[examinateur_id])
 
+    examinateur2_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("examinateur.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    examinateur2 = relationship("Examinateur", foreign_keys=[examinateur2_id])
+
     salle_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("salle.id", ondelete="SET NULL"),
         nullable=True,

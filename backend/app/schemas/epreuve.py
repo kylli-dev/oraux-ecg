@@ -66,6 +66,9 @@ class EpreuveOut(BaseModel):
     examinateur_id: Optional[int] = None
     examinateur_nom: Optional[str] = None
     examinateur_prenom: Optional[str] = None
+    examinateur2_id: Optional[int] = None
+    examinateur2_nom: Optional[str] = None
+    examinateur2_prenom: Optional[str] = None
     salle_id: Optional[int] = None
     salle_intitule: Optional[str] = None
     salle_preparation_id: Optional[int] = None

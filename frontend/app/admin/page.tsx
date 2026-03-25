@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import PlanificationView from "./planification/PlanificationView";
 import InterfaceAdminENSAEPlanning from "../InterfaceAdminENSAEPlanning";
 import { useRouter } from "next/navigation";
+import { ToastProvider, useToast, useConfirm } from "./Toast";
 import {
   CalendarDays,
   Settings2,
@@ -35,6 +36,10 @@ import {
   Send,
   LogOut,
   Building2,
+  Shield,
+  Key,
+  Copy,
+  Mail,
 } from "lucide-react";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -124,6 +129,9 @@ type EpreuveFlat = {
   examinateur_id: number | null;
   examinateur_nom: string | null;
   examinateur_prenom: string | null;
+  examinateur2_id: number | null;
+  examinateur2_nom: string | null;
+  examinateur2_prenom: string | null;
   salle_id: number | null;
   salle_intitule: string | null;
   salle_preparation_id: number | null;
@@ -169,7 +177,17 @@ type DashboardData = {
   by_date: { date: string; count: number }[];
 };
 
-type SectionKey = "plannings" | "journeeTypes" | "candidats" | "examinateurs" | "dashboard" | "conflits" | "parametrages" | "notes" | "salles";
+type SectionKey = "plannings" | "journeeTypes" | "candidats" | "examinateurs" | "surveillants" | "dashboard" | "conflits" | "parametrages" | "notes" | "salles";
+
+type Surveillant = {
+  id: number;
+  planning_id: number;
+  nom: string;
+  prenom: string;
+  email: string;
+  actif: boolean;
+  code_acces: string;
+};
 
 type Salle = {
   id: number;
@@ -227,6 +245,32 @@ type FicheCandidat = {
   qualite: string | null;
   inscription: InscriptionGestion | null;
   liste_attente: { date: string }[];
+};
+
+type JourneeInscritItem = {
+  candidat_id: number;
+  candidat_nom: string;
+  candidat_prenom: string;
+  candidat_code: string | null;
+  inscription_id: number;
+  epreuves: TripletEpreuveGestion[];
+};
+
+type ListeAttenteAdminDate = {
+  date: string;
+  created_at: string;
+};
+
+type ListeAttenteAdminItem = {
+  id: number;
+  nom: string;
+  prenom: string;
+  email: string;
+  code_candidat: string | null;
+  civilite: string | null;
+  profil: string | null;
+  dates: ListeAttenteAdminDate[];
+  premier_enregistrement: string;
 };
 
 type MessageType = {
@@ -647,6 +691,8 @@ function PlanningsSection({
 }: {
   onSelect: (p: Planning) => void;
 }) {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [plannings, setPlannings] = useState<Planning[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -671,12 +717,13 @@ function PlanningsSection({
   }, [load]);
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Supprimer ce planning et toutes ses données ?")) return;
+    if (!await confirm("Supprimer ce planning et toutes ses données ?", { confirmLabel: "Supprimer", danger: true })) return;
     try {
       await del(`plannings/${id}`);
+      toast.success("Planning supprimé");
       load();
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -699,9 +746,11 @@ function PlanningsSection({
   const handleStatut = async (id: number, statut: string) => {
     try {
       await post(`plannings/${id}/statut`, { statut });
+      const label = statut === "OUVERT" ? "Planning ouvert" : statut === "CLOS" ? "Planning fermé" : "Statut mis à jour";
+      toast.success(label);
       load();
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -825,6 +874,7 @@ function PlanningsSection({
         <CreatePlanningForm
           onSuccess={() => {
             setShowCreate(false);
+            toast.success("Planning créé");
             load();
           }}
         />
@@ -840,6 +890,7 @@ function PlanningsSection({
             planning={editPlanning}
             onSuccess={() => {
               setEditPlanning(null);
+              toast.success("Planning modifié");
               load();
             }}
           />
@@ -1546,6 +1597,7 @@ function EpreuveRow({
   planningId: number;
   onRefresh: () => void;
 }) {
+  const toast = useToast();
   const [changing, setChanging] = useState(false);
   const [open, setOpen] = useState(false);
 
@@ -1566,7 +1618,7 @@ function EpreuveRow({
       await patch(`plannings/${planningId}/epreuves/${epreuve.id}`, { statut: newStatut });
       onRefresh();
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
     } finally {
       setChanging(false);
     }
@@ -1760,6 +1812,7 @@ function RegenForm({
   demiJourneeId: number;
   onSuccess: () => void;
 }) {
+  const toast = useToast();
   const [form, setForm] = useState({
     matieres: "",
     duree_minutes: 30,
@@ -1787,7 +1840,7 @@ function RegenForm({
         statut_initial: form.statut_initial,
       });
       onSuccess();
-      alert(`${res.epreuves_created} épreuve(s) générée(s).`);
+      toast.success(`${res.epreuves_created} épreuve(s) générée(s)`);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -1951,6 +2004,8 @@ function BlocTimeline({
 
 // ── JourneeTypeEditor ─────────────────────────────────────────────────────────
 function JourneeTypeEditor({ jt }: { jt: JourneeType }) {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [blocs, setBlocs] = useState<Bloc[]>([]);
   const [selectedBlocId, setSelectedBlocId] = useState<number | null>(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -1975,8 +2030,9 @@ function JourneeTypeEditor({ jt }: { jt: JourneeType }) {
   const selectedBloc = blocs.find((b) => b.id === selectedBlocId) ?? null;
 
   const handleDelete = async (blocId: number) => {
-    if (!confirm("Supprimer ce bloc ?")) return;
+    if (!await confirm("Supprimer ce bloc ?", { confirmLabel: "Supprimer", danger: true })) return;
     await del(`journee-types/blocs/${blocId}`);
+    toast.success("Bloc supprimé");
     setSelectedBlocId(null);
     load();
   };
@@ -2149,6 +2205,8 @@ function JourneeTypeEditor({ jt }: { jt: JourneeType }) {
 
 // ── Section : Journées types ───────────────────────────────────────────────────
 function JourneeTypesSection() {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [tab, setTab] = useState<"gabarits" | "matrice">("gabarits");
   const [jts, setJts] = useState<JourneeType[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2169,13 +2227,14 @@ function JourneeTypesSection() {
   }, [load]);
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Supprimer cette journée type ?")) return;
+    if (!await confirm("Supprimer cette journée type ?", { confirmLabel: "Supprimer", danger: true })) return;
     try {
       await del(`journee-types/${id}`);
+      toast.success("Journée type supprimée");
       if (editing === id) setEditing(null);
       load();
     } catch (e: any) {
-      alert(e.message);
+      toast.error(e.message);
     }
   };
 
@@ -2290,6 +2349,7 @@ function JourneeTypesSection() {
         <CreateJourneeTypeForm
           onSuccess={() => {
             setShowCreate(false);
+            toast.success("Journée type créée");
             load();
           }}
         />
@@ -2865,15 +2925,18 @@ function EditBlocForm({
 
 // ── Section : Candidats ────────────────────────────────────────────────────────
 function CandidatsSection() {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [plannings, setPlannings] = useState<Planning[]>([]);
   const [candidats, setCandidats] = useState<Candidat[]>([]);
   const [planningId, setPlanningId] = useState<number | "">("");
   const [loading, setLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
-  const [tab, setTab] = useState<"liste" | "affectation" | "gestion">("liste");
+  const [tab, setTab] = useState<"liste" | "affectation" | "gestion" | "liste_attente" | "compactage">("liste");
   const [error, setError] = useState("");
   const [searchCand, setSearchCand] = useState("");
+  const [selectedCandId, setSelectedCandId] = useState<number | null>(null);
 
   useEffect(() => {
     get<Planning[]>("plannings/")
@@ -2899,19 +2962,21 @@ function CandidatsSection() {
   }, [loadCandidats]);
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Supprimer ce candidat ?")) return;
+    if (!await confirm("Supprimer ce candidat ?", { confirmLabel: "Supprimer", danger: true })) return;
     try {
       await del(`candidats/${id}`);
+      toast.success("Candidat supprimé");
       loadCandidats();
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
     }
   };
 
   const handleDeleteAll = async () => {
     if (!planningId || candidats.length === 0) return;
-    if (!confirm(`Supprimer les ${candidats.length} candidat(s) de ce planning ? Cette action est irréversible.`)) return;
+    if (!await confirm(`Supprimer les ${candidats.length} candidat(s) de ce planning ? Cette action est irréversible.`, { confirmLabel: "Tout supprimer", danger: true })) return;
     await Promise.allSettled(candidats.map((c) => del(`candidats/${c.id}`)));
+    toast.success(`${candidats.length} candidat(s) supprimé(s)`);
     loadCandidats();
   };
 
@@ -2971,7 +3036,7 @@ function CandidatsSection() {
         <>
           {/* Onglets */}
           <div className="flex border-b border-gray-200 mb-5">
-            {(["liste", "gestion", "affectation"] as const).map((t) => (
+            {(["liste", "gestion", "liste_attente", "compactage", "affectation"] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -2981,7 +3046,11 @@ function CandidatsSection() {
                     : "border-transparent text-black/50 hover:text-black"
                 }`}
               >
-                {t === "liste" ? "Liste" : t === "gestion" ? "Gestion inscriptions" : "Affectation aux épreuves"}
+                {t === "liste" ? "Liste"
+                  : t === "gestion" ? "Gestion inscriptions"
+                  : t === "liste_attente" ? "Liste d'attente"
+                  : t === "compactage" ? "Compactage"
+                  : "Affectation aux épreuves"}
               </button>
             ))}
           </div>
@@ -3019,7 +3088,11 @@ function CandidatsSection() {
                         const q = searchCand.trim().toLowerCase();
                         return c.nom.toLowerCase().includes(q) || c.prenom.toLowerCase().includes(q);
                       }).map((c) => (
-                        <tr key={c.id} className="border-t border-black/5 hover:bg-black/[0.012] transition">
+                        <tr
+                          key={c.id}
+                          onClick={() => setSelectedCandId(c.id)}
+                          className={`border-t border-black/5 cursor-pointer hover:bg-black/[0.02] transition ${selectedCandId === c.id ? "bg-red-50 border-l-2 border-l-[#C62828]" : ""}`}
+                        >
                           <td className="px-5 py-3.5 font-medium">{c.nom}</td>
                           <td className="px-5 py-3.5">{c.prenom}</td>
                           <td className="px-5 py-3.5 text-black/50">{c.email}</td>
@@ -3028,13 +3101,21 @@ function CandidatsSection() {
                           </td>
                           <td className="px-5 py-3.5"><StatutBadge statut={c.statut} /></td>
                           <td className="px-5 py-3.5 text-right">
-                            <Btn
-                              label="Supprimer"
-                              icon={Trash2}
-                              onClick={() => handleDelete(c.id)}
-                              small
-                              variant="danger"
-                            />
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setSelectedCandId(c.id); }}
+                                className="text-xs px-2.5 py-1 text-[#C62828] border border-[#C62828]/30 rounded-lg hover:bg-red-50 transition"
+                              >
+                                Gérer
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleDelete(c.id); }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition text-red-600 bg-red-50 hover:bg-red-100"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                Supprimer
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -3047,6 +3128,17 @@ function CandidatsSection() {
 
           {tab === "gestion" && (
             <GestionCandidatsTab planningId={planningId as number} />
+          )}
+
+          {tab === "liste_attente" && (
+            <ListeAttenteTab planningId={planningId as number} />
+          )}
+
+          {tab === "compactage" && (
+            <CompactageTab
+              planningId={planningId as number}
+              planning={plannings.find(p => p.id === planningId) ?? null}
+            />
           )}
 
           {tab === "affectation" && (
@@ -3081,9 +3173,21 @@ function CandidatsSection() {
         <CreateCandidatForm
           plannings={plannings}
           defaultPlanningId={planningId !== "" ? planningId : undefined}
-          onSuccess={() => { setShowCreate(false); loadCandidats(); }}
+          onSuccess={() => { setShowCreate(false); toast.success("Candidat ajouté"); loadCandidats(); }}
         />
       </Modal>
+
+      <AnimatePresence>
+        {selectedCandId !== null && planningId !== "" && (
+          <CandidatGestionDrawer
+            key={selectedCandId}
+            candidatId={selectedCandId}
+            planningId={planningId as number}
+            onClose={() => setSelectedCandId(null)}
+            onRefreshList={loadCandidats}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -3152,8 +3256,719 @@ function CreateCandidatForm({
   );
 }
 
+// ── CandidatGestionDrawer ─────────────────────────────────────────────────────
+function CandidatGestionDrawer({
+  candidatId,
+  planningId,
+  onClose,
+  onRefreshList,
+}: {
+  candidatId: number;
+  planningId: number;
+  onClose: () => void;
+  onRefreshList: () => void;
+}) {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const [fiche, setFiche] = useState<FicheCandidat | null>(null);
+  const [triplets, setTriplets] = useState<TripletDisponible[]>([]);
+  const [loadingAction, setLoadingAction] = useState(false);
+  const [credsResult, setCredsResult] = useState<{ login: string; password: string } | null>(null);
+
+  const loadData = useCallback(() => {
+    get<FicheCandidat>(`gestion-candidats/candidat/${candidatId}/fiche`).then(setFiche).catch(() => {});
+    get<TripletDisponible[]>(`gestion-candidats/${planningId}/triplets`).then(setTriplets).catch(() => {});
+  }, [candidatId, planningId]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const refresh = () => { loadData(); onRefreshList(); };
+
+  const doInscrire = async (t: TripletDisponible) => {
+    setLoadingAction(true);
+    try {
+      await post(`gestion-candidats/candidat/${candidatId}/inscrire`, { date: t.date, heure_debut: t.heure_debut });
+      toast.success(fiche?.inscription ? "Réinscription effectuée" : "Candidat inscrit");
+      refresh();
+    } catch (e) { toast.error(e instanceof Error ? e.message : String(e)); }
+    finally { setLoadingAction(false); }
+  };
+
+  const doAction = async (endpoint: string, confirmMsg: string, successMsg: string, danger = false) => {
+    if (!await confirm(confirmMsg, { confirmLabel: "Confirmer", danger })) return;
+    setLoadingAction(true);
+    try {
+      await post(`gestion-candidats/candidat/${candidatId}/${endpoint}`, {});
+      toast.success(successMsg);
+      refresh();
+    } catch (e) { toast.error(e instanceof Error ? e.message : String(e)); }
+    finally { setLoadingAction(false); }
+  };
+
+  const doEnvoyerIdentifiants = async () => {
+    setLoadingAction(true);
+    try {
+      const r = await post<{ login: string; new_password: string }>(`parametrages/candidats/${candidatId}/reset-password`, {});
+      setCredsResult({ login: r.login, password: r.new_password });
+    } catch (e) { toast.error(e instanceof Error ? e.message : String(e)); }
+    finally { setLoadingAction(false); }
+  };
+
+  const fmt_date = (d: string) =>
+    new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+
+  const tripletsByDate: Record<string, TripletDisponible[]> = {};
+  for (const t of triplets) {
+    if (!tripletsByDate[t.date]) tripletsByDate[t.date] = [];
+    tripletsByDate[t.date].push(t);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+
+      {/* Panel */}
+      <motion.div
+        initial={{ x: "100%" }}
+        animate={{ x: 0 }}
+        exit={{ x: "100%" }}
+        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+        className="relative w-full max-w-3xl bg-white shadow-2xl flex flex-col h-full"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b bg-white shrink-0">
+          <div>
+            {fiche ? (
+              <>
+                {fiche.civilite && <p className="text-xs text-black/40">{fiche.civilite}</p>}
+                <h3 className="font-bold text-base leading-tight">{fiche.nom} {fiche.prenom}</h3>
+                {fiche.code_candidat && <p className="text-xs font-mono text-black/40 mt-0.5">{fiche.code_candidat}</p>}
+              </>
+            ) : (
+              <div className="h-5 w-40 bg-black/5 rounded animate-pulse" />
+            )}
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-black/5 transition ml-4">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Body: two columns */}
+        <div className="flex flex-1 overflow-hidden min-h-0">
+          {/* Left: identity card */}
+          <div className="w-56 shrink-0 border-r flex flex-col overflow-y-auto bg-gray-50/50">
+            {!fiche ? (
+              <div className="flex justify-center p-6"><Spinner /></div>
+            ) : (
+              <div className="p-4 space-y-4">
+                {/* Identity */}
+                <div>
+                  <p className="text-[10px] font-semibold text-black/40 uppercase tracking-wide mb-2">Identité</p>
+                  <dl className="space-y-1.5 text-xs">
+                    <div className="flex gap-1.5 flex-wrap"><dt className="text-black/40 w-12 shrink-0">Email</dt><dd className="break-all min-w-0">{fiche.email}</dd></div>
+                    {fiche.tel_portable && <div className="flex gap-1.5"><dt className="text-black/40 w-12 shrink-0">Tél.</dt><dd>{fiche.tel_portable}</dd></div>}
+                    {fiche.profil && <div className="flex gap-1.5"><dt className="text-black/40 w-12 shrink-0">Profil</dt><dd className="font-medium text-blue-700">{fiche.profil}</dd></div>}
+                    {fiche.classe && <div className="flex gap-1.5"><dt className="text-black/40 w-12 shrink-0">Classe</dt><dd>{fiche.classe}</dd></div>}
+                    {fiche.etablissement && <div className="flex gap-1.5 flex-wrap"><dt className="text-black/40 w-12 shrink-0">Établ.</dt><dd className="break-words min-w-0">{fiche.etablissement}</dd></div>}
+                    {fiche.qualite && <div className="flex gap-1.5"><dt className="text-black/40 w-12 shrink-0">Qualité</dt><dd>{fiche.qualite}</dd></div>}
+                    {fiche.numero_ine && <div className="flex gap-1.5"><dt className="text-black/40 w-12 shrink-0">INE</dt><dd className="font-mono">{fiche.numero_ine}</dd></div>}
+                    {fiche.handicape !== null && fiche.handicape !== undefined && (
+                      <div className="flex gap-1.5"><dt className="text-black/40 w-12 shrink-0">Handicap</dt>
+                        <dd className={fiche.handicape ? "text-amber-700 font-semibold" : ""}>{fiche.handicape ? "Oui" : "Non"}</dd>
+                      </div>
+                    )}
+                  </dl>
+                </div>
+
+                {/* Liste d'attente */}
+                {fiche.liste_attente.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold text-black/40 uppercase tracking-wide mb-2">Liste d&apos;attente</p>
+                    <div className="flex flex-col gap-1">
+                      {fiche.liste_attente.map(la => (
+                        <span key={la.date} className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded">
+                          {new Date(la.date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Envoyer identifiants */}
+                <div className="pt-2 border-t">
+                  <button
+                    onClick={doEnvoyerIdentifiants}
+                    disabled={loadingAction}
+                    className="w-full text-xs px-3 py-2 bg-white border border-black/15 rounded-lg hover:bg-black/[0.03] transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  >
+                    <Key className="h-3 w-3" />
+                    Envoyer les identifiants
+                  </button>
+
+                  {/* Inline creds display */}
+                  {credsResult && (
+                    <div className="mt-2 p-2 bg-gray-50 border rounded-lg space-y-1.5">
+                      {[
+                        { label: "Login", val: credsResult.login },
+                        { label: "MDP", val: credsResult.password },
+                      ].map(({ label, val }) => (
+                        <div key={label} className="flex items-center justify-between gap-1">
+                          <div>
+                            <p className="text-[9px] text-black/40 uppercase">{label}</p>
+                            <p className="text-xs font-mono font-medium truncate max-w-[100px]">{val}</p>
+                          </div>
+                          <button
+                            onClick={() => navigator.clipboard.writeText(val)}
+                            className="text-black/30 hover:text-[#C62828] transition shrink-0"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Right: inscription + triplets */}
+          <div className="flex-1 overflow-y-auto p-5 space-y-4 min-w-0">
+            <p className="text-sm font-bold text-black/70 uppercase tracking-wide">Inscription aux oraux</p>
+
+            {/* Inscription courante */}
+            {fiche?.inscription ? (
+              <div className="rounded-xl border bg-white shadow-sm p-4">
+                <p className="text-xs font-semibold text-green-700 mb-3">✓ Inscrit(e) pour les créneaux suivants</p>
+                <div className="rounded-lg border overflow-hidden text-xs mb-3">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-gray-50 text-left">
+                        <th className="px-3 py-2 text-black/40 font-semibold">Jour</th>
+                        {fiche.inscription.epreuves.map(e => (
+                          <th key={e.id} className="px-3 py-2 text-black/40 font-semibold">{e.matiere}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="px-3 py-2 font-medium capitalize">{fmt_date(fiche.inscription.date)}</td>
+                        {fiche.inscription.epreuves.map(e => (
+                          <td key={e.id} className="px-3 py-2">{e.heure_debut}</td>
+                        ))}
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => doAction("desinscrire", `Désinscrire ${fiche.nom} ${fiche.prenom} ?`, "Candidat désinscrit", true)}
+                    disabled={loadingAction}
+                    className="text-xs px-3 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition disabled:opacity-50"
+                  >
+                    Désinscrire
+                  </button>
+                  <button
+                    onClick={() => doAction("desinscrire-prereserver", "Désinscrire et préréserver les créneaux ?", "Désinscrit et créneaux préréservés", true)}
+                    disabled={loadingAction}
+                    className="text-xs px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 transition disabled:opacity-50"
+                  >
+                    Désinscrire + Préréserver
+                  </button>
+                  <button
+                    onClick={() => doAction("casser-triplet", `Casser le triplet de ${fiche.nom} ${fiche.prenom} ?`, "Triplet cassé")}
+                    disabled={loadingAction}
+                    className="text-xs px-3 py-1.5 bg-gray-100 text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-200 transition disabled:opacity-50"
+                  >
+                    Casser le triplet
+                  </button>
+                </div>
+              </div>
+            ) : fiche ? (
+              <div className="rounded-xl border border-dashed bg-gray-50 p-4 text-xs text-black/40 text-center">
+                Non inscrit(e) à ce jour
+              </div>
+            ) : null}
+
+            {/* Triplets disponibles */}
+            <div className="rounded-xl border bg-white shadow-sm p-4">
+              <p className="text-xs font-semibold text-black/50 mb-3">Créneaux disponibles à l&apos;inscription</p>
+              {Object.keys(tripletsByDate).length === 0 ? (
+                <p className="text-xs text-black/40">Aucun créneau disponible</p>
+              ) : (
+                <div className="space-y-4">
+                  {Object.entries(tripletsByDate).map(([date, trips]) => {
+                    const allMatieres = trips[0]?.epreuves.map(e => e.matiere) ?? [];
+                    return (
+                      <div key={date}>
+                        <p className="text-xs font-semibold text-black/50 mb-2 capitalize">{fmt_date(date)}</p>
+                        <div className="rounded-lg border overflow-hidden">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="bg-gray-50 text-left">
+                                <th className="px-3 py-2 text-black/40 font-semibold">Heure</th>
+                                {allMatieres.map(m => (
+                                  <th key={m} className="px-3 py-2 text-black/40 font-semibold">{m}</th>
+                                ))}
+                                <th className="px-3 py-2"></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {trips.map((t, idx) => (
+                                <tr
+                                  key={idx}
+                                  className={`border-t border-black/5 ${t.type_slot === "PRERESERVEE" ? "bg-amber-50/60" : ""}`}
+                                >
+                                  <td className="px-3 py-2 font-medium">{t.heure_debut}</td>
+                                  {t.epreuves.map(e => (
+                                    <td key={e.id} className="px-3 py-2">{e.heure_debut}</td>
+                                  ))}
+                                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                                    {t.type_slot === "PRERESERVEE" && (
+                                      <span className="mr-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                                        Préréservé
+                                      </span>
+                                    )}
+                                    <button
+                                      onClick={() => doInscrire(t)}
+                                      disabled={loadingAction}
+                                      className="text-[10px] px-2.5 py-1 rounded-lg text-white transition disabled:opacity-50 bg-[#C62828] hover:bg-[#B71C1C]"
+                                    >
+                                      Inscrire
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// ── CompactageTab ─────────────────────────────────────────────────────────────
+function CompactageTab({
+  planningId,
+  planning,
+}: {
+  planningId: number;
+  planning: Planning | null;
+}) {
+  const toast = useToast();
+  const [selectedDate, setSelectedDate] = useState(planning?.date_debut ?? "");
+  const [inscrits, setInscrits] = useState<JourneeInscritItem[]>([]);
+  const [triplets, setTriplets] = useState<TripletDisponible[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [drawerCandidatId, setDrawerCandidatId] = useState<number | null>(null);
+
+  const loadDay = useCallback(() => {
+    if (!selectedDate) return;
+    setLoading(true);
+    Promise.all([
+      get<JourneeInscritItem[]>(`gestion-candidats/${planningId}/journee?date=${selectedDate}`),
+      get<TripletDisponible[]>(`gestion-candidats/${planningId}/triplets`),
+    ])
+      .then(([i, t]) => { setInscrits(i); setTriplets(t); })
+      .catch(() => toast.error("Erreur lors du chargement"))
+      .finally(() => setLoading(false));
+  }, [planningId, selectedDate]);
+
+  useEffect(() => { loadDay(); }, [loadDay]);
+
+  // All subjects for that day (for column headers)
+  const allMatieres = [...new Set(inscrits.flatMap(c => c.epreuves.map(e => e.matiere)))].sort();
+
+  // Free triplets for the selected date
+  const freeTriplets = triplets.filter(t => t.date === selectedDate);
+
+  const fmt_date = (d: string) =>
+    new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h3 className="text-sm font-semibold">Compactage du planning</h3>
+          <p className="text-xs text-black/40 mt-0.5">
+            Visualisez les candidats inscrits par journée et réaffectez-les pour combler les trous créés par des absences.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-black/50 shrink-0">Journée :</label>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={e => setSelectedDate(e.target.value)}
+            min={planning?.date_debut}
+            max={planning?.date_fin}
+            className="border border-black/15 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300"
+          />
+        </div>
+      </div>
+
+      {!selectedDate ? (
+        <Empty message="Choisissez une journée" sub="Sélectionnez une date pour voir les candidats inscrits." />
+      ) : loading ? (
+        <div className="flex justify-center py-16"><Spinner /></div>
+      ) : (
+        <>
+          {/* Créneaux libres */}
+          {freeTriplets.length > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-center gap-3">
+              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+              <div className="text-xs text-amber-800">
+                <span className="font-semibold">{freeTriplets.length} triplet(s) libre(s)</span> ce jour — à attribuer pour combler les trous.
+                <span className="ml-2 text-amber-600">
+                  Heures de départ : {freeTriplets.map(t => t.heure_debut).join(", ")}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {inscrits.length === 0 ? (
+            <Empty
+              message="Aucun candidat inscrit ce jour"
+              sub={freeTriplets.length > 0
+                ? `${freeTriplets.length} créneau(x) libre(s) disponible(s) pour d'autres journées.`
+                : "Aucune inscription ni créneau libre ce jour."}
+            />
+          ) : (
+            <>
+              <p className="text-xs text-black/40">
+                {inscrits.length} candidat(s) inscrit(s) le{" "}
+                <span className="font-medium text-black/60 capitalize">{fmt_date(selectedDate)}</span>
+                {freeTriplets.length > 0 && (
+                  <span className="ml-1 text-amber-600">— {freeTriplets.length} triplet(s) libre(s) à boucher</span>
+                )}
+              </p>
+
+              <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 text-left border-b">
+                      <th className="px-4 py-3 text-xs font-semibold text-black/40">Candidat</th>
+                      {allMatieres.map(m => (
+                        <th key={m} className="px-4 py-3 text-xs font-semibold text-black/40">{m}</th>
+                      ))}
+                      <th className="px-4 py-3 text-xs font-semibold text-black/40"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inscrits.map((c, i) => {
+                      const slotByMatiere: Record<string, TripletEpreuveGestion> = {};
+                      for (const e of c.epreuves) slotByMatiere[e.matiere] = e;
+
+                      // Check if any of this candidate's slots overlap with free slots
+                      const hasConflict = c.epreuves.some(ep =>
+                        freeTriplets.some(t => t.epreuves.some(te => te.heure_debut === ep.heure_debut && te.matiere === ep.matiere))
+                      );
+
+                      return (
+                        <tr
+                          key={c.candidat_id}
+                          className={`border-t border-black/5 ${i % 2 === 0 ? "" : "bg-black/[0.01]"}`}
+                        >
+                          <td className="px-4 py-3">
+                            <div className="font-medium">{c.candidat_nom} {c.candidat_prenom}</div>
+                            {c.candidat_code && (
+                              <div className="text-xs font-mono text-black/30">{c.candidat_code}</div>
+                            )}
+                          </td>
+                          {allMatieres.map(m => {
+                            const ep = slotByMatiere[m];
+                            return (
+                              <td key={m} className="px-4 py-3 font-mono text-xs text-black/60">
+                                {ep ? ep.heure_debut : <span className="text-black/20">—</span>}
+                              </td>
+                            );
+                          })}
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              onClick={() => setDrawerCandidatId(c.candidat_id)}
+                              className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition ${
+                                hasConflict
+                                  ? "text-amber-700 border-amber-300 bg-amber-50 hover:bg-amber-100"
+                                  : "text-[#C62828] border-[#C62828]/30 hover:bg-red-50"
+                              }`}
+                            >
+                              {hasConflict ? "⚠ Réaffecter" : "Réaffecter"}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Legend */}
+              <p className="text-[11px] text-black/30 flex items-center gap-1.5">
+                <span className="inline-block w-3 h-3 bg-amber-100 border border-amber-300 rounded-sm" />
+                Le bouton <strong>⚠ Réaffecter</strong> indique que ce candidat occupe un créneau dont l&apos;heure est aussi libre — potentiellement réaffectable.
+              </p>
+            </>
+          )}
+        </>
+      )}
+
+      {/* Gestion drawer for reassignment */}
+      <AnimatePresence>
+        {drawerCandidatId !== null && (
+          <CandidatGestionDrawer
+            key={drawerCandidatId}
+            candidatId={drawerCandidatId}
+            planningId={planningId}
+            onClose={() => setDrawerCandidatId(null)}
+            onRefreshList={loadDay}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ── ListeAttenteTab ──────────────────────────────────────────────────────────
+function ListeAttenteTab({ planningId }: { planningId: number }) {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const [liste, setListe] = useState<ListeAttenteAdminItem[]>([]);
+  const [triplets, setTriplets] = useState<TripletDisponible[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
+  const [loadingAction, setLoadingAction] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const loadAll = useCallback(() => {
+    setLoading(true);
+    Promise.all([
+      get<ListeAttenteAdminItem[]>(`gestion-candidats/${planningId}/liste-attente`),
+      get<TripletDisponible[]>(`gestion-candidats/${planningId}/triplets`),
+    ]).then(([l, t]) => { setListe(l); setTriplets(t); }).catch(() => {}).finally(() => setLoading(false));
+  }, [planningId]);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  const selected = liste.find(c => c.id === selectedId) ?? null;
+
+  // Triplets filtered to the candidate's available dates
+  const candidatDates = new Set(selected?.dates.map(d => d.date) ?? []);
+  const tripletsFiltered = selected
+    ? triplets.filter(t => candidatDates.has(t.date))
+    : [];
+  const tripletsByDate: Record<string, TripletDisponible[]> = {};
+  for (const t of tripletsFiltered) {
+    if (!tripletsByDate[t.date]) tripletsByDate[t.date] = [];
+    tripletsByDate[t.date].push(t);
+  }
+
+  const doInscrire = async (c: ListeAttenteAdminItem, t: TripletDisponible) => {
+    if (!await confirm(`Inscrire ${c.nom} ${c.prenom} sur le créneau du ${fmt_date(t.date)} à ${t.heure_debut} ?`, { confirmLabel: "Inscrire" })) return;
+    setLoadingAction(true);
+    try {
+      await post(`gestion-candidats/candidat/${c.id}/inscrire`, { date: t.date, heure_debut: t.heure_debut });
+      toast.success(`${c.prenom} ${c.nom} inscrit(e) — sorti(e) de la liste d'attente`);
+      setSelectedId(null);
+      loadAll();
+    } catch (e) { toast.error(e instanceof Error ? e.message : String(e)); }
+    finally { setLoadingAction(false); }
+  };
+
+  const fmt_date = (d: string) =>
+    new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+
+  const fmt_datetime = (s: string) =>
+    new Date(s).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
+
+  const filtered = liste.filter(c => {
+    const q = search.toLowerCase();
+    return !q || `${c.nom} ${c.prenom} ${c.email} ${c.code_candidat ?? ""}`.toLowerCase().includes(q);
+  });
+
+  if (loading) return <div className="flex justify-center py-16 text-black/30"><Spinner /></div>;
+
+  if (liste.length === 0) {
+    return (
+      <Empty
+        message="Aucun candidat en liste d'attente"
+        sub="Les candidats qui s'inscrivent sur liste d'attente apparaîtront ici."
+      />
+    );
+  }
+
+  return (
+    <div className="flex gap-4" style={{ height: "calc(100vh - 220px)" }}>
+      {/* ── Colonne gauche : liste candidats en L.A. ── */}
+      <div className="w-64 flex-shrink-0 flex flex-col border rounded-xl bg-white shadow-sm overflow-hidden">
+        <div className="p-2.5 border-b">
+          <input
+            type="text"
+            placeholder="Rechercher…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full text-xs px-2.5 py-1.5 border rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-[#C62828]"
+          />
+        </div>
+        <div className="overflow-y-auto flex-1 divide-y divide-black/5">
+          {filtered.map(c => (
+            <button
+              key={c.id}
+              onClick={() => setSelectedId(c.id === selectedId ? null : c.id)}
+              className={`w-full text-left px-3 py-2.5 text-xs hover:bg-black/[0.03] transition ${
+                selectedId === c.id ? "bg-amber-50 border-l-2 border-amber-500" : ""
+              }`}
+            >
+              <div className="font-medium truncate">{c.nom} {c.prenom}</div>
+              <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                {c.code_candidat && <span className="font-mono text-black/30">{c.code_candidat}</span>}
+                {c.profil && <span className="bg-blue-100 text-blue-700 px-1 rounded text-[10px]">{c.profil}</span>}
+                <span className="bg-amber-100 text-amber-700 px-1 rounded text-[10px]">{c.dates.length} date(s)</span>
+              </div>
+              <div className="text-[10px] text-black/30 mt-0.5">depuis le {fmt_datetime(c.premier_enregistrement)}</div>
+            </button>
+          ))}
+          {filtered.length === 0 && (
+            <p className="p-4 text-xs text-black/30 text-center">Aucun résultat</p>
+          )}
+        </div>
+        <div className="px-3 py-2 border-t bg-black/[0.02] text-[10px] text-black/40">
+          {liste.length} candidat(s) en liste d&apos;attente
+        </div>
+      </div>
+
+      {/* ── Zone principale ── */}
+      {!selected ? (
+        <div className="flex-1 flex items-center justify-center text-sm text-black/30">
+          Sélectionnez un candidat pour voir ses disponibilités et l&apos;inscrire
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto min-w-0 space-y-4">
+          {/* En-tête candidat */}
+          <div className="rounded-xl border bg-white shadow-sm p-4 flex items-start justify-between">
+            <div>
+              {selected.civilite && <p className="text-xs text-black/40">{selected.civilite}</p>}
+              <h3 className="text-base font-bold leading-tight">{selected.nom} {selected.prenom}</h3>
+              <p className="text-xs text-black/50 mt-0.5">{selected.email}</p>
+              {selected.code_candidat && (
+                <p className="text-xs font-mono text-black/30 mt-0.5">{selected.code_candidat}</p>
+              )}
+            </div>
+            <div className="flex flex-col items-end gap-1">
+              {selected.profil && (
+                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-medium">{selected.profil}</span>
+              )}
+              <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded">
+                L.A. depuis le {fmt_datetime(selected.premier_enregistrement)}
+              </span>
+            </div>
+          </div>
+
+          {/* Dates disponibles */}
+          <div className="rounded-xl border bg-white shadow-sm p-4">
+            <p className="text-xs font-semibold text-black/50 mb-2">
+              Journées pour lesquelles {selected.prenom} a indiqué des disponibilités
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {selected.dates.map(d => {
+                const hasTriplets = tripletsByDate[d.date]?.length > 0;
+                return (
+                  <span
+                    key={d.date}
+                    className={`text-xs px-2.5 py-1 rounded-lg border font-medium ${
+                      hasTriplets
+                        ? "bg-green-50 text-green-700 border-green-200"
+                        : "bg-gray-50 text-gray-400 border-gray-200"
+                    }`}
+                  >
+                    {new Date(d.date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "long" })}
+                    {hasTriplets && <span className="ml-1 text-[10px]">({tripletsByDate[d.date].length} dispo.)</span>}
+                    {!hasTriplets && <span className="ml-1 text-[10px]">(complet)</span>}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Créneaux disponibles */}
+          {Object.keys(tripletsByDate).length === 0 ? (
+            <div className="rounded-xl border border-dashed bg-gray-50 p-6 text-sm text-black/40 text-center">
+              Aucun créneau disponible sur les journées indiquées par ce candidat
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-xs font-semibold text-black/50">
+                Créneaux disponibles sur les journées de disponibilité
+              </p>
+              {Object.entries(tripletsByDate).map(([date, trips]) => {
+                const allMatieres = trips[0]?.epreuves.map(e => e.matiere) ?? [];
+                return (
+                  <div key={date} className="rounded-xl border bg-white shadow-sm overflow-hidden">
+                    <div className="px-4 py-2.5 border-b bg-gray-50">
+                      <p className="text-xs font-semibold capitalize">{fmt_date(date)}</p>
+                    </div>
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-left border-b">
+                          <th className="px-4 py-2 text-black/40 font-semibold">Heure</th>
+                          {allMatieres.map(m => (
+                            <th key={m} className="px-4 py-2 text-black/40 font-semibold">{m}</th>
+                          ))}
+                          <th className="px-4 py-2"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {trips.map((t, idx) => (
+                          <tr
+                            key={idx}
+                            className={`border-t border-black/5 ${t.type_slot === "PRERESERVEE" ? "bg-amber-50/50" : ""}`}
+                          >
+                            <td className="px-4 py-2.5 font-medium">{t.heure_debut}</td>
+                            {t.epreuves.map(e => (
+                              <td key={e.id} className="px-4 py-2.5">{e.heure_debut}</td>
+                            ))}
+                            <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                              {t.type_slot === "PRERESERVEE" && (
+                                <span className="mr-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                                  Préréservé
+                                </span>
+                              )}
+                              <button
+                                onClick={() => doInscrire(selected, t)}
+                                disabled={loadingAction}
+                                className="text-[10px] px-3 py-1.5 rounded-lg text-white transition disabled:opacity-50 bg-[#C62828] hover:bg-[#B71C1C] font-medium"
+                              >
+                                Inscrire
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── GestionCandidatsTab ────────────────────────────────────────────────────────
 function GestionCandidatsTab({ planningId }: { planningId: number }) {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [liste, setListe] = useState<CandidatListeItem[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [fiche, setFiche] = useState<FicheCandidat | null>(null);
@@ -3190,19 +4005,21 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
     setLoadingAction(true);
     try {
       await post(`gestion-candidats/candidat/${selectedId}/inscrire`, { date: t.date, heure_debut: t.heure_debut });
+      toast.success("Candidat inscrit");
       refresh();
-    } catch (e) { alert(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { toast.error(e instanceof Error ? e.message : String(e)); }
     finally { setLoadingAction(false); }
   };
 
-  const doAction = async (endpoint: string, confirm_msg: string) => {
+  const doAction = async (endpoint: string, confirm_msg: string, successMsg?: string) => {
     if (!selectedId) return;
-    if (!confirm(confirm_msg)) return;
+    if (!await confirm(confirm_msg, { confirmLabel: "Confirmer", danger: endpoint.includes("desinscrire") || endpoint.includes("annuler") })) return;
     setLoadingAction(true);
     try {
       await post(`gestion-candidats/candidat/${selectedId}/${endpoint}`, {});
+      if (successMsg) toast.success(successMsg);
       refresh();
-    } catch (e) { alert(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { toast.error(e instanceof Error ? e.message : String(e)); }
     finally { setLoadingAction(false); }
   };
 
@@ -3351,21 +4168,21 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
-                    onClick={() => doAction("desinscrire", `Désinscrire ${fiche.nom} ${fiche.prenom} ?`)}
+                    onClick={() => doAction("desinscrire", `Désinscrire ${fiche.nom} ${fiche.prenom} ?`, "Candidat désinscrit")}
                     disabled={loadingAction}
                     className="text-xs px-3 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition disabled:opacity-50"
                   >
                     Désinscrire
                   </button>
                   <button
-                    onClick={() => doAction("desinscrire-prereserver", `Désinscrire et préréserver les créneaux ?`)}
+                    onClick={() => doAction("desinscrire-prereserver", `Désinscrire et préréserver les créneaux ?`, "Désinscrit et créneaux préréservés")}
                     disabled={loadingAction}
                     className="text-xs px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg hover:bg-amber-100 transition disabled:opacity-50"
                   >
                     Désinscrire + Préréserver
                   </button>
                   <button
-                    onClick={() => doAction("casser-triplet", `Casser le triplet de ${fiche.nom} ${fiche.prenom} ? Les 3 créneaux seront libérés individuellement.`)}
+                    onClick={() => doAction("casser-triplet", `Casser le triplet de ${fiche.nom} ${fiche.prenom} ? Les 3 créneaux seront libérés individuellement.`, "Triplet cassé")}
                     disabled={loadingAction}
                     className="text-xs px-3 py-1.5 bg-gray-100 text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-200 transition disabled:opacity-50"
                   >
@@ -3580,20 +4397,31 @@ function AffectationCandidatsTab({ planningId, candidats }: { planningId: number
 
 // ── AffectationTab (examinateurs) ─────────────────────────────────────────────
 
-function AffectationTab({ planningId, examinateurs }: { planningId: number; examinateurs: Examinateur[] }) {
-  const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [assigning, setAssigning] = useState<Record<number, boolean>>({});
-  const [error, setError] = useState("");
+type IndispoItem = { id: number; debut: string; fin: string };
 
+function AffectationTab({ planningId, examinateurs }: { planningId: number; examinateurs: Examinateur[] }) {
+  const toast = useToast();
+  const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedExId, setSelectedExId] = useState<number | "">("");
+  const [filterDate, setFilterDate] = useState("");
+  const [filterMatiere, setFilterMatiere] = useState("");
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [assigning, setAssigning] = useState(false);
+  const [deassigning, setDeassigning] = useState<number | null>(null);
+  const [indispos, setIndispos] = useState<IndispoItem[]>([]);
+  const [conflicts, setConflicts] = useState<{ epreuve_id: number; reason: string; date: string; heure: string }[]>([]);
+
+  const selectedEx = examinateurs.find((e) => e.id === selectedExId) ?? null;
+
+  // Load all epreuves when planning changes
   const load = useCallback(async () => {
     setLoading(true);
-    setError("");
     try {
       const data = await get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`);
       setEpreuves(data);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
@@ -3601,118 +4429,325 @@ function AffectationTab({ planningId, examinateurs }: { planningId: number; exam
 
   useEffect(() => { load(); }, [load]);
 
-  async function assigner(epreuveId: number, examinateurId: number | null) {
-    setAssigning((a) => ({ ...a, [epreuveId]: true }));
-    setError("");
+  // Load indisponibilités when examiner changes
+  useEffect(() => {
+    if (!selectedExId) { setIndispos([]); return; }
+    get<IndispoItem[]>(`examinateurs/${selectedExId}/indisponibilites`)
+      .then(setIndispos)
+      .catch(() => setIndispos([]));
+    setSelected(new Set());
+    setConflicts([]);
+  }, [selectedExId]);
+
+  // Check if a slot overlaps with any indisponibilité
+  function isIndispo(ep: EpreuveFlat): boolean {
+    if (!indispos.length) return false;
+    const start = new Date(`${ep.date}T${ep.heure_debut}`);
+    const end = new Date(`${ep.date}T${ep.heure_fin}`);
+    return indispos.some((ind) => start < new Date(ind.fin) && end > new Date(ind.debut));
+  }
+
+  // Filter epreuves
+  const matieres = selectedEx
+    ? selectedEx.matieres
+    : Array.from(new Set(epreuves.map((e) => e.matiere))).sort();
+
+  const filtered = epreuves.filter((ep) => {
+    if (filterMatiere && ep.matiere !== filterMatiere) return false;
+    if (filterDate && ep.date !== filterDate) return false;
+    // If examiner selected, only show their matières
+    if (selectedEx && !selectedEx.matieres.includes(ep.matiere)) return false;
+    return true;
+  });
+
+  const dates = Array.from(new Set(filtered.map((e) => e.date))).sort();
+
+  // Toggle slot in selection (skip indispos)
+  function toggle(id: number, indispo: boolean) {
+    if (indispo) return;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll(ids: number[]) {
+    const selectable = ids.filter((id) => {
+      const ep = epreuves.find((e) => e.id === id);
+      return ep && !isIndispo(ep);
+    });
+    const allSelected = selectable.every((id) => selected.has(id));
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allSelected) selectable.forEach((id) => next.delete(id));
+      else selectable.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  async function handleAssign() {
+    if (!selectedExId || selected.size === 0) return;
+    setAssigning(true);
+    setConflicts([]);
     try {
-      await post(`examinateurs/epreuves/${epreuveId}/assigner`, { examinateur_id: examinateurId });
-      const ex = examinateurId ? examinateurs.find((x) => x.id === examinateurId) : null;
-      setEpreuves((prev) =>
-        prev.map((ep) =>
-          ep.id === epreuveId
-            ? { ...ep, examinateur_id: ex?.id ?? null, examinateur_nom: ex?.nom ?? null, examinateur_prenom: ex?.prenom ?? null }
-            : ep
-        )
+      const res = await post<{ assigned: number[]; conflicts: typeof conflicts }>(
+        `examinateurs/assign-bulk`,
+        { examinateur_id: selectedExId, epreuve_ids: Array.from(selected) }
       );
+      if (res.assigned.length > 0) {
+        toast.success(`${res.assigned.length} créneau(x) affecté(s)`);
+      }
+      if (res.conflicts.length > 0) {
+        setConflicts(res.conflicts);
+        toast.warning(`${res.conflicts.length} conflit(s) détecté(s)`);
+      }
+      setSelected(new Set());
+      await load();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
     } finally {
-      setAssigning((a) => ({ ...a, [epreuveId]: false }));
+      setAssigning(false);
     }
   }
 
-  const byDate = epreuves.reduce<Record<string, EpreuveFlat[]>>((acc, e) => {
-    (acc[e.date] ??= []).push(e);
-    return acc;
-  }, {});
+  async function handleDeassign(epreuveId: number, slot: 1 | 2) {
+    setDeassigning(epreuveId * 10 + slot);
+    try {
+      await post(`examinateurs/epreuves/${epreuveId}/assigner`, { examinateur_id: null, slot });
+      await load();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeassigning(null);
+    }
+  }
 
-  const assigned = epreuves.filter((e) => e.examinateur_id !== null).length;
-  const total = epreuves.length;
-
-  if (loading) return <div className="p-8 text-center"><Spinner /></div>;
+  const assigned = filtered.filter((e) => e.examinateur_id !== null || e.examinateur2_id !== null).length;
 
   return (
     <div className="space-y-4">
-      {error && <div className="rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600">{error}</div>}
+      {/* Controls */}
+      <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-black/50 mb-1">Examinateur</label>
+            <select
+              value={selectedExId}
+              onChange={(e) => { setSelectedExId(e.target.value ? Number(e.target.value) : ""); setFilterMatiere(""); }}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C62828]/30"
+            >
+              <option value="">— Tous les examinateurs —</option>
+              {examinateurs.map((ex) => (
+                <option key={ex.id} value={ex.id}>
+                  {ex.nom} {ex.prenom}{ex.matieres.length ? ` — ${ex.matieres.join(", ")}` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-black/50 mb-1">Matière</label>
+            <select
+              value={filterMatiere}
+              onChange={(e) => setFilterMatiere(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C62828]/30"
+            >
+              <option value="">Toutes</option>
+              {matieres.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-black/50 mb-1">Date</label>
+            <select
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C62828]/30"
+            >
+              <option value="">Toutes les dates</option>
+              {Array.from(new Set(epreuves.map((e) => e.date))).sort().map((d) => (
+                <option key={d} value={d}>
+                  {new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
 
-      {total > 0 && (
-        <div className="bg-white rounded-xl shadow-sm p-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-black/60">{assigned} / {total} épreuves attribuées</span>
-            <span className="text-xs font-semibold text-[#C62828]">{Math.round((assigned / total) * 100)}%</span>
+        {filtered.length > 0 && (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-black/50">{assigned}/{filtered.length} attribué(s)</span>
+              <div className="w-32 bg-gray-100 rounded-full h-1.5">
+                <div className="bg-[#C62828] h-1.5 rounded-full" style={{ width: `${filtered.length ? (assigned / filtered.length) * 100 : 0}%` }} />
+              </div>
+            </div>
+            {selectedExId && selected.size > 0 && (
+              <button
+                onClick={handleAssign}
+                disabled={assigning}
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-[#C62828] text-white text-sm font-semibold rounded-lg hover:bg-[#B71C1C] transition disabled:opacity-50"
+              >
+                {assigning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                Affecter {selected.size} créneau{selected.size > 1 ? "x" : ""}
+              </button>
+            )}
           </div>
-          <div className="w-full bg-gray-100 rounded-full h-1.5">
-            <div className="bg-[#C62828] h-1.5 rounded-full transition-all" style={{ width: `${(assigned / total) * 100}%` }} />
-          </div>
+        )}
+      </div>
+
+      {/* Conflicts */}
+      {conflicts.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <p className="text-sm font-semibold text-amber-800 mb-2">&#9888; {conflicts.length} conflit(s) non affecté(s)</p>
+          <ul className="space-y-1">
+            {conflicts.map((c, i) => (
+              <li key={i} className="text-xs text-amber-700">
+                {new Date(c.date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })} {c.heure} — {c.reason}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
-      {Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b)).map(([date, eps]) => (
-        <div key={date}>
-          <p className="text-xs font-semibold text-black/40 uppercase tracking-wide mb-2">
-            {new Date(date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}
-          </p>
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-black/2">
-                  <th className="text-left px-4 py-2 font-medium text-black/40 text-xs">Horaire</th>
-                  <th className="text-left px-4 py-2 font-medium text-black/40 text-xs">Matière</th>
-                  <th className="text-left px-4 py-2 font-medium text-black/40 text-xs">Candidat</th>
-                  <th className="text-left px-4 py-2 font-medium text-black/40 text-xs">Examinateur</th>
-                </tr>
-              </thead>
-              <tbody>
-                {eps.map((ep, i) => (
-                  <tr key={ep.id} className={`border-b last:border-0 ${i % 2 === 0 ? "" : "bg-black/[0.01]"}`}>
-                    <td className="px-4 py-3 font-mono text-xs text-black/50 whitespace-nowrap">
-                      {ep.heure_debut} – {ep.heure_fin}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{ep.matiere}</td>
-                    <td className="px-4 py-3 text-sm text-black/60">
-                      {ep.candidat_id
-                        ? `${ep.candidat_prenom} ${ep.candidat_nom}`
-                        : <span className="text-black/30 italic text-xs">Non assigné</span>}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={ep.examinateur_id ?? ""}
-                          onChange={(e) => assigner(ep.id, e.target.value ? Number(e.target.value) : null)}
-                          disabled={assigning[ep.id]}
-                          className="w-full border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 disabled:opacity-50"
-                        >
-                          <option value="">— Aucun —</option>
-                          {examinateurs.map((ex) => (
-                            <option key={ex.id} value={ex.id}>
-                              {ex.nom} {ex.prenom} {ex.matieres.length ? `(${ex.matieres.join(", ")})` : ""}
-                            </option>
-                          ))}
-                        </select>
-                        {assigning[ep.id] && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400 shrink-0" />}
-                        {ep.examinateur_id && !assigning[ep.id] && (
-                          <button
-                            onClick={() => assigner(ep.id, null)}
-                            className="shrink-0 text-gray-300 hover:text-red-400 transition"
-                            title="Désaffecter"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      {/* Slots by date */}
+      {loading ? (
+        <div className="p-8 text-center"><Spinner /></div>
+      ) : filtered.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-black/15 p-14 text-center">
+          <p className="text-black/40 font-medium">{selectedExId ? "Aucun créneau pour les matières de cet examinateur" : "Aucun créneau"}</p>
         </div>
-      ))}
+      ) : (
+        dates.map((date) => {
+          const eps = filtered.filter((e) => e.date === date);
+          const allIds = eps.map((e) => e.id);
+          const selectableIds = allIds.filter((id) => {
+            const ep = eps.find((e) => e.id === id)!;
+            return !isIndispo(ep);
+          });
+          const allChecked = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
 
-      {epreuves.length === 0 && (
-        <div className="bg-white rounded-xl shadow-sm p-10 text-center text-sm text-black/40">
-          Aucune épreuve dans ce planning.
-        </div>
+          return (
+            <div key={date}>
+              <div className="flex items-center gap-2 mb-2">
+                {selectedExId && selectableIds.length > 0 && (
+                  <input
+                    type="checkbox"
+                    checked={allChecked}
+                    onChange={() => toggleAll(allIds)}
+                    className="h-3.5 w-3.5 rounded accent-[#C62828]"
+                  />
+                )}
+                <p className="text-xs font-semibold text-black/40 uppercase tracking-wide">
+                  {new Date(date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}
+                </p>
+              </div>
+              <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-black/5">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-black/[0.02]">
+                      {selectedExId && <th className="w-8 px-3 py-2" />}
+                      <th className="text-left px-4 py-2 font-medium text-black/40 text-xs">Horaire</th>
+                      <th className="text-left px-4 py-2 font-medium text-black/40 text-xs">Matière</th>
+                      <th className="text-left px-4 py-2 font-medium text-black/40 text-xs">Candidat</th>
+                      <th className="text-left px-4 py-2 font-medium text-black/40 text-xs">Exam. 1</th>
+                      <th className="text-left px-4 py-2 font-medium text-black/40 text-xs">Exam. 2</th>
+                      <th className="text-left px-4 py-2 font-medium text-black/40 text-xs">Statut</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {eps.map((ep, i) => {
+                      const indispo = isIndispo(ep);
+                      const isChecked = selected.has(ep.id);
+                      const isMine1 = selectedExId !== "" && ep.examinateur_id === (selectedExId as number);
+                      const isMine2 = selectedExId !== "" && ep.examinateur2_id === (selectedExId as number);
+                      const isDead = deassigning !== null;
+
+                      return (
+                        <tr
+                          key={ep.id}
+                          onClick={() => selectedExId && toggle(ep.id, indispo)}
+                          className={`border-b last:border-0 transition cursor-default ${
+                            isChecked ? "bg-red-50/60" : i % 2 === 0 ? "" : "bg-black/[0.01]"
+                          } ${selectedExId && !indispo ? "hover:bg-black/[0.02] cursor-pointer" : ""}`}
+                        >
+                          {selectedExId && (
+                            <td className="px-3 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                              {indispo ? (
+                                <span title="Indisponibilité" className="text-amber-500 text-xs">&#9888;</span>
+                              ) : (
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => toggle(ep.id, false)}
+                                  className="h-3.5 w-3.5 rounded accent-[#C62828]"
+                                />
+                              )}
+                            </td>
+                          )}
+                          <td className="px-4 py-3 font-mono text-xs text-black/50 whitespace-nowrap">
+                            {ep.heure_debut.slice(0,5)} – {ep.heure_fin.slice(0,5)}
+                            {indispo && (
+                              <span className="ml-1.5 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">Indisponible</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 font-medium text-xs text-gray-700 whitespace-nowrap">{ep.matiere}</td>
+                          <td className="px-4 py-3 text-xs text-black/60">
+                            {ep.candidat_id
+                              ? `${ep.candidat_prenom ?? ""} ${ep.candidat_nom ?? ""}`.trim()
+                              : <span className="text-black/25 italic">—</span>}
+                          </td>
+                          <td className="px-4 py-3 text-xs" onClick={(e) => e.stopPropagation()}>
+                            {ep.examinateur_id ? (
+                              <span className={`flex items-center gap-1 ${isMine1 ? "text-[#C62828] font-semibold" : "text-black/60"}`}>
+                                {ep.examinateur_nom} {ep.examinateur_prenom?.charAt(0)}.
+                                {isMine1 && (
+                                  <button
+                                    onClick={() => handleDeassign(ep.id, 1)}
+                                    disabled={isDead}
+                                    className="text-black/25 hover:text-red-500 transition ml-0.5"
+                                    title="Désaffecter"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                )}
+                              </span>
+                            ) : <span className="text-black/25">—</span>}
+                          </td>
+                          <td className="px-4 py-3 text-xs" onClick={(e) => e.stopPropagation()}>
+                            {ep.examinateur2_id ? (
+                              <span className={`flex items-center gap-1 ${isMine2 ? "text-[#C62828] font-semibold" : "text-black/60"}`}>
+                                {ep.examinateur2_nom} {ep.examinateur2_prenom?.charAt(0)}.
+                                {isMine2 && (
+                                  <button
+                                    onClick={() => handleDeassign(ep.id, 2)}
+                                    disabled={isDead}
+                                    className="text-black/25 hover:text-red-500 transition ml-0.5"
+                                    title="Désaffecter"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                )}
+                              </span>
+                            ) : <span className="text-black/25">—</span>}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                              ep.statut === "LIBRE" ? "bg-green-100 text-green-700" :
+                              ep.statut === "ATTRIBUEE" ? "bg-blue-100 text-blue-700" :
+                              ep.statut === "PRERESERVEE" ? "bg-purple-100 text-purple-700" :
+                              ep.statut === "CREE" ? "bg-gray-100 text-gray-500" :
+                              "bg-gray-100 text-gray-400"
+                            }`}>{ep.statut}</span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })
       )}
     </div>
   );
@@ -3780,6 +4815,8 @@ function formatDt(iso: string): string {
 // ── Indisponibilités ──────────────────────────────────────────────────────────
 
 function IndisponibilitesSection({ examinateurId, onLoad }: { examinateurId: number; onLoad?: (items: Indisponibilite[]) => void }) {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Indisponibilite[]>([]);
   const [loading, setLoading] = useState(false);
@@ -3824,8 +4861,9 @@ function IndisponibilitesSection({ examinateurId, onLoad }: { examinateurId: num
   }
 
   async function remove(id: number) {
-    if (!confirm("Supprimer cette indisponibilité ?")) return;
+    if (!await confirm("Supprimer cette indisponibilité ?", { confirmLabel: "Supprimer", danger: true })) return;
     await del(`examinateurs/${examinateurId}/indisponibilites/${id}`);
+    toast.success("Indisponibilité supprimée");
     load();
   }
 
@@ -3996,6 +5034,8 @@ function ExaminateurFiche({
   onUpdated: (updated: Examinateur) => void;
   onDeleted: () => void;
 }) {
+  const toast = useToast();
+  const confirm = useConfirm();
   const matieres = useMatieres();
   const [nom, setNom] = useState(ex.nom);
   const [prenom, setPrenom] = useState(ex.prenom);
@@ -4028,6 +5068,7 @@ function ExaminateurFiche({
         telephone: telephone.trim() || null,
         commentaire: commentaire.trim() || null,
       });
+      toast.success("Examinateur modifié");
       onUpdated(updated);
     } catch (e: unknown) { setErr(e instanceof Error ? e.message : "Erreur"); }
     finally { setSaving(false); }
@@ -4036,14 +5077,15 @@ function ExaminateurFiche({
   async function toggleActif() {
     try {
       const updated = await patch<Examinateur>(`examinateurs/${ex.id}/actif`, { actif: !ex.actif });
+      toast.success(updated.actif ? "Examinateur activé" : "Examinateur désactivé");
       onUpdated(updated);
-    } catch (e: unknown) { alert(e instanceof Error ? e.message : "Erreur"); }
+    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : "Erreur"); }
   }
 
   async function deleteEx() {
-    if (!confirm(`Supprimer ${ex.prenom} ${ex.nom} ?`)) return;
-    try { await del(`examinateurs/${ex.id}`); onDeleted(); }
-    catch (e: unknown) { alert(e instanceof Error ? e.message : "Erreur"); }
+    if (!await confirm(`Supprimer ${ex.prenom} ${ex.nom} ?`, { confirmLabel: "Supprimer", danger: true })) return;
+    try { await del(`examinateurs/${ex.id}`); toast.success("Examinateur supprimé"); onDeleted(); }
+    catch (e: unknown) { toast.error(e instanceof Error ? e.message : "Erreur"); }
   }
 
   return (
@@ -4228,6 +5270,7 @@ function CreateExaminateurForm({
 // ── Section principale Examinateurs ──────────────────────────────────────────
 
 function ExaminateursSection() {
+  const toast = useToast();
   const [plannings, setPlannings] = useState<Planning[]>([]);
   const [selectedPlanningId, setSelectedPlanningId] = useState<number | null>(null);
   const [examinateurs, setExaminateurs] = useState<Examinateur[]>([]);
@@ -4369,7 +5412,7 @@ function ExaminateursSection() {
             {showCreate ? (
               <CreateExaminateurForm
                 planningId={selectedPlanningId}
-                onCreated={() => { setShowCreate(false); loadExaminateurs(); }}
+                onCreated={() => { setShowCreate(false); toast.success("Examinateur créé"); loadExaminateurs(); }}
                 onCancel={() => setShowCreate(false)}
               />
             ) : selectedEx ? (
@@ -4839,6 +5882,8 @@ function ReferentielSection({
   label: string;
   labelPlural: string;
 }) {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [items, setItems] = useState<ReferentielItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [newIntitule, setNewIntitule] = useState("");
@@ -4863,6 +5908,7 @@ function ReferentielSection({
     try {
       await post(`parametrages/${entite}/`, { intitule: newIntitule.trim(), active: true });
       setNewIntitule("");
+      toast.success(`${label} ajouté(e)`);
       load();
     } catch (e: any) {
       setError(e.message);
@@ -4879,17 +5925,18 @@ function ReferentielSection({
       );
       setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
     } catch (e: any) {
-      alert(e.message);
+      toast.error(e.message);
     }
   };
 
   const handleDelete = async (item: ReferentielItem) => {
-    if (!confirm(`Supprimer « ${item.intitule} » ?`)) return;
+    if (!await confirm(`Supprimer « ${item.intitule} » ?`, { confirmLabel: "Supprimer", danger: true })) return;
     try {
       await del(`parametrages/${entite}/${item.id}`);
+      toast.success(`${label} supprimé(e)`);
       load();
     } catch (e: any) {
-      alert(e.message);
+      toast.error(e.message);
     }
   };
 
@@ -5307,6 +6354,348 @@ function ConflitsSection() {
   );
 }
 
+// ── Section : Surveillants ────────────────────────────────────────────────────
+
+function CredentialsModal({
+  nom, prenom, email, code_acces, plainPassword, emailSent,
+  onClose,
+}: {
+  nom: string; prenom: string; email: string; code_acces: string;
+  plainPassword: string; emailSent: boolean; onClose: () => void;
+}) {
+  const [copied, setCopied] = useState<string | null>(null);
+  const copy = (text: string, key: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(key);
+      setTimeout(() => setCopied(null), 1500);
+    });
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6"
+      >
+        <div className="flex items-center gap-2 mb-4">
+          <Key className="h-5 w-5 text-[#C62828]" />
+          <h3 className="text-base font-semibold">Identifiants générés</h3>
+        </div>
+        <p className="text-sm text-black/60 mb-4">
+          {prenom} {nom} — <span className="font-mono text-xs">{email}</span>
+        </p>
+
+        {emailSent ? (
+          <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 mb-4">
+            <Mail className="h-4 w-4 shrink-0" />
+            Email envoyé à {email}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+            <Mail className="h-4 w-4 shrink-0" />
+            Email non envoyé (SMTP non configuré) — communiquez ces identifiants manuellement.
+          </div>
+        )}
+
+        <div className="space-y-2 mb-5">
+          {[
+            { label: "Login (email)", value: email, key: "login" },
+            { label: "Mot de passe", value: plainPassword, key: "pwd" },
+          ].map(({ label, value, key }) => (
+            <div key={key} className="flex items-center justify-between bg-gray-50 rounded-lg border px-3 py-2">
+              <div>
+                <p className="text-[10px] text-black/40 uppercase tracking-wide">{label}</p>
+                <p className="text-sm font-mono font-medium">{value}</p>
+              </div>
+              <button
+                onClick={() => copy(value, key)}
+                className="text-black/30 hover:text-[#C62828] transition"
+                title="Copier"
+              >
+                {copied === key
+                  ? <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                  : <Copy className="h-4 w-4" />}
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <button
+          onClick={onClose}
+          className="w-full py-2 bg-black text-white text-sm font-semibold rounded-lg hover:bg-black/80 transition"
+        >
+          Fermer
+        </button>
+      </motion.div>
+    </div>
+  );
+}
+
+function SurveillantsSection() {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const [plannings, setPlannings] = useState<Planning[]>([]);
+  const [selectedPlanningId, setSelectedPlanningId] = useState<number | null>(null);
+  const [surveillants, setSurvaillants] = useState<Surveillant[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [credentials, setCredentials] = useState<{
+    nom: string; prenom: string; email: string; code_acces: string;
+    plainPassword: string; emailSent: boolean;
+  } | null>(null);
+  const [filterActif, setFilterActif] = useState<"tous" | "actif" | "inactif">("tous");
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    get<Planning[]>("plannings/").then((ps) => {
+      setPlannings(ps);
+      if (ps.length > 0) setSelectedPlanningId(ps[0].id);
+    }).catch(() => {});
+  }, []);
+
+  const load = useCallback(async () => {
+    if (!selectedPlanningId) return;
+    setLoading(true);
+    try {
+      setSurvaillants(await get<Surveillant[]>(`surveillants/?planning_id=${selectedPlanningId}`));
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedPlanningId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleToggleActif = async (s: Surveillant) => {
+    try {
+      const updated = await patch<Surveillant>(`surveillants/${s.id}/actif`, { actif: !s.actif });
+      toast.success(updated.actif ? "Surveillant activé" : "Surveillant désactivé");
+      setSurvaillants((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : String(e)); }
+  };
+
+  const handleDelete = async (s: Surveillant) => {
+    if (!await confirm(`Supprimer ${s.prenom} ${s.nom} ?`, { confirmLabel: "Supprimer", danger: true })) return;
+    try {
+      await del(`surveillants/${s.id}`);
+      toast.success("Surveillant supprimé");
+      load();
+    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : String(e)); }
+  };
+
+  const handleSendCredentials = async (s: Surveillant) => {
+    try {
+      const res = await post<Surveillant & { plain_password: string; email_sent: boolean }>(
+        `surveillants/${s.id}/envoyer-identifiants`, {}
+      );
+      setCredentials({
+        nom: res.nom, prenom: res.prenom, email: res.email,
+        code_acces: res.code_acces, plainPassword: res.plain_password, emailSent: res.email_sent,
+      });
+      if (res.email_sent) toast.success("Identifiants envoyés par email");
+      else toast.info("Nouveau mot de passe généré (SMTP non configuré)");
+    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : String(e)); }
+  };
+
+  const filtered = surveillants.filter((s) => {
+    if (filterActif === "actif" && !s.actif) return false;
+    if (filterActif === "inactif" && s.actif) return false;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      if (!`${s.nom} ${s.prenom} ${s.email}`.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <Shield className="h-5 w-5 text-[#C62828]" />
+          <div>
+            <h2 className="text-xl font-semibold">Surveillants</h2>
+            <p className="text-sm text-black/40">Gestion des surveillants de salle</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <select
+            className="border rounded-lg px-3 py-2 text-sm"
+            value={selectedPlanningId ?? ""}
+            onChange={(e) => setSelectedPlanningId(e.target.value ? Number(e.target.value) : null)}
+          >
+            <option value="">— Planning —</option>
+            {plannings.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
+          </select>
+          {selectedPlanningId && (
+            <Btn label="Nouveau surveillant" icon={Plus} onClick={() => setShowCreate(true)} />
+          )}
+        </div>
+      </div>
+
+      {/* Filtres */}
+      {selectedPlanningId && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex rounded-lg border overflow-hidden text-xs">
+            {(["tous", "actif", "inactif"] as const).map((f) => (
+              <button key={f} onClick={() => setFilterActif(f)}
+                className={`px-3 py-1.5 transition ${filterActif === f ? "bg-black text-white" : "bg-white text-black/50 hover:bg-black/5"}`}
+              >
+                {f === "tous" ? "Tous" : f === "actif" ? "Actifs" : "Inactifs"}
+              </button>
+            ))}
+          </div>
+          <input
+            type="text"
+            placeholder="Rechercher…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#C62828]/30 w-52"
+          />
+        </div>
+      )}
+
+      {/* Table */}
+      {loading ? (
+        <div className="p-8 text-center"><Spinner /></div>
+      ) : !selectedPlanningId ? (
+        <Empty message="Sélectionnez un planning" />
+      ) : filtered.length === 0 ? (
+        <Empty message="Aucun surveillant" sub="Créez le premier surveillant pour ce planning." />
+      ) : (
+        <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-[#F5F5F5] border-b">
+                {["Nom", "Email", "Statut", "Code accès", ""].map((h) => (
+                  <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-black/50 tracking-wide">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((s) => (
+                <tr key={s.id} className="border-t border-black/5 hover:bg-black/[0.012] transition">
+                  <td className="px-5 py-3">
+                    <p className="font-medium">{s.prenom} {s.nom}</p>
+                  </td>
+                  <td className="px-5 py-3 text-black/50 text-xs font-mono">{s.email}</td>
+                  <td className="px-5 py-3">
+                    <button
+                      onClick={() => handleToggleActif(s)}
+                      className={`text-xs px-2.5 py-1 rounded-full font-semibold transition ${
+                        s.actif ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                      }`}
+                    >
+                      {s.actif ? "Actif" : "Inactif"}
+                    </button>
+                  </td>
+                  <td className="px-5 py-3">
+                    <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{s.code_acces}</span>
+                  </td>
+                  <td className="px-5 py-3">
+                    <div className="flex items-center justify-end gap-1">
+                      <Btn
+                        label="Identifiants"
+                        icon={Key}
+                        onClick={() => handleSendCredentials(s)}
+                        small
+                        variant="ghost"
+                      />
+                      <Btn
+                        label="Supprimer"
+                        icon={Trash2}
+                        onClick={() => handleDelete(s)}
+                        small
+                        variant="danger"
+                      />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Modal création */}
+      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Nouveau surveillant">
+        <CreateSurveillantForm
+          planningId={selectedPlanningId!}
+          onSuccess={(res) => {
+            setShowCreate(false);
+            toast.success("Surveillant créé");
+            setCredentials({
+              nom: res.nom, prenom: res.prenom, email: res.email,
+              code_acces: res.code_acces, plainPassword: res.plain_password, emailSent: res.email_sent,
+            });
+            load();
+          }}
+        />
+      </Modal>
+
+      {/* Modal identifiants */}
+      {credentials && (
+        <CredentialsModal
+          {...credentials}
+          onClose={() => setCredentials(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function CreateSurveillantForm({
+  planningId,
+  onSuccess,
+}: {
+  planningId: number;
+  onSuccess: (res: Surveillant & { plain_password: string; email_sent: boolean }) => void;
+}) {
+  const [form, setForm] = useState({ nom: "", prenom: "", email: "" });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+  const submit = async () => {
+    if (!form.nom.trim() || !form.prenom.trim() || !form.email.trim()) {
+      setError("Tous les champs sont obligatoires");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const res = await post<Surveillant & { plain_password: string; email_sent: boolean }>(
+        "surveillants/",
+        { planning_id: planningId, ...form }
+      );
+      onSuccess(res);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <Field label="Prénom">
+        <Input value={form.prenom} onChange={(e) => set("prenom", e.target.value)} placeholder="Prénom" />
+      </Field>
+      <Field label="NOM">
+        <Input value={form.nom} onChange={(e) => set("nom", e.target.value)} placeholder="NOM" />
+      </Field>
+      <Field label="Email">
+        <Input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="prenom.nom@exemple.fr" />
+      </Field>
+      <ErrorMsg msg={error} />
+      <Btn
+        label={loading ? "Création…" : "Créer et générer identifiants"}
+        icon={loading ? undefined : Key}
+        onClick={submit}
+        disabled={loading || !form.nom || !form.prenom || !form.email}
+      />
+    </div>
+  );
+}
+
 // ── EnvBadge ───────────────────────────────────────────────────────────────────
 function EnvBadge() {
   const env = process.env.NEXT_PUBLIC_ENV;
@@ -5346,6 +6735,7 @@ function Sidebar({
       { key: "journeeTypes", label: "Journées types", icon: Settings2 },
       { key: "candidats", label: "Candidats", icon: Users },
       { key: "examinateurs", label: "Examinateurs", icon: GraduationCap },
+      { key: "surveillants", label: "Surveillants", icon: Shield },
       { key: "dashboard", label: "Tableau de bord", icon: BarChart3 },
       { key: "conflits", label: "Conflits", icon: AlertTriangle, badge: nbConflits },
       { key: "salles", label: "Salles", icon: Building2 },
@@ -5440,6 +6830,8 @@ function LogoutButton() {
 
 // ── Gestion des salles ─────────────────────────────────────────────────────────
 function SallesSection() {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [plannings, setPlannings] = useState<Planning[]>([]);
   const [planningId, setPlanningId] = useState<number | "">("");
   const [salles, setSalles] = useState<Salle[]>([]);
@@ -5511,8 +6903,9 @@ function SallesSection() {
   }
 
   async function deleteSalle(id: number) {
-    if (!confirm("Supprimer cette salle ?")) return;
+    if (!await confirm("Supprimer cette salle ?", { confirmLabel: "Supprimer", danger: true })) return;
     await del(`parametrages/salles/${id}`);
+    toast.success("Salle supprimée");
     setSalles((prev) => prev.filter((s) => s.id !== id));
   }
 
@@ -5739,6 +7132,7 @@ export default function AdminPage() {
   };
 
   return (
+    <ToastProvider>
     <div className="flex min-h-screen bg-[#F5F5F5]">
       {/* Sidebar desktop */}
       <div className="hidden md:block h-screen sticky top-0">
@@ -5801,6 +7195,7 @@ export default function AdminPage() {
             {section === "journeeTypes" && <JourneeTypesSection />}
             {section === "candidats" && <CandidatsSection />}
             {section === "examinateurs" && <ExaminateursSection />}
+            {section === "surveillants" && <SurveillantsSection />}
             {section === "dashboard" && <DashboardSection />}
             {section === "conflits" && <ConflitsSection />}
             {section === "salles" && <SallesSection />}
@@ -5810,5 +7205,6 @@ export default function AdminPage() {
         </main>
       </div>
     </div>
+    </ToastProvider>
   );
 }

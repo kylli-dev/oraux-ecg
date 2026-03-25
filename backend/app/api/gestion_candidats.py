@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import date as Date, datetime, timezone, time
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -88,6 +88,32 @@ class FicheOut(BaseModel):
 class InscrireIn(BaseModel):
     date: Date
     heure_debut: str        # "HH:MM"
+
+
+class ListeAttenteAdminDate(BaseModel):
+    date: Date
+    created_at: datetime
+
+
+class ListeAttenteAdminItem(BaseModel):
+    id: int
+    nom: str
+    prenom: str
+    email: str
+    code_candidat: Optional[str] = None
+    civilite: Optional[str] = None
+    profil: Optional[str] = None
+    dates: List[ListeAttenteAdminDate]
+    premier_enregistrement: datetime
+
+
+class JourneeInscritItem(BaseModel):
+    candidat_id: int
+    candidat_nom: str
+    candidat_prenom: str
+    candidat_code: Optional[str] = None
+    inscription_id: int
+    epreuves: List[TripletEpreuveOut]
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -272,6 +298,113 @@ def get_triplets_admin(planning_id: int, db: Session = Depends(get_db)):
     return result
 
 
+@router.get("/{planning_id}/journee", response_model=List[JourneeInscritItem])
+def get_inscrits_journee(
+    planning_id: int,
+    date: Date = Query(...),
+    db: Session = Depends(get_db),
+):
+    """
+    Retourne tous les candidats inscrits (statut ATTRIBUEE) pour une journée donnée,
+    avec leurs créneaux. Utile pour le compactage du planning.
+    """
+    djs = (
+        db.query(DemiJournee)
+        .filter_by(planning_id=planning_id)
+        .filter(DemiJournee.date == date)
+        .all()
+    )
+    dj_ids = [dj.id for dj in djs]
+    if not dj_ids:
+        return []
+
+    epreuves = (
+        db.query(Epreuve)
+        .filter(
+            Epreuve.demi_journee_id.in_(dj_ids),
+            Epreuve.statut == "ATTRIBUEE",
+            Epreuve.candidat_id.isnot(None),
+        )
+        .order_by(Epreuve.heure_debut, Epreuve.matiere)
+        .all()
+    )
+
+    by_candidat: dict = defaultdict(list)
+    for e in epreuves:
+        by_candidat[e.candidat_id].append(e)
+
+    result = []
+    for cid, eps in by_candidat.items():
+        c = db.get(Candidat, cid)
+        if not c:
+            continue
+        insc = _get_active_inscription(cid, db)
+        eps_out = sorted([
+            TripletEpreuveOut(
+                id=e.id,
+                matiere=e.matiere,
+                heure_debut=str(e.heure_debut)[:5],
+                heure_fin=str(e.heure_fin)[:5],
+            )
+            for e in eps
+        ], key=lambda x: x.heure_debut)
+        result.append(JourneeInscritItem(
+            candidat_id=cid,
+            candidat_nom=c.nom,
+            candidat_prenom=c.prenom,
+            candidat_code=c.code_candidat,
+            inscription_id=insc.id if insc else 0,
+            epreuves=eps_out,
+        ))
+
+    result.sort(key=lambda x: x.epreuves[0].heure_debut if x.epreuves else "")
+    return result
+
+
+@router.get("/{planning_id}/liste-attente", response_model=List[ListeAttenteAdminItem])
+def list_liste_attente_admin(planning_id: int, db: Session = Depends(get_db)):
+    """
+    Retourne tous les candidats en liste d'attente pour ce planning,
+    avec les dates pour lesquelles ils ont indiqué des disponibilités.
+    """
+    rows = (
+        db.query(ListeAttente)
+        .join(Candidat, ListeAttente.candidat_id == Candidat.id)
+        .filter(Candidat.planning_id == planning_id)
+        .order_by(Candidat.nom, Candidat.prenom, ListeAttente.date)
+        .all()
+    )
+
+    # Group by candidat
+    by_candidat: dict = defaultdict(list)
+    candidats_map: dict = {}
+    for la in rows:
+        by_candidat[la.candidat_id].append(la)
+        if la.candidat_id not in candidats_map:
+            candidats_map[la.candidat_id] = la.candidat
+
+    result = []
+    for cid, las in by_candidat.items():
+        c = candidats_map[cid]
+        dates = [ListeAttenteAdminDate(date=la.date, created_at=la.created_at) for la in las]
+        dates.sort(key=lambda x: x.date)
+        premier = min(la.created_at for la in las)
+        result.append(ListeAttenteAdminItem(
+            id=cid,
+            nom=c.nom,
+            prenom=c.prenom,
+            email=c.email,
+            code_candidat=c.code_candidat,
+            civilite=c.civilite,
+            profil=getattr(c, "profil", None),
+            dates=dates,
+            premier_enregistrement=premier,
+        ))
+
+    result.sort(key=lambda x: x.premier_enregistrement)
+    return result
+
+
 @router.post("/candidat/{candidat_id}/inscrire")
 def admin_inscrire(
     candidat_id: int,
@@ -346,6 +479,9 @@ def admin_inscrire(
         e.candidat_id = candidat_id
         e.statut = "ATTRIBUEE"
         db.add(InscriptionEpreuve(inscription_id=nouvelle.id, epreuve_id=e.id))
+
+    # Supprimer les entrées de liste d'attente du candidat
+    db.query(ListeAttente).filter_by(candidat_id=candidat_id).delete()
 
     db.commit()
     # TODO: envoyer Message-type Convocation
