@@ -47,6 +47,28 @@ class HarmoniserIn(BaseModel):
     commentaire: Optional[str] = None
 
 
+class SaisieEpreuveOut(BaseModel):
+    epreuve_id: int
+    date: str
+    matiere: str
+    heure_debut: str
+    heure_fin: str
+    preparation_minutes: Optional[int]
+    candidat_id: Optional[int]
+    candidat_nom: Optional[str]
+    candidat_prenom: Optional[str]
+    note_id: Optional[int]
+    valeur: Optional[float]
+    commentaire: Optional[str]
+    statut: Optional[str]
+
+
+class SaisirNoteIn(BaseModel):
+    epreuve_id: int
+    valeur: Optional[float] = None
+    commentaire: Optional[str] = None
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get("/", response_model=List[NoteOut])
@@ -148,6 +170,107 @@ def harmoniser_note(note_id: int, body: HarmoniserIn, db: Session = Depends(get_
         candidat_id=note.candidat_id,
         candidat_nom=candidat.nom,
         candidat_prenom=candidat.prenom,
+        matiere=note.matiere,
+        valeur=note.valeur,
+        note_harmonisee=note.note_harmonisee,
+        commentaire=note.commentaire,
+        statut=note.statut,
+    )
+
+
+# ── Saisie admin pour un examinateur ────────────────────────────────────────
+
+@router.get("/saisie", response_model=List[SaisieEpreuveOut])
+def get_saisie(
+    examinateur_id: int,
+    planning_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Retourne toutes les épreuves d'un examinateur avec les notes actuelles.
+    Permet au service des admissions de saisir les notes à la place de l'examinateur.
+    """
+    from app.models.epreuve import Epreuve
+    from app.models.demi_journee import DemiJournee
+
+    q = (
+        db.query(Epreuve, DemiJournee)
+        .join(DemiJournee, Epreuve.demi_journee_id == DemiJournee.id)
+        .filter(Epreuve.examinateur_id == examinateur_id)
+    )
+    if planning_id:
+        q = q.filter(DemiJournee.planning_id == planning_id)
+    rows = q.order_by(DemiJournee.date, Epreuve.heure_debut).all()
+
+    result = []
+    for ep, dj in rows:
+        candidat = db.get(Candidat, ep.candidat_id) if ep.candidat_id else None
+        note = None
+        if candidat:
+            note = db.query(Note).filter_by(
+                candidat_id=candidat.id, matiere=ep.matiere
+            ).first()
+        result.append(SaisieEpreuveOut(
+            epreuve_id=ep.id,
+            date=str(dj.date),
+            matiere=ep.matiere,
+            heure_debut=str(ep.heure_debut)[:5],
+            heure_fin=str(ep.heure_fin)[:5],
+            preparation_minutes=ep.preparation_minutes,
+            candidat_id=candidat.id if candidat else None,
+            candidat_nom=candidat.nom if candidat else None,
+            candidat_prenom=candidat.prenom if candidat else None,
+            note_id=note.id if note else None,
+            valeur=note.valeur if note else None,
+            commentaire=note.commentaire if note else None,
+            statut=note.statut if note else None,
+        ))
+    return result
+
+
+@router.post("/saisir", response_model=NoteOut)
+def saisir_note(body: SaisirNoteIn, db: Session = Depends(get_db)):
+    """
+    Crée ou met à jour une note pour une épreuve (saisie admin).
+    La valeur peut être None pour effacer la note.
+    """
+    from app.models.epreuve import Epreuve
+
+    ep = db.get(Epreuve, body.epreuve_id)
+    if not ep:
+        raise HTTPException(status_code=404, detail="Épreuve introuvable")
+    if not ep.candidat_id:
+        raise HTTPException(status_code=400, detail="Aucun candidat assigné à cette épreuve")
+    if body.valeur is not None and not (0 <= body.valeur <= 20):
+        raise HTTPException(status_code=422, detail="La note doit être entre 0 et 20")
+
+    note = db.query(Note).filter_by(
+        candidat_id=ep.candidat_id, matiere=ep.matiere
+    ).first()
+
+    if note:
+        if body.valeur is not None:
+            note.valeur = body.valeur
+        if body.commentaire is not None:
+            note.commentaire = body.commentaire
+    else:
+        note = Note(
+            candidat_id=ep.candidat_id,
+            matiere=ep.matiere,
+            valeur=body.valeur,
+            commentaire=body.commentaire,
+            statut="BROUILLON",
+        )
+        db.add(note)
+
+    db.commit()
+    db.refresh(note)
+    candidat = db.get(Candidat, note.candidat_id)
+    return NoteOut(
+        id=note.id,
+        candidat_id=note.candidat_id,
+        candidat_nom=candidat.nom,
+        candidat_prenom=candidat.prenom or "",
         matiere=note.matiere,
         valeur=note.valeur,
         note_harmonisee=note.note_harmonisee,

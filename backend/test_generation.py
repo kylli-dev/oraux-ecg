@@ -137,4 +137,14 @@ for dj in day2["demi_journees"]:
     for e in dj["epreuves"]:
         print(f"    {e['heure_debut']} - {e['heure_fin']} | {e['matiere']:15} [{e['statut']}]")
 
+# ── 9. Preview du gabarit (nouveau endpoint) ──────────
+section("9. Preview gabarit (build_journee_plan sans DB)")
+preview = req("GET", f"/admin/journee-types/{jt_id}/preview")
+print(json.dumps(preview, indent=2))
+assert len(preview["periodes"]) == 2, f"Attendu 2 periodes, obtenu {len(preview['periodes'])}"
+for periode in preview["periodes"]:
+    print(f"\n  [{periode['type_dj']}] {periode['heure_debut']} - {periode['heure_fin']}")
+    for b in periode["blocs"]:
+        print(f"    matieres={b['matieres']} duree={b['duree_minutes']}min pause={b['pause_minutes']}min prep={b['preparation_minutes']}min")
+
 print("\n\nOK - Tous les tests ont reussi.\n")

@@ -20,11 +20,15 @@ class JourneeTypeBloc(Base):
     # JSON (liste de matières) seulement pour GENERATION
     matieres_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
 
+    # Disposition personnalisée des triplets : [[k, ...], ...] par ligne, ou None = formule N²
+    custom_matrix_json: Mapped[str] = mapped_column(Text, nullable=True)
+
     # surcharge optionnelle des paramètres
     duree_minutes: Mapped[int] = mapped_column(Integer, nullable=True)
     pause_minutes: Mapped[int] = mapped_column(Integer, nullable=True)
     preparation_minutes: Mapped[int] = mapped_column(Integer, nullable=True)
     salles_par_matiere: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    nb_slots: Mapped[int] = mapped_column(Integer, nullable=True)  # si None → modèle N²
 
     journee_type = relationship("JourneeType", back_populates="blocs")
 
@@ -39,3 +43,13 @@ class JourneeTypeBloc(Base):
     @matieres.setter
     def matieres(self, value):
         self.matieres_json = json.dumps(value or [])
+
+    @property
+    def custom_matrix(self):
+        if not self.custom_matrix_json:
+            return None
+        return json.loads(self.custom_matrix_json)
+
+    @custom_matrix.setter
+    def custom_matrix(self, value):
+        self.custom_matrix_json = json.dumps(value) if value is not None else None

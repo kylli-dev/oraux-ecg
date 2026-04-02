@@ -198,6 +198,28 @@ def update_message_type(
 
 # ── Réinitialisation mot de passe ───────────────────────────────────────────────
 
+class ResetByEmailIn(BaseModel):
+    email: str
+
+@router.post("/candidats/reset-password-by-email", response_model=ResetPasswordOut)
+def reset_password_candidat_by_email(body: ResetByEmailIn, db: Session = Depends(get_db)):
+    """Génère un nouveau mot de passe temporaire pour un candidat identifié par email."""
+    email = body.email.strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email requis")
+    c = db.query(Candidat).filter(Candidat.email == email).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Aucun candidat trouvé avec cet email")
+    new_pwd = secrets.token_urlsafe(8)
+    if not c.login:
+        c.login = c.email
+    c.password_hash = hash_password(new_pwd)
+    c.reset_token = None
+    c.reset_token_expires_at = None
+    db.commit()
+    return ResetPasswordOut(login=c.login, new_password=new_pwd)
+
+
 @router.post("/candidats/{candidat_id}/reset-password", response_model=ResetPasswordOut)
 def reset_password_candidat(candidat_id: int, db: Session = Depends(get_db)):
     """

@@ -116,6 +116,20 @@ class JourneeInscritItem(BaseModel):
     epreuves: List[TripletEpreuveOut]
 
 
+class EpreuveDisponibleOut(BaseModel):
+    id: int
+    date: Date
+    demi_journee_type: str
+    matiere: str
+    heure_debut: str
+    heure_fin: str
+    statut: str
+
+
+class InscrireDirectIn(BaseModel):
+    epreuve_ids: List[int]
+
+
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _now() -> datetime:
@@ -510,6 +524,92 @@ def admin_desinscrire_prereserver(candidat_id: int, db: Session = Depends(get_db
     db.commit()
     # TODO: envoyer Message-type Désinscription
     return {"candidat_id": candidat_id, "statut": "ANNULEE", "epreuves_statut": "PRERESERVEE"}
+
+
+@router.get("/{planning_id}/epreuves-disponibles", response_model=List[EpreuveDisponibleOut])
+def get_epreuves_disponibles(
+    planning_id: int,
+    date: Optional[Date] = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    """
+    Retourne toutes les épreuves LIBRE ou PRERESERVEE d'un planning,
+    filtrées par date si fournie. Permet l'assignation libre hors rotation N².
+    """
+    q = (
+        db.query(Epreuve, DemiJournee)
+        .join(DemiJournee, Epreuve.demi_journee_id == DemiJournee.id)
+        .filter(
+            DemiJournee.planning_id == planning_id,
+            Epreuve.statut.in_(["LIBRE", "PRERESERVEE"]),
+        )
+    )
+    if date:
+        q = q.filter(DemiJournee.date == date)
+    q = q.order_by(DemiJournee.date, Epreuve.matiere, Epreuve.heure_debut)
+
+    return [
+        EpreuveDisponibleOut(
+            id=ep.id,
+            date=dj.date,
+            demi_journee_type=dj.type,
+            matiere=ep.matiere,
+            heure_debut=str(ep.heure_debut)[:5],
+            heure_fin=str(ep.heure_fin)[:5],
+            statut=ep.statut,
+        )
+        for ep, dj in q.all()
+    ]
+
+
+@router.post("/candidat/{candidat_id}/inscrire-direct")
+def admin_inscrire_direct(
+    candidat_id: int,
+    body: InscrireDirectIn,
+    db: Session = Depends(get_db),
+):
+    """
+    Inscrit un candidat à un ensemble d'épreuves quelconques (liberté totale).
+    Aucune contrainte de rotation N² : l'admin choisit exactement quelles épreuves attribuer.
+    Si déjà inscrit : swap atomique (annule l'ancienne → LIBRE, crée la nouvelle).
+    """
+    c = db.get(Candidat, candidat_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Candidat not found")
+
+    if not body.epreuve_ids:
+        raise HTTPException(status_code=400, detail="Aucune épreuve sélectionnée")
+
+    # Charger et valider les épreuves
+    epreuves_a_attribuer = []
+    for ep_id in body.epreuve_ids:
+        ep = db.get(Epreuve, ep_id)
+        if not ep:
+            raise HTTPException(status_code=404, detail=f"Épreuve {ep_id} introuvable")
+        dj = db.get(DemiJournee, ep.demi_journee_id)
+        if dj.planning_id != c.planning_id:
+            raise HTTPException(status_code=403, detail=f"Épreuve {ep_id} n'appartient pas au planning du candidat")
+        if ep.statut not in ("LIBRE", "PRERESERVEE"):
+            raise HTTPException(status_code=409, detail=f"Épreuve {ep_id} ({ep.matiere} {str(ep.heure_debut)[:5]}) n'est pas disponible (statut: {ep.statut})")
+        epreuves_a_attribuer.append(ep)
+
+    # Annuler l'inscription précédente si existante
+    ancienne = _get_active_inscription(candidat_id, db)
+    if ancienne:
+        _cancel_inscription(ancienne, "LIBRE", db)
+
+    nouvelle = Inscription(candidat_id=candidat_id, statut="ACTIVE")
+    db.add(nouvelle)
+    db.flush()
+
+    for ep in epreuves_a_attribuer:
+        ep.candidat_id = candidat_id
+        ep.statut = "ATTRIBUEE"
+        db.add(InscriptionEpreuve(inscription_id=nouvelle.id, epreuve_id=ep.id))
+
+    db.query(ListeAttente).filter_by(candidat_id=candidat_id).delete()
+    db.commit()
+    return {"candidat_id": candidat_id, "inscription_id": nouvelle.id, "statut": "ACTIVE", "nb_epreuves": len(epreuves_a_attribuer)}
 
 
 @router.post("/candidat/{candidat_id}/casser-triplet")

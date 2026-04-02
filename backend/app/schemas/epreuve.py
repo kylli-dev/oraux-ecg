@@ -39,8 +39,13 @@ class EpreuveCreate(BaseModel):
 class EpreuveUpdate(BaseModel):
     statut: Optional[str] = None
     matiere: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    heure_debut: Optional[time] = None
+    heure_fin: Optional[time] = None
     salle_id: Optional[int] = None
     salle_preparation_id: Optional[int] = None
+    surveillant_id: Optional[int] = None
+    preparation_minutes: Optional[int] = None
+
 
     @field_validator("statut")
     @classmethod
@@ -50,6 +55,16 @@ class EpreuveUpdate(BaseModel):
         if v not in ALLOWED_STATUT:
             raise ValueError(f"statut must be one of {sorted(ALLOWED_STATUT)}")
         return v
+
+    @field_validator("heure_fin")
+    @classmethod
+    def validate_hours(cls, heure_fin: Optional[time], info) -> Optional[time]:
+        if heure_fin is None:
+            return None
+        heure_debut = info.data.get("heure_debut")
+        if heure_debut and not (heure_debut < heure_fin):
+            raise ValueError("heure_debut must be < heure_fin")
+        return heure_fin
 
 
 class EpreuveOut(BaseModel):
@@ -73,6 +88,9 @@ class EpreuveOut(BaseModel):
     salle_intitule: Optional[str] = None
     salle_preparation_id: Optional[int] = None
     salle_preparation_intitule: Optional[str] = None
+    surveillant_id: Optional[int] = None
+    surveillant_nom: Optional[str] = None
+    surveillant_prenom: Optional[str] = None
 
     class Config:
         from_attributes = True

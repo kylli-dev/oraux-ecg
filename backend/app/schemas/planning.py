@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 
@@ -48,6 +48,7 @@ class PlanningOut(BaseModel):
     date_ouverture_inscriptions: datetime
     date_fermeture_inscriptions: datetime
     statut: str
+    heure_previs: Optional[time] = None
 
     class Config:
         from_attributes = True
@@ -60,6 +61,7 @@ class PlanningUpdate(BaseModel):
     date_ouverture_inscriptions: Optional[datetime] = None
     date_fermeture_inscriptions: Optional[datetime] = None
     statut: Optional[str] = None
+    heure_previs: Optional[time] = None
 
     @field_validator("statut")
     @classmethod

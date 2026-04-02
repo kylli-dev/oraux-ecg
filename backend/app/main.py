@@ -135,6 +135,8 @@ def _run_migrations():
         # Note harmonisée + commentaire
         "ALTER TABLE note ADD COLUMN note_harmonisee DOUBLE PRECISION",
         "ALTER TABLE note ADD COLUMN commentaire VARCHAR(500)",
+        # Disposition personnalisée des triplets dans la vue matricielle
+        "ALTER TABLE journee_type_bloc ADD COLUMN custom_matrix_json TEXT",
     ]
     with engine.connect() as conn:
         for sql in migrations:

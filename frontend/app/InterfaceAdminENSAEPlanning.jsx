@@ -6,7 +6,14 @@ import {
   ChevronLeft, ChevronRight, LayoutGrid, Wand2, RefreshCw,
   Sun, Sunset, CheckCircle2, Lock, EyeOff,
   Plus, Trash2, ChevronUp, ChevronDown, Pencil, Check, X,
+  GripVertical, Settings2, AlertTriangle,
 } from "lucide-react";
+import {
+  DndContext, DragOverlay, PointerSensor, useSensor, useSensors,
+  closestCenter, useDroppable, useDraggable,
+} from "@dnd-kit/core";
+import { arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 const ENSAE_RED = "#C62828";
 
@@ -107,8 +114,90 @@ function TripletCell({ k, statut, onClick }) {
   );
 }
 
+// ── Ligne avec handle de drag (Niveau 2) ─────────────────────────────────────
+function DragDropRow({ blocId, rowIdx, overflow, isDraggingThis, isDropTarget, children }) {
+  const { setNodeRef: setDropRef, isOver } = useDroppable({
+    id: `rowdrop-${blocId}-${rowIdx}`,
+    data: { type: "row-target", rowIdx },
+  });
+  const { attributes, listeners, setNodeRef: setHandleRef, isDragging } = useDraggable({
+    id: `row-${blocId}-${rowIdx}`,
+    data: { type: "row", rowIdx },
+  });
+  return (
+    <tr
+      ref={setDropRef}
+      style={{ opacity: isDragging ? 0.35 : 1 }}
+      className={`${overflow ? "bg-red-50/50" : ""} ${isOver ? "outline outline-2 outline-amber-400 outline-offset-[-1px]" : ""}`}
+    >
+      <td className="px-1 py-1.5 border-b border-black/5 w-6">
+        <button
+          ref={setHandleRef}
+          {...listeners} {...attributes}
+          className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-black/5 text-black/20 hover:text-black/50 transition"
+          title="Glisser pour réordonner cette ligne"
+        >
+          <GripVertical className="h-3 w-3" />
+        </button>
+      </td>
+      {children}
+    </tr>
+  );
+}
+
+// ── Cellule triplet draggable + droppable ─────────────────────────────────────
+function DraggableTripletCell({ k, statut, onClick, blocId, rowIdx, matIdx }) {
+  const { setNodeRef: setDropRef, isOver } = useDroppable({
+    id: `celldrop-${blocId}-${rowIdx}-${matIdx}`,
+    data: { type: "cell-target", rowIdx, matIdx },
+  });
+  const { attributes, listeners, setNodeRef: setHandleRef, isDragging } = useDraggable({
+    id: `cell-${blocId}-${rowIdx}-${matIdx}`,
+    data: { type: "cell", rowIdx, matIdx, k },
+  });
+  const statutOpt = STATUT_OPTIONS.find((s) => s.value === statut) ?? STATUT_OPTIONS[0];
+  return (
+    <div
+      ref={setDropRef}
+      className="inline-flex flex-col items-center gap-0.5 group"
+      style={{
+        opacity: isDragging ? 0.3 : 1,
+        outline: isOver ? "2px solid #3B82F6" : "none",
+        borderRadius: 10,
+      }}
+    >
+      <button
+        onClick={() => onClick(k)}
+        title={`T${k + 1} — ${statutOpt.label}`}
+        className="inline-flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-lg font-semibold text-[11px] text-gray-700 transition hover:scale-105 active:scale-95"
+        style={{
+          backgroundColor: isOver ? "#DBEAFE" : statut !== "LIBRE" ? statutOpt.bg : TRIPLET_BG[k % TRIPLET_BG.length],
+          outline: `1.5px solid ${isOver ? "#3B82F6" : statut !== "LIBRE" ? statutOpt.color + "60" : TRIPLET_RING[k % TRIPLET_RING.length]}`,
+          color: isOver ? "#1D4ED8" : statut !== "LIBRE" ? statutOpt.color : "#374151",
+          minWidth: 48,
+        }}
+      >
+        <span>T{k + 1}</span>
+        {statut !== "LIBRE" && (
+          <span className="text-[9px] font-medium opacity-80">{statutOpt.label}</span>
+        )}
+      </button>
+      {/* Poignée de déplacement — visible au survol */}
+      <button
+        ref={setHandleRef}
+        {...listeners} {...attributes}
+        className="cursor-grab active:cursor-grabbing h-3.5 w-10 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-black/5 text-black/25 hover:text-black/50 transition"
+        title="Glisser pour déplacer ce triplet"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <GripVertical className="h-2.5 w-2.5 -rotate-90" />
+      </button>
+    </div>
+  );
+}
+
 // ── Matrice journée type ───────────────────────────────────────────────────────
-function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletOffset = 0 }) {
+function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletOffset = 0, onReload }) {
   const matrix = buildMatrix(bloc, jt, tripletOffset);
   const N = bloc.matieres.length;
   const Nsq = N * N;
@@ -116,65 +205,342 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
   const accentColor = isMatin ? "#F59E0B" : "#6366F1";
   const accentBg = isMatin ? "#FFFBEB" : "#EEF2FF";
 
-  if (matrix.length === 0) return null;
+  // N2 — row order + cell matrix
+  const defaultOrder = matrix.map((r) => r.index);
+  const n2Default = () => matrix.map((r) => [...r.candidates]);
+
+  const [rowOrder, setRowOrder] = useState(defaultOrder);
+  // Initialisé depuis custom_matrix sauvegardé, sinon formule N²
+  const [cellMatrix, setCellMatrix] = useState(() => bloc.custom_matrix ?? n2Default());
+  const [activeDrag, setActiveDrag] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState(null);
+  // Tracks état serveur sans dépendre du prop bloc (évite le bug remount)
+  const [hasServerCustom, setHasServerCustom] = useState(() => bloc.custom_matrix != null);
+  const [isDirty, setIsDirty] = useState(false);
+  // Référence vers la dernière disposition connue-sauvegardée (évite remount)
+  const lastSavedRef = React.useRef(bloc.custom_matrix ?? n2Default());
+
+  // Sync uniquement quand le bloc change de structure (config sauvegardée → reload)
+  useEffect(() => {
+    const fresh = bloc.custom_matrix ?? n2Default();
+    setRowOrder(defaultOrder);
+    setCellMatrix(fresh);
+    lastSavedRef.current = fresh;
+    setHasServerCustom(bloc.custom_matrix != null);
+    setIsDirty(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bloc.id, matrix.length]);
+
+  const hasUnsaved = isDirty;
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+
+  function handleDragStart(event) {
+    setActiveDrag(event.active.data.current ?? null);
+  }
+
+  function handleDragEnd(event) {
+    setActiveDrag(null);
+    const { active, over } = event;
+    if (!over) return;
+    const ad = active.data.current;
+    const od = over.data.current;
+
+    if (ad?.type === "row" && od?.type === "row-target" && ad.rowIdx !== od.rowIdx) {
+      setRowOrder((prev) => {
+        const oldPos = prev.indexOf(ad.rowIdx);
+        const newPos = prev.indexOf(od.rowIdx);
+        return arrayMove(prev, oldPos, newPos);
+      });
+      setIsDirty(true);
+      return;
+    }
+
+    if (ad?.type === "cell" && od?.type === "cell-target") {
+      const { rowIdx: rA, matIdx: mA } = ad;
+      const { rowIdx: rB, matIdx: mB } = od;
+      if (rA === rB && mA === mB) return;
+      setCellMatrix((prev) => {
+        const next = prev.map((r) => [...r]);
+        const tmp = next[rA][mA];
+        next[rA][mA] = next[rB][mB];
+        next[rB][mB] = tmp;
+        return next;
+      });
+      setIsDirty(true);
+    }
+  }
+
+  // Annuler les modifications locales — retour à la dernière sauvegarde
+  function resetAll() {
+    setRowOrder(defaultOrder);
+    setCellMatrix(lastSavedRef.current.map((r) => [...r]));
+    setIsDirty(false);
+  }
+
+  // Sauvegarder la disposition sur le serveur — PAS de onReload (évite le remount)
+  async function saveMatrix() {
+    setSaving(true); setSaveMsg(null);
+    try {
+      await apiFetch("PUT", `journee-types/blocs/${bloc.id}`, {
+        ordre: bloc.ordre,
+        heure_debut: bloc.heure_debut?.slice(0, 5),
+        heure_fin: bloc.heure_fin?.slice(0, 5),
+        matieres: bloc.matieres,
+        duree_minutes: bloc.duree_minutes ?? null,
+        pause_minutes: bloc.pause_minutes ?? null,
+        preparation_minutes: bloc.preparation_minutes ?? null,
+        salles_par_matiere: bloc.salles_par_matiere ?? 1,
+        custom_matrix: cellMatrix,
+      });
+      lastSavedRef.current = cellMatrix.map((r) => [...r]);
+      setIsDirty(false);
+      setHasServerCustom(true);
+      setSaveMsg({ ok: true, text: "Disposition sauvegardée ✓" });
+      setTimeout(() => setSaveMsg(null), 3000);
+      onReload?.(true); // silent reload — met à jour le parent sans démonter le composant
+    } catch (e) {
+      setSaveMsg({ ok: false, text: e.message });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Réinitialiser au N² sur le serveur
+  async function resetMatrix() {
+    setSaving(true); setSaveMsg(null);
+    try {
+      await apiFetch("PUT", `journee-types/blocs/${bloc.id}`, {
+        ordre: bloc.ordre,
+        heure_debut: bloc.heure_debut?.slice(0, 5),
+        heure_fin: bloc.heure_fin?.slice(0, 5),
+        matieres: bloc.matieres,
+        duree_minutes: bloc.duree_minutes ?? null,
+        pause_minutes: bloc.pause_minutes ?? null,
+        preparation_minutes: bloc.preparation_minutes ?? null,
+        salles_par_matiere: bloc.salles_par_matiere ?? 1,
+        custom_matrix: null,
+      });
+      const fresh = n2Default();
+      lastSavedRef.current = fresh;
+      setRowOrder(defaultOrder);
+      setCellMatrix(fresh);
+      setIsDirty(false);
+      setHasServerCustom(false);
+      setSaveMsg({ ok: true, text: "Disposition réinitialisée (formule N²)" });
+      setTimeout(() => setSaveMsg(null), 3000);
+      onReload?.(true); // silent reload
+    } catch (e) {
+      setSaveMsg({ ok: false, text: e.message });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // N3 — indicateurs
+  const overflowRows = matrix.filter((r) => r.overflow);
+  const hasOverflow = overflowRows.length > 0;
+  const hasNoMatieres = N === 0;
+
+  const orderedMatrix = rowOrder
+    .map((idx) => matrix.find((r) => r.index === idx))
+    .filter(Boolean);
+
+  const fieldCls = "border rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-amber-400 w-full";
+  const labelCls = "text-[10px] font-semibold text-black/40 uppercase tracking-wide mb-0.5";
 
   return (
     <div className="mb-6">
+      {/* En-tête de bloc */}
       <div
-        className="flex items-center gap-3 px-4 py-2.5 rounded-xl mb-3"
+        className="flex items-center gap-2 px-4 py-2.5 rounded-xl mb-2"
         style={{ backgroundColor: accentBg, borderLeft: `4px solid ${accentColor}` }}
       >
         {isMatin
           ? <Sun className="h-4 w-4 shrink-0" style={{ color: accentColor }} />
           : <Sunset className="h-4 w-4 shrink-0" style={{ color: accentColor }} />
         }
-        <span className="font-semibold text-sm" style={{ color: accentColor }}>
-          {isMatin ? "Matin" : "Après-midi"}
-        </span>
-        <span className="text-xs text-black/40 ml-1">
-          {bloc.heure_debut?.slice(0, 5)} → {matrix[Nsq - 1]?.fin_exam}
-        </span>
-        <span className="ml-auto text-xs text-black/40">
-          {N} matière(s) · {Nsq} créneaux · {Nsq * (bloc.salles_par_matiere ?? 1)} candidats/session
-        </span>
+        <div className="flex-1">
+          <span className="font-semibold text-sm" style={{ color: accentColor }}>
+            {isMatin ? "Matin" : "Après-midi"}
+          </span>
+          <span className="text-xs text-black/40 ml-2">
+            {bloc.heure_debut?.slice(0, 5)} → {matrix.length > 0 ? matrix[matrix.length - 1]?.fin_exam : bloc.heure_fin?.slice(0, 5)}
+          </span>
+          {!hasNoMatieres && matrix.length > 0 && (
+            <span className="text-[10px] text-black/30 ml-2">
+              {N} mat. · {Nsq} créneaux · {Nsq * (bloc.salles_par_matiere ?? 1)} candidats/session
+            </span>
+          )}
+        </div>
+
+        {/* N3 : badges avertissement */}
+        {hasNoMatieres && (
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-200 flex items-center gap-1 shrink-0">
+            <AlertTriangle className="h-2.5 w-2.5" /> Aucune matière
+          </span>
+        )}
+        {hasOverflow && (
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200 flex items-center gap-1 shrink-0">
+            <AlertTriangle className="h-2.5 w-2.5" /> {overflowRows.length} débordement(s)
+          </span>
+        )}
+
+        {/* Badge : disposition personnalisée sauvegardée sur le serveur */}
+        {hasServerCustom && !isDirty && (
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200 shrink-0">
+            Disposition perso.
+          </span>
+        )}
+
+        {/* Boutons actifs quand modification locale non sauvegardée */}
+        {isDirty && (
+          <>
+            <button
+              onClick={resetAll}
+              className="text-[10px] px-2 py-0.5 rounded-full bg-black/5 text-black/40 hover:bg-black/10 transition shrink-0"
+              title="Annuler — retour à la dernière sauvegarde"
+            >
+              ↺ Annuler
+            </button>
+            <button
+              onClick={saveMatrix}
+              disabled={saving}
+              className="flex items-center gap-1 text-[10px] px-2.5 py-0.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-semibold transition disabled:opacity-50 shrink-0"
+              title="Sauvegarder cette disposition"
+            >
+              {saving ? <RefreshCw className="h-2.5 w-2.5 animate-spin" /> : <Check className="h-2.5 w-2.5" />}
+              Sauvegarder
+            </button>
+          </>
+        )}
+
+        {/* Reset serveur → formule N² (seulement si disposition perso sauvegardée) */}
+        {hasServerCustom && !isDirty && (
+          <button
+            onClick={resetMatrix}
+            disabled={saving}
+            className="text-[10px] px-2 py-0.5 rounded-full bg-black/5 text-black/40 hover:bg-red-50 hover:text-red-500 transition shrink-0"
+            title="Supprimer la disposition personnalisée et revenir à la formule N²"
+          >
+            ↺ N²
+          </button>
+        )}
+
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-black/8 bg-white">
-        <table className="w-full border-collapse text-xs">
-          <thead>
-            <tr style={{ backgroundColor: accentColor + "10" }}>
-              <th className="text-left px-3 py-2 text-black/40 font-medium border-b border-black/8 whitespace-nowrap">Dép. prépa</th>
-              <th className="text-left px-3 py-2 text-black/60 font-semibold border-b border-black/8 whitespace-nowrap">Dép. exam</th>
-              <th className="text-left px-3 py-2 text-black/40 font-medium border-b border-black/8 whitespace-nowrap">Fin exam</th>
-              <th className="px-2 py-2 text-black/30 font-medium border-b border-black/8 text-center w-8">N°</th>
-              {bloc.matieres.map((m) => (
-                <th key={m} className="text-center px-3 py-2 font-semibold border-b border-black/8 whitespace-nowrap" style={{ color: accentColor }}>
-                  {m}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {matrix.map((row, idx) => (
-              <tr key={idx} className={`border-b border-black/5 last:border-0 ${idx % 2 === 0 ? "bg-white" : "bg-black/[0.012]"}`}>
-                <td className="px-3 py-1.5 font-mono text-black/35">{row.deb_prepa}</td>
-                <td className="px-3 py-1.5 font-mono font-semibold text-black/80">{row.deb_exam}</td>
-                <td className="px-3 py-1.5 font-mono text-black/45">{row.fin_exam}</td>
-                <td className="px-2 py-1.5 text-center">
-                  <span className="text-[10px] font-mono font-bold text-black/25 bg-black/5 rounded px-1.5 py-0.5">
-                    {idx + 1}
-                  </span>
-                </td>
-                {row.candidates.map((k, j) => (
-                  <td key={j} className="px-2 py-1.5 text-center">
-                    <TripletCell k={k} statut={tripletStatuts[k] ?? "LIBRE"} onClick={onTripletClick} />
-                  </td>
+      {/* Message save */}
+      {saveMsg && (
+        <div className={`rounded-lg px-3 py-2 text-xs mb-2 ${saveMsg.ok ? "bg-emerald-50 border border-emerald-200 text-emerald-700" : "bg-red-50 border border-red-200 text-red-600"}`}>
+          {saveMsg.ok ? "✓" : "✗"} {saveMsg.text}
+        </div>
+      )}
+
+
+      {/* Matrice */}
+      {matrix.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-black/10 bg-white p-6 text-center text-xs text-black/30">
+          {hasNoMatieres
+            ? "Aucune matière configurée pour ce bloc"
+            : "Aucun créneau généré — vérifiez les horaires de début et de fin"}
+        </div>
+      ) : (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+        >
+          <div className="overflow-x-auto rounded-xl border border-black/8 bg-white">
+            <table className="w-full border-collapse text-xs">
+              <thead>
+                <tr style={{ backgroundColor: accentColor + "10" }}>
+                  <th className="w-6 border-b border-black/8" title="Réordonner les lignes" />
+                  <th className="text-left px-3 py-2 text-black/40 font-medium border-b border-black/8 whitespace-nowrap">Dép. prépa</th>
+                  <th className="text-left px-3 py-2 text-black/60 font-semibold border-b border-black/8 whitespace-nowrap">Dép. exam</th>
+                  <th className="text-left px-3 py-2 text-black/40 font-medium border-b border-black/8 whitespace-nowrap">Fin exam</th>
+                  <th className="px-2 py-2 text-black/30 font-medium border-b border-black/8 text-center w-8">N°</th>
+                  {bloc.matieres.map((m) => (
+                    <th key={m} className="text-center px-3 py-2 font-semibold border-b border-black/8 whitespace-nowrap" style={{ color: accentColor }}>
+                      {m}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {orderedMatrix.map((row, displayIdx) => (
+                  <DragDropRow
+                    key={row.index}
+                    blocId={bloc.id}
+                    rowIdx={row.index}
+                    overflow={row.overflow}
+                  >
+                    {/* Dép. prépa */}
+                    <td className={`px-3 py-1.5 font-mono border-b border-black/5 ${row.overflow ? "text-red-300 line-through" : "text-black/35"}`}>
+                      {row.deb_prepa}
+                    </td>
+                    {/* Dép. exam */}
+                    <td className={`px-3 py-1.5 font-mono font-semibold border-b border-black/5 ${row.overflow ? "text-red-500" : "text-black/80"}`}>
+                      {row.deb_exam}
+                    </td>
+                    {/* Fin exam + N3 overflow */}
+                    <td className={`px-3 py-1.5 font-mono border-b border-black/5 ${row.overflow ? "text-red-400" : "text-black/45"}`}>
+                      <span className="flex items-center gap-1">
+                        {row.fin_exam}
+                        {row.overflow && (
+                          <AlertTriangle className="h-3 w-3 text-red-400 shrink-0" title="Dépasse l'heure de fin du bloc" />
+                        )}
+                      </span>
+                    </td>
+                    {/* N° */}
+                    <td className="px-2 py-1.5 border-b border-black/5 text-center">
+                      <span className="text-[10px] font-mono font-bold text-black/25 bg-black/5 rounded px-1.5 py-0.5">
+                        {displayIdx + 1}
+                      </span>
+                    </td>
+                    {/* Cellules triplet — draggables */}
+                    {(cellMatrix[row.index] ?? row.candidates).map((k, matIdx) => (
+                      <td key={matIdx} className="px-2 py-1.5 border-b border-black/5 text-center">
+                        <DraggableTripletCell
+                          k={k}
+                          statut={tripletStatuts[k] ?? "LIBRE"}
+                          onClick={onTripletClick}
+                          blocId={bloc.id}
+                          rowIdx={row.index}
+                          matIdx={matIdx}
+                        />
+                      </td>
+                    ))}
+                  </DragDropRow>
                 ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Ghost drag overlay */}
+          <DragOverlay dropAnimation={{ duration: 150, easing: "ease" }}>
+            {activeDrag?.type === "cell" && (
+              <div
+                className="inline-flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-lg font-semibold text-[11px] shadow-xl opacity-90 pointer-events-none border-2 border-blue-400"
+                style={{
+                  backgroundColor: TRIPLET_BG[activeDrag.k % TRIPLET_BG.length],
+                  color: "#374151",
+                  minWidth: 48,
+                }}
+              >
+                <span>T{activeDrag.k + 1}</span>
+              </div>
+            )}
+            {activeDrag?.type === "row" && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 border-amber-400 bg-amber-50 text-xs font-medium shadow-xl opacity-90 pointer-events-none">
+                <GripVertical className="h-3 w-3 text-amber-500" />
+                <span className="font-mono">Ligne {activeDrag.rowIdx + 1}</span>
+              </div>
+            )}
+          </DragOverlay>
+        </DndContext>
+      )}
     </div>
   );
 }
@@ -663,17 +1029,17 @@ export default function InterfaceAdminENSAEPlanning() {
     apiFetch("GET", "plannings/").then(setPlannings).catch(() => {});
   }, []);
 
-  const loadBlocs = useCallback(async (jt) => {
+  const loadBlocs = useCallback(async (jt, silent = false) => {
     if (!jt) { setBlocs([]); setTripletStatuts({}); return; }
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const b = await apiFetch("GET", `journee-types/${jt.id}/blocs`);
       setBlocs(b ?? []);
-      setTripletStatuts({});
+      if (!silent) setTripletStatuts({});
     } catch {
       setBlocs([]);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
@@ -803,6 +1169,7 @@ export default function InterfaceAdminENSAEPlanning() {
                               tripletStatuts={tripletStatuts}
                               onTripletClick={handleTripletClick}
                               tripletOffset={offset}
+                              onReload={(silent) => loadBlocs(selectedJT, silent)}
                             />
                           );
                           acc.offset += Nb * Nb;

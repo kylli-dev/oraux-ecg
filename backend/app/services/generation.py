@@ -34,6 +34,7 @@ from app.models.demi_journee import DemiJournee
 from app.models.epreuve import Epreuve
 from app.models.journee_type import JourneeType
 from app.models.journee_type_bloc import JourneeTypeBloc
+from app.models.planning_salle_defaut import PlanningMatiereSalleDefaut
 from app.schemas.generation import GenerateEpreuvesIn, SkipRange
 
 # ── Constantes ────────────────────────────────────────────────────────────────
@@ -54,6 +55,10 @@ class BlocParams:
 
     Toutes les valeurs sont garanties non-nulles : si le bloc ne surcharge pas
     un paramètre, c'est la valeur par défaut du JourneeType qui s'applique.
+
+    matieres_config : liste de dicts {"nom", "duree_minutes", "preparation_minutes"}
+    quand les durées sont variables par matière. Si None, duree_minutes et
+    preparation_minutes s'appliquent uniformément à toutes les matières.
     """
     heure_debut: time
     heure_fin: time
@@ -62,24 +67,43 @@ class BlocParams:
     pause_minutes: int
     preparation_minutes: int
     salles_par_matiere: int = 1
+    matieres_config: Optional[List[dict]] = None  # durées variables par matière
+    nb_slots: Optional[int] = None                # si None → N² automatique
 
     @classmethod
     def from_bloc(cls, bloc: JourneeTypeBloc, jt: JourneeType) -> "BlocParams":
         """
         Construit un BlocParams en appliquant les surcharges du bloc
         et les valeurs par défaut du gabarit.
+        Détecte si matieres_json contient des dicts (durées variables) ou
+        des strings (durées uniformes).
         """
+        raw = bloc.matieres  # list[str] ou list[dict]
+        matieres_config: Optional[List[dict]] = None
+
+        if raw and isinstance(raw[0], dict):
+            # Format avec durées variables par matière
+            matieres_config = raw
+            matieres = [c["nom"] for c in raw]
+            duree = max(c.get("duree_minutes", jt.duree_defaut_minutes) for c in raw)
+            prep = max(c.get("preparation_minutes", jt.preparation_defaut_minutes) for c in raw)
+        else:
+            # Format legacy (liste de strings)
+            matieres = raw
+            duree = bloc.duree_minutes if bloc.duree_minutes is not None else jt.duree_defaut_minutes
+            prep = bloc.preparation_minutes if bloc.preparation_minutes is not None else jt.preparation_defaut_minutes
+
         return cls(
             heure_debut=bloc.heure_debut,
             heure_fin=bloc.heure_fin,
-            matieres=bloc.matieres,
-            duree_minutes=bloc.duree_minutes if bloc.duree_minutes is not None
-                          else jt.duree_defaut_minutes,
+            matieres=matieres,
+            duree_minutes=duree,
             pause_minutes=bloc.pause_minutes if bloc.pause_minutes is not None
                           else jt.pause_defaut_minutes,
-            preparation_minutes=bloc.preparation_minutes if bloc.preparation_minutes is not None
-                                else jt.preparation_defaut_minutes,
+            preparation_minutes=prep,
             salles_par_matiere=bloc.salles_par_matiere,
+            matieres_config=matieres_config,
+            nb_slots=bloc.nb_slots,
         )
 
 
@@ -179,6 +203,8 @@ def generate_in_range(
     skip_ranges: Optional[List[SkipRange]] = None,
     matiere_offset: int = 0,
     salles_par_matiere: int = 1,
+    matieres_config: Optional[List[dict]] = None,
+    nb_slots: Optional[int] = None,
 ) -> int:
     """
     Génère et persiste les épreuves dans la plage [debut, fin[.
@@ -188,20 +214,36 @@ def generate_in_range(
     d'accueillir N² × salles_par_matiere candidats par demi-journée.
     Exemple : 3 matières, 7 salles/matière → 9 créneaux × 7 = 63 candidats.
 
+    matieres_config (optionnel) : liste de dicts {"nom", "duree_minutes", "preparation_minutes"}
+    pour des durées variables par matière. La rotation utilise max(duree) comme avance
+    de créneau ; chaque épreuve est créée avec sa propre heure_fin et preparation_minutes.
+
     Retourne le nombre d'épreuves créées.
     """
     if skip_ranges is None:
         skip_ranges = []
 
-    n_matieres = len(matieres)
-    n_slots_max = n_matieres * n_matieres  # N² créneaux pour le modèle rotatif
+    # Résolution des paramètres par matière
+    if matieres_config:
+        names = [c["nom"] for c in matieres_config]
+        durees = [int(c.get("duree_minutes", duree_minutes)) for c in matieres_config]
+        preps = [int(c.get("preparation_minutes", preparation_minutes)) for c in matieres_config]
+        max_duree = max(durees)
+        max_prep = max(preps)
+    else:
+        names = matieres
+        durees = [duree_minutes] * len(matieres)
+        preps = [preparation_minutes] * len(matieres)
+        max_duree = duree_minutes
+        max_prep = preparation_minutes
 
-    # Les créneaux avancent de duree_minutes (préparation concurrente).
-    # heure_debut = deb_exam = t + prep (ce que voit le candidat)
-    # heure_fin   = fin_exam = t + prep + duree
-    # t représente le deb_prépa du créneau courant.
-    prep_delta = timedelta(minutes=preparation_minutes)
-    slot_advance = timedelta(minutes=duree_minutes)   # avance du deb_prépa d'un créneau à l'autre
+    n_matieres = len(names)
+    n_slots_max = nb_slots if nb_slots is not None else n_matieres * n_matieres
+
+    # Avance de créneau basée sur la durée maximale (préparation concurrente).
+    # exam_start = t + max_prep ; chaque matière j finit à exam_start + duree_j.
+    prep_delta = timedelta(minutes=max_prep)
+    slot_advance = timedelta(minutes=max_duree)
     pause = timedelta(minutes=pause_minutes)
 
     t = _time_to_dt(debut)
@@ -211,22 +253,23 @@ def generate_in_range(
 
     while slots_placed < n_slots_max and t + prep_delta + slot_advance <= fin_dt:
         exam_start = t + prep_delta
-        exam_end = exam_start + slot_advance
-        skip_fin = _overlaps_skip(exam_start.time(), exam_end.time(), skip_ranges)
+        exam_end_max = exam_start + slot_advance
+        skip_fin = _overlaps_skip(exam_start.time(), exam_end_max.time(), skip_ranges)
 
         if skip_fin is not None:
             t = _time_to_dt(skip_fin) - prep_delta
             continue
 
-        for matiere in matieres:
+        for nom, duree_j, prep_j in zip(names, durees, preps):
+            exam_end_j = exam_start + timedelta(minutes=duree_j)
             for _ in range(salles_par_matiere):
                 db.add(Epreuve(
                     demi_journee_id=demi_journee_id,
-                    matiere=matiere,
+                    matiere=nom,
                     heure_debut=exam_start.time(),
-                    heure_fin=exam_end.time(),
+                    heure_fin=exam_end_j.time(),
                     statut=statut_initial,
-                    preparation_minutes=preparation_minutes if preparation_minutes > 0 else None,
+                    preparation_minutes=prep_j if prep_j > 0 else None,
                 ))
         count += n_matieres * salles_par_matiere
         slots_placed += 1
@@ -234,12 +277,13 @@ def generate_in_range(
 
     warning = None
     if slots_placed < n_slots_max:
-        duree_requise = preparation_minutes + n_slots_max * duree_minutes
+        duree_requise = max_prep + n_slots_max * max_duree
+        source = f"manuel ({n_slots_max})" if nb_slots is not None else f"N²={n_slots_max}"
         warning = (
             f"Fenêtre trop courte : {slots_placed}/{n_slots_max} créneaux générés "
             f"({debut.strftime('%H:%M')}→{fin.strftime('%H:%M')}). "
-            f"Il faudrait {duree_requise} min ({preparation_minutes} prépa + "
-            f"{n_slots_max}×{duree_minutes} exam) pour le modèle N²={n_slots_max} complet."
+            f"Il faudrait {duree_requise} min ({max_prep} prépa + "
+            f"{n_slots_max}×{max_duree} exam) pour {source} créneaux complets."
         )
 
     return count, warning
@@ -316,6 +360,8 @@ def _apply_periode_plan(
             statut_initial=statut_initial,
             matiere_offset=matiere_offset,
             salles_par_matiere=bloc.salles_par_matiere,
+            matieres_config=bloc.matieres_config,
+            nb_slots=bloc.nb_slots,
         )
         total += n
         matiere_offset += n
@@ -323,6 +369,34 @@ def _apply_periode_plan(
             warnings.append(warn)
 
     return total, warnings
+
+
+# ── Application automatique des salles par défaut ────────────────────────────
+
+def _apply_salle_defaults(db: Session, planning_id: int, demi_journee_ids: List[int]) -> None:
+    """
+    Applique les salles par défaut (PlanningMatiereSalleDefaut) aux épreuves
+    des demi-journées indiquées. Appelé automatiquement après chaque génération.
+    N'écrase pas les épreuves qui ont déjà une salle assignée manuellement.
+    """
+    defaults = {
+        r.matiere: r
+        for r in db.query(PlanningMatiereSalleDefaut).filter_by(planning_id=planning_id).all()
+    }
+    if not defaults:
+        return
+
+    epreuves = db.query(Epreuve).filter(Epreuve.demi_journee_id.in_(demi_journee_ids)).all()
+    for e in epreuves:
+        d = defaults.get(e.matiere)
+        if not d:
+            continue
+        if d.salle_id is not None:
+            e.salle_id = d.salle_id
+        if d.salle_preparation_id is not None:
+            e.salle_preparation_id = d.salle_preparation_id
+        if d.surveillant_id is not None:
+            e.surveillant_id = d.surveillant_id
 
 
 # ── API publique ──────────────────────────────────────────────────────────────
@@ -349,9 +423,14 @@ def generate_for_demi_journee(
         matieres=matieres,
         duree_minutes=params.duree_minutes,
         pause_minutes=params.pause_minutes,
+        preparation_minutes=params.preparation_minutes,
         statut_initial=params.statut_initial,
         skip_ranges=params.skip_ranges,
+        salles_par_matiere=params.salles_par_matiere,
+        nb_slots=params.nb_slots,
     )
+    db.flush()
+    _apply_salle_defaults(db, demi_journee.planning_id, [demi_journee.id])
     db.commit()
     return count
 
@@ -377,6 +456,7 @@ def apply_journee_type(
     dj_created = 0
     ep_created = 0
     all_warnings: List[str] = []
+    generated_dj_ids: List[int] = []
 
     for plan in plans:
         dj, is_new = _upsert_demi_journee(db, planning_id, target_date, plan)
@@ -385,7 +465,10 @@ def apply_journee_type(
         n, warns = _apply_periode_plan(db, dj, plan, journee_type.statut_initial)
         ep_created += n
         all_warnings.extend(warns)
+        generated_dj_ids.append(dj.id)
 
+    db.flush()
+    _apply_salle_defaults(db, planning_id, generated_dj_ids)
     db.commit()
     return {
         "demi_journees_created": dj_created,

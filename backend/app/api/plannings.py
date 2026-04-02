@@ -1,8 +1,9 @@
-from datetime import date as Date
+from datetime import date as Date, time as Time
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.admin_guard import require_admin
@@ -12,12 +13,29 @@ from app.models.demi_journee import DemiJournee
 from app.models.epreuve import Epreuve
 from app.models.journee_type import JourneeType
 from app.models.planning import Planning
+from app.models.planning_salle_defaut import PlanningMatiereSalleDefaut
 from app.schemas.apply_journee_type import ApplyJourneeTypeIn
 from app.schemas.day_view import DayDemiJourneeOut, DayEpreuveOut, DayViewOut
 from app.schemas.epreuve import EpreuveUpdate
+from app.schemas.generation import GenerateEpreuvesIn, SkipRange
 from app.schemas.planning import PlanningCreate, PlanningOut, PlanningUpdate
 from app.services.excel import export_planning, export_template, import_epreuves
-from app.services.generation import apply_journee_type
+from app.services.generation import apply_journee_type, generate_for_demi_journee
+
+
+class CreateSessionIn(BaseModel):
+    """Crée une demi-journée et génère ses épreuves en une seule requête."""
+    date: Date
+    type: str = Field(pattern="^(MATIN|APRES_MIDI)$")
+    heure_debut: Time
+    heure_fin: Time
+    matieres: List[str] = Field(min_length=1)
+    duree_minutes: int = Field(ge=5, le=240)
+    pause_minutes: int = Field(default=0, ge=0, le=120)
+    preparation_minutes: int = Field(default=0, ge=0, le=120)
+    salles_par_matiere: int = Field(default=1, ge=1, le=50)
+    nb_slots: Optional[int] = Field(default=None, ge=1)
+    skip_ranges: List[SkipRange] = Field(default_factory=list)
 
 router = APIRouter(
     prefix="/admin/plannings",
@@ -144,6 +162,8 @@ def list_epreuves_planning(
         salle_prep = db.get(SalleModel, epreuve.salle_preparation_id) if epreuve.salle_preparation_id else None
         from app.models.planche import Planche as PlancheModel
         planche = db.get(PlancheModel, epreuve.planche_id) if epreuve.planche_id else None
+        from app.models.surveillant import Surveillant as SurveillantModel
+        surveillant = db.get(SurveillantModel, epreuve.surveillant_id) if epreuve.surveillant_id else None
         result.append({
             "id": epreuve.id,
             "date": str(dj.date),
@@ -166,10 +186,73 @@ def list_epreuves_planning(
             "salle_intitule": salle.intitule if salle else None,
             "salle_preparation_id": salle_prep.id if salle_prep else None,
             "salle_preparation_intitule": salle_prep.intitule if salle_prep else None,
+            "surveillant_id": surveillant.id if surveillant else None,
+            "surveillant_nom": surveillant.nom if surveillant else None,
+            "surveillant_prenom": surveillant.prenom if surveillant else None,
             "planche_id": planche.id if planche else None,
             "planche_nom": planche.nom if planche else None,
         })
     return result
+
+
+# ── Création de session (demi-journée + génération) ───────────────────────────
+
+@router.post("/{planning_id}/sessions", status_code=201)
+def create_session(
+    planning_id: int,
+    body: CreateSessionIn,
+    db: Session = Depends(get_db),
+):
+    """
+    Crée une demi-journée et génère ses épreuves en une seule requête.
+    Niveau 1 : chaque session est indépendante avec sa propre configuration.
+    Si une demi-journée du même type existe déjà ce jour-là, ses épreuves sont
+    supprimées et régénérées avec les nouveaux paramètres (upsert).
+    """
+    planning = db.get(Planning, planning_id)
+    if not planning:
+        raise HTTPException(status_code=404, detail="Planning not found")
+
+    # Upsert demi-journée
+    dj = (
+        db.query(DemiJournee)
+        .filter_by(planning_id=planning_id, date=body.date, type=body.type)
+        .first()
+    )
+    if dj is None:
+        dj = DemiJournee(
+            planning_id=planning_id,
+            date=body.date,
+            type=body.type,
+            heure_debut=body.heure_debut,
+            heure_fin=body.heure_fin,
+        )
+        db.add(dj)
+        db.flush()
+        is_new = True
+    else:
+        dj.heure_debut = body.heure_debut
+        dj.heure_fin = body.heure_fin
+        db.flush()
+        is_new = False
+
+    gen_params = GenerateEpreuvesIn(
+        matieres=[m.strip() for m in body.matieres if m.strip()],
+        duree_minutes=body.duree_minutes,
+        pause_minutes=body.pause_minutes,
+        preparation_minutes=body.preparation_minutes,
+        salles_par_matiere=body.salles_par_matiere,
+        nb_slots=body.nb_slots,
+        statut_initial="LIBRE",
+        skip_ranges=body.skip_ranges,
+    )
+    count = generate_for_demi_journee(db, dj, gen_params)
+
+    return {
+        "demi_journee_id": dj.id,
+        "is_new": is_new,
+        "epreuves_created": count,
+    }
 
 
 # ── Modification épreuve ───────────────────────────────────────────────────────
@@ -188,6 +271,96 @@ def patch_epreuve(
         setattr(e, field, value)
     db.commit()
     return {"epreuve_id": e.id, "statut": e.statut, "matiere": e.matiere}
+
+
+# ── Salles par défaut (par matière) ───────────────────────────────────────────
+
+class SalleDefautIn(BaseModel):
+    matiere: str
+    salle_id: Optional[int] = None
+    salle_preparation_id: Optional[int] = None
+    surveillant_id: Optional[int] = None
+
+class SalleDefautOut(BaseModel):
+    matiere: str
+    salle_id: Optional[int] = None
+    salle_intitule: Optional[str] = None
+    salle_preparation_id: Optional[int] = None
+    salle_preparation_intitule: Optional[str] = None
+    surveillant_id: Optional[int] = None
+    surveillant_nom: Optional[str] = None
+    surveillant_prenom: Optional[str] = None
+
+
+@router.get("/{planning_id}/salle-defaults", response_model=List[SalleDefautOut])
+def get_salle_defaults(planning_id: int, db: Session = Depends(get_db)):
+    rows = db.query(PlanningMatiereSalleDefaut).filter_by(planning_id=planning_id).all()
+    return [
+        SalleDefautOut(
+            matiere=r.matiere,
+            salle_id=r.salle_id,
+            salle_intitule=r.salle.intitule if r.salle else None,
+            salle_preparation_id=r.salle_preparation_id,
+            salle_preparation_intitule=r.salle_preparation.intitule if r.salle_preparation else None,
+            surveillant_id=r.surveillant_id,
+            surveillant_nom=r.surveillant.nom if r.surveillant else None,
+            surveillant_prenom=r.surveillant.prenom if r.surveillant else None,
+        )
+        for r in rows
+    ]
+
+
+@router.put("/{planning_id}/salle-defaults", response_model=List[SalleDefautOut])
+def upsert_salle_defaults(
+    planning_id: int,
+    body: List[SalleDefautIn],
+    db: Session = Depends(get_db),
+):
+    """Remplace entièrement les défauts de salles/surveillant pour ce planning."""
+    db.query(PlanningMatiereSalleDefaut).filter_by(planning_id=planning_id).delete()
+    for item in body:
+        if item.matiere.strip():
+            db.add(PlanningMatiereSalleDefaut(
+                planning_id=planning_id,
+                matiere=item.matiere.strip(),
+                salle_id=item.salle_id,
+                salle_preparation_id=item.salle_preparation_id,
+                surveillant_id=item.surveillant_id,
+            ))
+    db.commit()
+    return get_salle_defaults(planning_id, db)
+
+
+@router.post("/{planning_id}/salle-defaults/apply", status_code=200)
+def apply_salle_defaults(planning_id: int, db: Session = Depends(get_db)):
+    """Applique les salles et surveillant par défaut à toutes les épreuves du planning."""
+    defaults = {
+        r.matiere: r
+        for r in db.query(PlanningMatiereSalleDefaut).filter_by(planning_id=planning_id).all()
+    }
+    if not defaults:
+        return {"updated": 0}
+
+    dj_ids = [
+        dj.id for dj in db.query(DemiJournee).filter_by(planning_id=planning_id).all()
+    ]
+    epreuves = db.query(Epreuve).filter(Epreuve.demi_journee_id.in_(dj_ids)).all()
+
+    count = 0
+    for e in epreuves:
+        d = defaults.get(e.matiere)
+        if not d:
+            continue
+        if d.salle_id is not None:
+            e.salle_id = d.salle_id
+        if d.salle_preparation_id is not None:
+            e.salle_preparation_id = d.salle_preparation_id
+        if d.surveillant_id is not None:
+            e.surveillant_id = d.surveillant_id
+        count += 1
+
+    db.commit()
+    return {"updated": count}
 
 
 # ── Import / Export Excel ──────────────────────────────────────────────────────
@@ -277,6 +450,8 @@ def day_view(planning_id: int, date: Date = Query(...), db: Session = Depends(ge
                         examinateur_id=e.examinateur_id,
                         examinateur_nom=e.examinateur.nom if e.examinateur else None,
                         examinateur_prenom=e.examinateur.prenom if e.examinateur else None,
+                        salle_intitule=e.salle.intitule if e.salle else None,
+                        salle_preparation_intitule=e.salle_preparation.intitule if e.salle_preparation else None,
                     )
                     for e in epreuves
                 ],

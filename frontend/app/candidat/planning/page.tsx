@@ -13,7 +13,10 @@ type EpreuveOut = {
   matiere: string;
   heure_debut: string;
   heure_fin: string;
+  heure_prepa?: string;
   demi_journee_type: string;
+  salle_intitule?: string | null;
+  salle_preparation_intitule?: string | null;
 };
 
 type TripletOut = {
@@ -44,15 +47,16 @@ function authHeaders(token: string) {
 
 // ── Composants ──────────────────────────────────────────────────────────────────
 function EpreuveRow({ ep }: { ep: EpreuveOut }) {
+  const debut = ep.heure_prepa ?? ep.heure_debut;
   return (
     <div className="flex items-center gap-3 py-1.5">
       <span className="text-xs font-mono text-gray-400 w-24 shrink-0">
-        {ep.heure_debut} – {ep.heure_fin}
+        {debut} – {ep.heure_fin}
       </span>
       <span className="text-sm text-gray-700">{ep.matiere}</span>
-      <span className="ml-auto text-xs text-gray-400">
-        {ep.demi_journee_type === "MATIN" ? "Matin" : "Après-midi"}
-      </span>
+      {ep.salle_intitule && (
+        <span className="ml-auto text-xs font-mono text-gray-400">{ep.salle_intitule}</span>
+      )}
     </div>
   );
 }
@@ -71,6 +75,8 @@ export default function CandidatPlanningPage() {
   const [confirmDesinscription, setConfirmDesinscription] = useState(false);
   // Confirmation de changement
   const [pendingTriplet, setPendingTriplet] = useState<{ date: string; heure_debut: string } | null>(null);
+  // Filtre par date
+  const [filterDate, setFilterDate] = useState("");
 
   const loadData = useCallback(async (tok: string) => {
     setLoading(true);
@@ -289,9 +295,27 @@ export default function CandidatPlanningPage() {
       )}
 
       {/* ── Triplets disponibles ── */}
-      <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
-        Triplets disponibles
-      </h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
+          Triplets disponibles
+        </h2>
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            value={filterDate}
+            onChange={(e) => setFilterDate(e.target.value)}
+            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-100 focus:border-red-300"
+          />
+          {filterDate && (
+            <button
+              onClick={() => setFilterDate("")}
+              className="text-xs text-gray-400 hover:text-gray-600 transition"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
 
       {triplets.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-200 p-12 text-center">
@@ -300,9 +324,15 @@ export default function CandidatPlanningPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {triplets.map((triplet) => {
+          {triplets.filter((t) => !filterDate || t.date === filterDate).length === 0 && (
+            <div className="rounded-xl border border-dashed border-gray-200 p-8 text-center">
+              <CalendarDays className="h-7 w-7 mx-auto mb-3 text-gray-300" />
+              <p className="text-sm text-gray-400">Aucun triplet pour cette date.</p>
+            </div>
+          )}
+          {triplets.filter((t) => !filterDate || t.date === filterDate).map((triplet) => {
             const firstHeure = triplet.epreuves.length > 0
-              ? triplet.epreuves[0].heure_debut
+              ? (triplet.epreuves[0].heure_prepa ?? triplet.epreuves[0].heure_debut)
               : triplet.heure_debut.slice(0, 5);
             const lastHeure = triplet.epreuves.length > 0
               ? triplet.epreuves[triplet.epreuves.length - 1].heure_fin

@@ -41,6 +41,7 @@ import {
   Copy,
   Mail,
   FileText,
+  Save,
 } from "lucide-react";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -56,6 +57,7 @@ type Planning = {
   date_ouverture_inscriptions: string;
   date_fermeture_inscriptions: string;
   statut: string;
+  heure_previs: string | null;
 };
 
 type JourneeType = {
@@ -89,6 +91,8 @@ type Epreuve = {
   statut: string;
   candidat_nom?: string | null;
   candidat_prenom?: string | null;
+  salle_intitule?: string | null;
+  salle_preparation_intitule?: string | null;
 };
 
 type Candidat = {
@@ -137,6 +141,9 @@ type EpreuveFlat = {
   salle_intitule: string | null;
   salle_preparation_id: number | null;
   salle_preparation_intitule: string | null;
+  surveillant_id: number | null;
+  surveillant_nom: string | null;
+  surveillant_prenom: string | null;
   planche_id: number | null;
   planche_nom: string | null;
 };
@@ -631,16 +638,17 @@ function Btn({
 
 function Field({
   label,
+  hint,
   children,
 }: {
   label: string;
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="space-y-1">
-      <label className="block text-xs font-medium text-black/50 uppercase tracking-wide">
-        {label}
-      </label>
+      <label className="block text-xs font-medium text-black/50 uppercase tracking-wide">{label}</label>
+      {hint && <p className="text-[10px] text-black/30 -mt-0.5">{hint}</p>}
       {children}
     </div>
   );
@@ -946,6 +954,7 @@ function EditPlanningForm({
     date_ouverture_inscriptions: planning.date_ouverture_inscriptions ?? "",
     date_fermeture_inscriptions: planning.date_fermeture_inscriptions ?? "",
     statut: planning.statut,
+    heure_previs: planning.heure_previs ?? "16:00",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -986,13 +995,18 @@ function EditPlanningForm({
           <Input type="datetime-local" value={form.date_fermeture_inscriptions} onChange={(e) => setF("date_fermeture_inscriptions", e.target.value)} />
         </Field>
       </div>
-      <Field label="Statut">
-        <Select value={form.statut} onChange={(e) => setF("statut", e.target.value)}>
-          <option value="BROUILLON">BROUILLON</option>
-          <option value="OUVERT">OUVERT</option>
-          <option value="CLOS">CLOS</option>
-        </Select>
-      </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Statut">
+          <Select value={form.statut} onChange={(e) => setF("statut", e.target.value)}>
+            <option value="BROUILLON">BROUILLON</option>
+            <option value="OUVERT">OUVERT</option>
+            <option value="CLOS">CLOS</option>
+          </Select>
+        </Field>
+        <Field label="Heure de préavis">
+          <Input type="time" value={form.heure_previs} onChange={(e) => setF("heure_previs", e.target.value)} />
+        </Field>
+      </div>
       <ErrorMsg msg={error} />
       <Btn
         label={loading ? "Enregistrement…" : "Enregistrer"}
@@ -1441,6 +1455,7 @@ function PlanningDaySection({
   journeeTypes: JourneeType[];
   onBack: () => void;
 }) {
+  const matieres = useMatieres();
   const [viewMode, setViewMode] = useState<"journee" | "tableau">("journee");
   const [date, setDate] = useState(planning.date_debut);
   const [dayData, setDayData] = useState<DayViewData | null>(null);
@@ -1561,6 +1576,7 @@ function PlanningDaySection({
                   key={dj.id}
                   dj={dj}
                   planningId={planning.id}
+                  matieres={matieres}
                   onRegen={() => setRegenDj(dj)}
                   onRefresh={loadDay}
                 />
@@ -1614,8 +1630,14 @@ function EpreuveRow({
   onRefresh: () => void;
 }) {
   const toast = useToast();
+  const confirm = useConfirm();
   const [changing, setChanging] = useState(false);
   const [open, setOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editMatiere, setEditMatiere] = useState(epreuve.matiere);
+  const [editDebut, setEditDebut] = useState(hm(epreuve.heure_debut));
+  const [editFin, setEditFin] = useState(hm(epreuve.heure_fin));
+  const [saving, setSaving] = useState(false);
 
   const statutCls = (s: string) => {
     if (s === "LIBRE") return "bg-green-50 text-green-700";
@@ -1640,64 +1662,192 @@ function EpreuveRow({
     }
   };
 
+  const openEdit = () => {
+    setEditMatiere(epreuve.matiere);
+    setEditDebut(hm(epreuve.heure_debut));
+    setEditFin(hm(epreuve.heure_fin));
+    setEditOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    setSaving(true);
+    try {
+      await put(`epreuves/${epreuve.id}`, { matiere: editMatiere, heure_debut: editDebut, heure_fin: editFin });
+      setEditOpen(false);
+      onRefresh();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!await confirm(`Supprimer le créneau ${epreuve.matiere} (${hm(epreuve.heure_debut)} – ${hm(epreuve.heure_fin)}) ?`, { confirmLabel: "Supprimer", danger: true })) return;
+    try {
+      await del(`epreuves/${epreuve.id}`);
+      onRefresh();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   return (
-    <div className="flex items-center justify-between px-4 py-2.5 hover:bg-black/[0.01] transition">
-      <div className="flex items-center gap-3 flex-1 min-w-0">
-        <span className="text-xs text-black/40 font-mono w-24 shrink-0">
-          {hm(epreuve.heure_debut)} – {hm(epreuve.heure_fin)}
-        </span>
-        <div className="flex flex-col min-w-0">
-          <span className="text-sm font-medium">{epreuve.matiere}</span>
-          {epreuve.candidat_nom && (
-            <span className="text-xs text-black/40 truncate">
-              {epreuve.candidat_prenom} {epreuve.candidat_nom}
-            </span>
+    <>
+      <div className="flex items-center justify-between px-4 py-2.5 hover:bg-black/[0.01] transition group">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <span className="text-xs text-black/40 font-mono w-24 shrink-0">
+            {hm(epreuve.heure_debut)} – {hm(epreuve.heure_fin)}
+          </span>
+          <div className="flex flex-col min-w-0">
+            <span className="text-sm font-medium">{epreuve.matiere}</span>
+            {epreuve.candidat_nom && (
+              <span className="text-xs text-black/40 truncate">
+                {epreuve.candidat_prenom} {epreuve.candidat_nom}
+              </span>
+            )}
+            {epreuve.salle_intitule && (
+              <span className="text-[10px] text-black/30 font-mono">{epreuve.salle_intitule}</span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={openEdit}
+            className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-black/5 text-black/40 hover:text-black/70 transition"
+            title="Modifier"
+          >
+            <Edit2 className="h-3 w-3" />
+          </button>
+          {!epreuve.candidat_nom && (
+            <button
+              onClick={handleDelete}
+              className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-50 text-black/30 hover:text-red-500 transition"
+              title="Supprimer"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
           )}
+          <div className="relative">
+            {changing ? (
+              <Spinner />
+            ) : (
+              <button
+                onClick={() => setOpen((o) => !o)}
+                className={`text-xs px-2 py-0.5 rounded-full cursor-pointer hover:opacity-80 transition ${statutCls(epreuve.statut)}`}
+              >
+                {epreuve.statut}
+              </button>
+            )}
+            {open && (
+              <div className="absolute right-0 top-full mt-1 z-50 bg-white rounded-xl border shadow-lg py-1 min-w-[140px]">
+                {EPREUVE_STATUTS.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => handleStatut(s)}
+                    className={`w-full text-left px-3 py-1.5 text-xs hover:bg-black/5 transition ${s === epreuve.statut ? "font-semibold" : ""}`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
-      <div className="relative">
-        {changing ? (
-          <Spinner />
-        ) : (
+      {editOpen && (
+        <div className="px-4 py-3 bg-blue-50/40 border-t border-blue-100 flex items-center gap-2 flex-wrap">
+          <input
+            value={editMatiere}
+            onChange={(e) => setEditMatiere(e.target.value)}
+            className="text-sm border rounded-lg px-2 py-1 w-28 focus:outline-none focus:ring-1 focus:ring-blue-300"
+            placeholder="Matière"
+          />
+          <input
+            type="time"
+            value={editDebut}
+            onChange={(e) => setEditDebut(e.target.value)}
+            className="text-sm border rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-300"
+          />
+          <span className="text-xs text-black/30">–</span>
+          <input
+            type="time"
+            value={editFin}
+            onChange={(e) => setEditFin(e.target.value)}
+            className="text-sm border rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-300"
+          />
           <button
-            onClick={() => setOpen((o) => !o)}
-            className={`text-xs px-2 py-0.5 rounded-full cursor-pointer hover:opacity-80 transition ${statutCls(epreuve.statut)}`}
+            onClick={handleSaveEdit}
+            disabled={saving}
+            className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1.5"
           >
-            {epreuve.statut}
+            {saving && <Loader2 className="h-3 w-3 animate-spin" />}
+            Enregistrer
           </button>
-        )}
-        {open && (
-          <div className="absolute right-0 top-full mt-1 z-10 bg-white rounded-xl border shadow-lg py-1 min-w-[140px]">
-            {EPREUVE_STATUTS.map((s) => (
-              <button
-                key={s}
-                onClick={() => handleStatut(s)}
-                className={`w-full text-left px-3 py-1.5 text-xs hover:bg-black/5 transition ${s === epreuve.statut ? "font-semibold" : ""}`}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+          <button onClick={() => setEditOpen(false)} className="text-xs text-black/40 hover:text-black/70">
+            Annuler
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 
 function DemiJourneeCard({
   dj,
   planningId,
+  matieres,
   onRegen,
   onRefresh,
 }: {
   dj: DemiJournee;
   planningId: number;
+  matieres: MatiereItem[];
   onRegen: () => void;
   onRefresh: () => void;
 }) {
+  const toast = useToast();
+  const [addOpen, setAddOpen] = useState(false);
+  const [newMatiere, setNewMatiere] = useState("");
+  const [newDebut, setNewDebut] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  // Durée en minutes déduite des épreuves existantes de la même matière
+  function dureeMatiere(matiere: string): number | null {
+    const ep = dj.epreuves.find((e) => e.matiere === matiere);
+    if (!ep) return null;
+    const [dh, dm] = ep.heure_debut.split(":").map(Number);
+    const [fh, fm] = ep.heure_fin.split(":").map(Number);
+    return (fh * 60 + fm) - (dh * 60 + dm);
+  }
+
+  function addMinutes(hhmm: string, mins: number): string {
+    const [h, m] = hhmm.split(":").map(Number);
+    const total = h * 60 + m + mins;
+    return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+  }
+
+  const duree = newMatiere ? dureeMatiere(newMatiere) : null;
+  const newFin = duree !== null && newDebut ? addMinutes(newDebut, duree) : "";
+
+  const handleAddEpreuve = async () => {
+    if (!newMatiere || !newDebut || !newFin) return;
+    setAdding(true);
+    try {
+      await post(`epreuves/`, { demi_journee_id: dj.id, matiere: newMatiere, heure_debut: newDebut, heure_fin: newFin, statut: "LIBRE" });
+      setNewMatiere(""); setNewDebut("");
+      setAddOpen(false);
+      onRefresh();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAdding(false);
+    }
+  };
+
   return (
-    <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 bg-[#FAFAFA] border-b">
+    <div className="rounded-xl border bg-white shadow-sm">
+      <div className="flex items-center justify-between px-4 py-3 bg-[#FAFAFA] border-b rounded-t-xl">
         <div className="flex items-center gap-2">
           <span className="font-semibold text-sm">
             {dj.type === "MATIN" ? "Matin" : "Après-midi"}
@@ -1706,8 +1856,15 @@ function DemiJourneeCard({
             {hm(dj.heure_debut)} – {hm(dj.heure_fin)}
           </span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <span className="text-xs text-black/30">{dj.epreuves.length} créneaux</span>
+          <Btn
+            label="+ Créneau"
+            icon={Plus}
+            onClick={() => setAddOpen((o) => !o)}
+            small
+            variant="ghost"
+          />
           <Btn
             label="Régénérer"
             icon={RefreshCw}
@@ -1732,6 +1889,46 @@ function DemiJourneeCard({
           ))
         )}
       </div>
+
+      {addOpen && (
+        <div className="px-4 py-3 border-t bg-gray-50/60">
+          <p className="text-xs font-semibold text-black/50 mb-2">Nouveau créneau</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              value={newMatiere}
+              onChange={(e) => setNewMatiere(e.target.value)}
+              className="text-sm border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-gray-300"
+            >
+              <option value="">Matière…</option>
+              {matieres.filter((m) => m.active).map((m) => (
+                <option key={m.id} value={m.intitule}>{m.intitule}</option>
+              ))}
+            </select>
+            <input
+              type="time"
+              value={newDebut}
+              onChange={(e) => setNewDebut(e.target.value)}
+              className="text-sm border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-gray-300"
+            />
+            {newFin ? (
+              <span className="text-xs text-black/40 font-mono">→ {newFin} <span className="text-black/25">({duree} min)</span></span>
+            ) : newMatiere && !duree ? (
+              <span className="text-xs text-amber-500">Aucune épreuve de référence — durée inconnue</span>
+            ) : null}
+            <button
+              onClick={handleAddEpreuve}
+              disabled={adding || !newMatiere || !newDebut || !newFin}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white bg-[#C62828] hover:bg-[#B71C1C] disabled:opacity-40 flex items-center gap-1.5"
+            >
+              {adding && <Loader2 className="h-3 w-3 animate-spin" />}
+              Créer
+            </button>
+            <button onClick={() => setAddOpen(false)} className="text-xs text-black/40 hover:text-black/70">
+              Annuler
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2390,76 +2587,130 @@ const TRIPLET_RING = [
   "#FDBA74","#D8B4FE","#6EE7B7","#7DD3FC",
 ];
 
-type WizardParams = {
+type MatiereConfig = {
   nom: string;
-  matieres: string[];
-  salles_par_matiere: number;
   duree_minutes: number;
   preparation_minutes: number;
-  pause_minutes: number;
+};
+
+type BlocWizard = {
   heure_debut: string;
+  heure_fin: string;
+  pause_minutes: number;
+  nb_slots: number | null;  // null → N² automatique
+  matieres_config: MatiereConfig[];
+};
+
+type WizardParams = {
+  nom: string;
+  salles_par_matiere: number;
   statut_initial: string;
+  blocs: BlocWizard[];
 };
 
 type MatrixRow = {
   deb_prepa: string;
   deb_exam: string;
   fin_exam: string;
-  candidates: number[]; // candidat k pour chaque colonne matière
+  candidates: number[];
+  bloc_idx: number;
 };
 
-function buildMatrix(p: WizardParams): MatrixRow[] {
-  const N = p.matieres.length;
+function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, bloc_idx: number): MatrixRow[] {
+  configs = configs ?? bloc.matieres_config;
+  const N = configs.length;
+  if (!N) return [];
   const Nsq = N * N;
-  const [hh, mm] = p.heure_debut.split(":").map(Number);
+  const maxDuree = Math.max(...configs.map(c => c.duree_minutes));
+  const maxPrep = Math.max(...configs.map(c => c.preparation_minutes));
+  const [hh, mm] = bloc.heure_debut.split(":").map(Number);
+  const [efh, efm] = bloc.heure_fin.split(":").map(Number);
   const start = hh * 60 + mm;
-  return Array.from({ length: Nsq }, (_, i) => {
-    const dPrepa = start + i * (p.duree_minutes + p.pause_minutes);
-    const dExam = dPrepa + p.preparation_minutes;
-    const fExam = dExam + p.duree_minutes;
-    // cell (i, j) → candidat k = (i - j*N + Nsq*N) % Nsq  (garantit ≥ 0)
+  const end = efh * 60 + efm;
+  const available = end - start;
+  const interval = maxDuree + bloc.pause_minutes;
+  const slotDuration = maxPrep + maxDuree;
+  const maxSlots = interval > 0 ? Math.floor((available - slotDuration) / interval) + 1 : Nsq;
+  const total = bloc.nb_slots !== null ? bloc.nb_slots : Math.max(1, Math.floor(maxSlots / Nsq)) * Nsq;
+  return Array.from({ length: total }, (_, i) => {
+    const local_i = i % Nsq;
+    const dPrepa = start + i * interval;
+    const dExam = dPrepa + maxPrep;
+    const fExam = dExam + maxDuree;
     return {
       deb_prepa: minutesToHM(dPrepa),
       deb_exam: minutesToHM(dExam),
       fin_exam: minutesToHM(fExam),
-      candidates: p.matieres.map((_, j) => ((i - j * N) % Nsq + Nsq) % Nsq),
+      candidates: Array.from({ length: N }, (_, j) => ((local_i - j * N) % Nsq + Nsq) % Nsq),
+      bloc_idx,
     };
   });
+}
+
+function buildMatrix(p: WizardParams): MatrixRow[] {
+  return p.blocs.flatMap((bloc, idx) => buildBlocRows(bloc, bloc.matieres_config, idx));
 }
 
 // ── Wizard création journée type (2 étapes) ────────────────────────────────────
 function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
   const [step, setStep] = useState<1 | 2>(1);
   const allMatieres = useMatieres();
+  const DEFAULT_BLOC: BlocWizard = { heure_debut: "08:00", heure_fin: "13:00", pause_minutes: 0, nb_slots: null, matieres_config: [] };
   const [p, setP] = useState<WizardParams>({
     nom: "",
-    matieres: [],
     salles_par_matiere: 1,
-    duree_minutes: 30,
-    preparation_minutes: 30,
-    pause_minutes: 0,
-    heure_debut: "08:00",
     statut_initial: "LIBRE",
+    blocs: [
+      { heure_debut: "08:00", heure_fin: "13:00", pause_minutes: 0, nb_slots: null, matieres_config: [] },
+      { heure_debut: "14:00", heure_fin: "18:00", pause_minutes: 0, nb_slots: null, matieres_config: [] },
+    ],
   });
   const [matrix, setMatrix] = useState<MatrixRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [editMode, setEditMode] = useState(false);
+  const [dragSrc, setDragSrc] = useState<{ rowIdx: number; matIdx: number } | null>(null);
+  const [dragOver, setDragOver] = useState<{ rowIdx: number; matIdx: number } | null>(null);
 
-  // Auto-sync matieres with all active matieres from DB
-  useEffect(() => {
-    const active = allMatieres.filter(m => m.active).map(m => m.intitule);
-    if (active.length > 0) setP(prev => ({ ...prev, matieres: active }));
-  }, [allMatieres]);
+  const toggleBlocMatiere = (blocIdx: number, intitule: string) => {
+    setP(prev => ({
+      ...prev,
+      blocs: prev.blocs.map((b, i) => {
+        if (i !== blocIdx) return b;
+        const exists = b.matieres_config.find(c => c.nom === intitule);
+        return {
+          ...b,
+          matieres_config: exists
+            ? b.matieres_config.filter(c => c.nom !== intitule)
+            : [...b.matieres_config, { nom: intitule, duree_minutes: 30, preparation_minutes: 30 }],
+        };
+      }),
+    }));
+  };
 
-  const set = (k: keyof WizardParams, v: any) =>
-    setP((prev) => ({ ...prev, [k]: v }));
+  const setBlocMatiereConfig = (blocIdx: number, nom: string, k: keyof Omit<MatiereConfig, "nom">, v: number) =>
+    setP(prev => ({
+      ...prev,
+      blocs: prev.blocs.map((b, i) => i !== blocIdx ? b : {
+        ...b,
+        matieres_config: b.matieres_config.map(c => c.nom === nom ? { ...c, [k]: v } : c),
+      }),
+    }));
 
-  const N = p.matieres.length;
-  const Nsq = N * N;
+  const set = (k: keyof WizardParams, v: any) => setP((prev) => ({ ...prev, [k]: v }));
+  const setBloc = (idx: number, k: keyof BlocWizard, v: any) =>
+    setP((prev) => ({ ...prev, blocs: prev.blocs.map((b, i) => i === idx ? { ...b, [k]: v } : b) }));
+  const addBloc = () => setP((prev) => ({
+    ...prev,
+    blocs: [...prev.blocs, { ...DEFAULT_BLOC, heure_debut: "14:00", heure_fin: "18:00" }],
+  }));
+  const removeBloc = (idx: number) => setP((prev) => ({ ...prev, blocs: prev.blocs.filter((_, i) => i !== idx) }));
 
   const handleGenerate = () => {
     if (!p.nom.trim()) { setError("Nom requis"); return; }
-    if (!N) { setError("Aucune matière active — configurez-en dans Paramétrages → Matières"); return; }
+    if (p.blocs.every(b => b.matieres_config.length === 0)) {
+      setError("Sélectionnez au moins une matière dans un bloc"); return;
+    }
     setError("");
     setMatrix(buildMatrix(p));
     setStep(2);
@@ -2469,25 +2720,37 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
     setLoading(true);
     setError("");
     try {
-      const heureFinStr = matrix[Nsq - 1].fin_exam + ":00";
+      const allConfigs = p.blocs.flatMap(b => b.matieres_config);
+      const maxDuree = allConfigs.length ? Math.max(...allConfigs.map(c => c.duree_minutes)) : 30;
+      const maxPrep = allConfigs.length ? Math.max(...allConfigs.map(c => c.preparation_minutes)) : 30;
       const jt = await post<{ id: number }>("journee-types/", {
         nom: p.nom,
-        duree_defaut_minutes: p.duree_minutes,
-        pause_defaut_minutes: p.pause_minutes,
-        preparation_defaut_minutes: p.preparation_minutes,
+        duree_defaut_minutes: maxDuree,
+        pause_defaut_minutes: p.blocs[0].pause_minutes,
+        preparation_defaut_minutes: maxPrep,
         statut_initial: p.statut_initial,
       });
-      await post(`journee-types/${jt.id}/blocs`, {
-        ordre: 1,
-        type_bloc: "GENERATION",
-        heure_debut: p.heure_debut + ":00",
-        heure_fin: heureFinStr,
-        matieres: p.matieres,
-        duree_minutes: p.duree_minutes,
-        pause_minutes: p.pause_minutes,
-        preparation_minutes: p.preparation_minutes,
-        salles_par_matiere: p.salles_par_matiere,
-      });
+      for (let idx = 0; idx < p.blocs.length; idx++) {
+        const bloc = p.blocs[idx];
+        if (!bloc.matieres_config.length) continue;
+        const blocRows = matrix.filter(r => r.bloc_idx === idx);
+        if (!blocRows.length) continue;
+        const bMaxDuree = Math.max(...bloc.matieres_config.map(c => c.duree_minutes));
+        const bMaxPrep = Math.max(...bloc.matieres_config.map(c => c.preparation_minutes));
+        await post(`journee-types/${jt.id}/blocs`, {
+          ordre: idx + 1,
+          type_bloc: "GENERATION",
+          heure_debut: bloc.heure_debut + ":00",
+          heure_fin: blocRows[blocRows.length - 1].fin_exam + ":00",
+          matieres: bloc.matieres_config.map(c => c.nom),
+          matieres_config: bloc.matieres_config,
+          duree_minutes: bMaxDuree,
+          pause_minutes: bloc.pause_minutes,
+          preparation_minutes: bMaxPrep,
+          salles_par_matiere: p.salles_par_matiere,
+          nb_slots: bloc.nb_slots ?? null,
+        });
+      }
       onSuccess();
     } catch (e: any) {
       setError(e.message);
@@ -2515,47 +2778,196 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
 
   // ── Étape 1 ─────────────────────────────────────────────────────────────────
   if (step === 1) {
+    const activeMatieres = allMatieres.filter(m => m.active);
+    const blocLabel = (heure_debut: string) => parseInt(heure_debut) < 13 ? "Matin" : "Après-midi";
+
     return (
       <div className="space-y-4">
         <StepPills />
-        <Field label="Nom">
-          <Input value={p.nom} onChange={(e) => set("nom", e.target.value)} placeholder="Journée standard ECG" />
-        </Field>
-        {N > 0 ? (
-          <p className="text-xs text-black/40">
-            Matières actives : <strong className="text-black/60">{p.matieres.join(", ")}</strong> — {N} matière(s) → <strong>{Nsq} créneaux</strong> par session
-          </p>
-        ) : (
-          <p className="text-xs text-amber-600">Aucune matière active — configurez-en dans Paramétrages → Matières.</p>
-        )}
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Heure de début">
-            <Input type="time" value={p.heure_debut} onChange={(e) => set("heure_debut", e.target.value)} />
+          <Field label="Nom">
+            <Input value={p.nom} onChange={(e) => set("nom", e.target.value)} placeholder="Journée standard ECG" />
           </Field>
-          <Field label="Salles">
+          <Field label="Salles par matière">
             <Input type="number" value={p.salles_par_matiere} onChange={(e) => set("salles_par_matiere", Number(e.target.value))} min={1} max={50} />
           </Field>
         </div>
-        <div className="grid grid-cols-3 gap-3">
-          <Field label="Durée oral (min)">
-            <Input type="number" value={p.duree_minutes} onChange={(e) => set("duree_minutes", Number(e.target.value))} min={5} max={240} />
-          </Field>
-          <Field label="Préparation (min)">
-            <Input type="number" value={p.preparation_minutes} onChange={(e) => set("preparation_minutes", Number(e.target.value))} min={0} max={120} />
-          </Field>
-          <Field label="Pause (min)">
-            <Input type="number" value={p.pause_minutes} onChange={(e) => set("pause_minutes", Number(e.target.value))} min={0} max={120} />
-          </Field>
+
+        {/* ── Blocs horaires ── */}
+        <div className="space-y-3">
+          {p.blocs.map((bloc, idx) => {
+            const N = bloc.matieres_config.length;
+            const Nsq = N * N;
+            const bMaxDuree = N > 0 ? Math.max(...bloc.matieres_config.map(c => c.duree_minutes)) : 0;
+            const bMaxPrep = N > 0 ? Math.max(...bloc.matieres_config.map(c => c.preparation_minutes)) : 0;
+            const interval = bMaxDuree + bloc.pause_minutes;
+            const slotDuration = bMaxPrep + bMaxDuree;
+            const [bh, bm] = bloc.heure_debut.split(":").map(Number);
+            const [eh, em] = bloc.heure_fin.split(":").map(Number);
+            const available = (eh * 60 + em) - (bh * 60 + bm);
+            const maxSlots = N > 0 && interval > 0 ? Math.floor((available - slotDuration) / interval) + 1 : Nsq;
+            const autoTotal = N > 0 ? Math.max(1, Math.floor(maxSlots / Nsq)) * Nsq : 0;
+            const total = bloc.nb_slots !== null ? bloc.nb_slots : autoTotal;
+            return (
+              <div key={idx} className="rounded-xl border border-black/10 bg-gray-50/60 p-4 space-y-3">
+                {/* En-tête du bloc */}
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold text-black/70">Bloc {idx + 1} — {blocLabel(bloc.heure_debut)}</span>
+                  <div className="flex items-center gap-3">
+                    {N > 0 && (
+                      <span className="text-xs text-green-700 font-medium">
+                        {bloc.nb_slots !== null ? `${total} créneaux (manuel)` : `${autoTotal} créneaux (N²=${Nsq})`}
+                      </span>
+                    )}
+                    {p.blocs.length > 1 && (
+                      <button onClick={() => removeBloc(idx)} className="text-black/25 hover:text-red-500 transition">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Matières du bloc */}
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-semibold text-black/40 uppercase tracking-wide">Matières</p>
+                  {activeMatieres.length === 0 ? (
+                    <p className="text-xs text-amber-600">Aucune matière active — Paramétrages → Matières.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {activeMatieres.map(m => {
+                        const checked = bloc.matieres_config.some(c => c.nom === m.intitule);
+                        return (
+                          <button key={m.id} type="button" onClick={() => toggleBlocMatiere(idx, m.intitule)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition ${
+                              checked ? "bg-black text-white border-black" : "bg-white text-black/50 border-black/15 hover:border-black/30"
+                            }`}
+                          >
+                            {m.intitule}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Durées par matière */}
+                {N > 0 && (
+                  <div className="rounded-lg border border-black/8 overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-white border-b border-black/5">
+                          <th className="text-left px-3 py-1.5 text-black/40 font-medium">Matière</th>
+                          <th className="text-center px-3 py-1.5 text-black/40 font-medium">Oral (min)</th>
+                          <th className="text-center px-3 py-1.5 text-black/40 font-medium">Prépa (min)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {bloc.matieres_config.map((mc) => (
+                          <tr key={mc.nom} className="border-b border-black/5 last:border-0 bg-white">
+                            <td className="px-3 py-1.5 font-medium text-black/70">{mc.nom}</td>
+                            <td className="px-2 py-1 text-center">
+                              <input type="number" value={mc.duree_minutes}
+                                onChange={(e) => setBlocMatiereConfig(idx, mc.nom, "duree_minutes", Math.max(5, Number(e.target.value)))}
+                                min={5} max={240}
+                                className="w-14 text-center border border-black/10 rounded-lg px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-black/20"
+                              />
+                            </td>
+                            <td className="px-2 py-1 text-center">
+                              <input type="number" value={mc.preparation_minutes}
+                                onChange={(e) => setBlocMatiereConfig(idx, mc.nom, "preparation_minutes", Math.max(0, Number(e.target.value)))}
+                                min={0} max={120}
+                                className="w-14 text-center border border-black/10 rounded-lg px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-black/20"
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Horaires du bloc */}
+                {(() => {
+                  // Fin calculée quand nb_slots est fixé
+                  const slotAdvance = bMaxDuree + bloc.pause_minutes;
+                  const [sdh, sdm] = bloc.heure_debut.split(":").map(Number);
+                  const startMin = sdh * 60 + sdm;
+                  const computedFinMin = bloc.nb_slots !== null && slotAdvance > 0
+                    ? startMin + bMaxPrep + bloc.nb_slots * slotAdvance
+                    : null;
+                  const computedFin = computedFinMin !== null
+                    ? `${String(Math.floor(computedFinMin / 60)).padStart(2, "0")}:${String(computedFinMin % 60).padStart(2, "0")}`
+                    : null;
+                  return (
+                    <div className="grid grid-cols-3 gap-3">
+                      <Field label="Début du bloc">
+                        <Input type="time" value={bloc.heure_debut} onChange={(e) => setBloc(idx, "heure_debut", e.target.value)} />
+                      </Field>
+                      <Field label="Pause entre créneaux (min)">
+                        <Input type="number" value={bloc.pause_minutes} onChange={(e) => setBloc(idx, "pause_minutes", Number(e.target.value))} min={0} max={120} />
+                      </Field>
+                      <Field label="Nb de créneaux" hint={bloc.nb_slots !== null && computedFin ? `→ fin à ${computedFin}` : autoTotal > 0 ? `vide = ${autoTotal} calculé` : ""}>
+                        <Input
+                          type="number"
+                          value={bloc.nb_slots ?? ""}
+                          placeholder={autoTotal > 0 ? String(autoTotal) : "—"}
+                          onChange={(e) => {
+                            const val = e.target.value === "" ? null : Math.max(1, Number(e.target.value));
+                            setP(prev => ({
+                              ...prev,
+                              blocs: prev.blocs.map((b, i) => {
+                                if (i !== idx) return b;
+                                const sAdv = bMaxDuree + b.pause_minutes;
+                                const [sh, sm] = b.heure_debut.split(":").map(Number);
+                                const finMin = val !== null && sAdv > 0 ? (sh * 60 + sm) + bMaxPrep + val * sAdv : null;
+                                const newFin = finMin !== null
+                                  ? `${String(Math.floor(finMin / 60)).padStart(2, "0")}:${String(finMin % 60).padStart(2, "0")}`
+                                  : b.heure_fin;
+                                return { ...b, nb_slots: val, heure_fin: newFin };
+                              }),
+                            }));
+                          }}
+                          min={1}
+                        />
+                      </Field>
+                    </div>
+                  );
+                })()}
+              </div>
+            );
+          })}
         </div>
+
+        <button
+          onClick={addBloc}
+          className="w-full py-2 rounded-xl border border-dashed border-black/20 text-xs text-black/40 hover:border-black/40 hover:text-black/60 transition flex items-center justify-center gap-1.5"
+        >
+          <Plus className="h-3.5 w-3.5" /> Ajouter un bloc
+        </button>
+
         <ErrorMsg msg={error} />
-        <Btn label="Générer la matrice →" icon={LayoutGrid} onClick={handleGenerate} disabled={!p.nom.trim() || !N} />
+        <Btn label="Générer la matrice →" icon={LayoutGrid} onClick={handleGenerate} disabled={!p.nom.trim() || p.blocs.every(b => b.matieres_config.length === 0)} />
       </div>
     );
   }
 
   // ── Étape 2 ─────────────────────────────────────────────────────────────────
-  const heureFinAuto = matrix.length ? matrix[Nsq - 1].fin_exam : "";
-  const capacite = Nsq * p.salles_par_matiere;
+  const maxBlocN = Math.max(...p.blocs.map(b => b.matieres_config.length), 0);
+  const capacite = matrix.length * p.salles_par_matiere;
+
+  const swapCells = (a: { rowIdx: number; matIdx: number }, b: { rowIdx: number; matIdx: number }) => {
+    if (a.rowIdx === b.rowIdx && a.matIdx === b.matIdx) return;
+    setMatrix(prev => {
+      const next = prev.map(r => ({ ...r, candidates: [...r.candidates] }));
+      const va = next[a.rowIdx].candidates[a.matIdx];
+      const vb = next[b.rowIdx].candidates[b.matIdx];
+      next[a.rowIdx].candidates[a.matIdx] = vb;
+      next[b.rowIdx].candidates[b.matIdx] = va;
+      return next;
+    });
+  };
+
+  const blocLabel = (heure_debut: string) => parseInt(heure_debut) < 13 ? "Matin" : "Après-midi";
 
   return (
     <div className="space-y-4">
@@ -2564,56 +2976,123 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
       {/* Récapitulatif */}
       <div className="rounded-lg bg-gray-50 border border-black/8 px-4 py-2.5 text-xs text-black/60 flex flex-wrap gap-x-5 gap-y-1">
         <span className="font-semibold text-black/80">{p.nom}</span>
-        <span>{p.matieres.join(" · ")}</span>
-        <span>⏱ {p.duree_minutes} min oral · {p.preparation_minutes} min prép.</span>
-        <span>🕐 {p.heure_debut} → {heureFinAuto}</span>
-        <span className="font-medium text-black/70">{capacite} candidat(s) / session</span>
+        <span>{p.blocs.map((b, i) => b.matieres_config.length ? `Bloc ${i+1}: ${b.matieres_config.map(mc => mc.nom).join(", ")}` : null).filter(Boolean).join(" · ")}</span>
+        {p.blocs.map((bloc, idx) => {
+          const blocRows = matrix.filter(r => r.bloc_idx === idx);
+          return (
+            <span key={idx}>
+              Bloc {idx + 1} : {bloc.heure_debut} → {blocRows.length ? blocRows[blocRows.length - 1].fin_exam : "?"} ({blocRows.length} créneaux)
+            </span>
+          );
+        })}
+        <span className="font-medium text-black/70">{matrix.length} créneaux · {capacite} candidat(s)</span>
       </div>
 
+      {/* Barre d'outils matrice */}
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-black/40">
+          Chaque triplet T<em>k</em> = un candidat passant {maxBlocN} épreuve(s) à des horaires décalés.
+          {p.salles_par_matiere > 1 && <> · {capacite} candidats au total.</>}
+        </p>
+        <button
+          type="button"
+          onClick={() => { setEditMode(e => !e); setDragSrc(null); setDragOver(null); }}
+          className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition ${
+            editMode ? "bg-black text-white border-black" : "bg-white text-black/50 border-black/15 hover:border-black/30"
+          }`}
+        >
+          {editMode ? "✓ Mode édition actif" : "Modifier manuellement"}
+        </button>
+      </div>
+      {editMode && (
+        <p className="text-[11px] text-black/30 -mt-2">
+          Glissez un triplet vers une autre cellule pour l'échanger.
+        </p>
+      )}
+
       {/* Matrice */}
-      <div className="overflow-x-auto rounded-xl border border-black/8">
+      {(() => {
+        const allMC = p.blocs.flatMap(b => b.matieres_config).filter((mc, i, arr) => arr.findIndex(x => x.nom === mc.nom) === i);
+        const totalCols = 3 + allMC.length;
+        return (
+        <div className="overflow-x-auto rounded-xl border border-black/8">
         <table className="w-full text-xs border-collapse">
           <thead>
             <tr className="bg-gray-50">
               <th className="text-left px-3 py-2 text-black/40 font-medium border-b border-black/8 whitespace-nowrap">Dép. prépa</th>
               <th className="text-left px-3 py-2 text-black/40 font-medium border-b border-black/8 whitespace-nowrap">Dép. exam</th>
               <th className="text-left px-3 py-2 text-black/40 font-medium border-b border-black/8 whitespace-nowrap">Fin exam</th>
-              {p.matieres.map((m) => (
-                <th key={m} className="text-center px-3 py-2 font-semibold border-b border-black/8 text-black/70 whitespace-nowrap">{m}</th>
+              {allMC.map((mc) => (
+                <th key={mc.nom} className="text-center px-3 py-2 font-semibold border-b border-black/8 text-black/70 whitespace-nowrap">
+                  {mc.nom}
+                  <span className="block text-[10px] font-normal text-black/35">{mc.duree_minutes}' · {mc.preparation_minutes}' prépa</span>
+                </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {matrix.map((row, i) => (
-              <tr key={i} className="border-b border-black/5 last:border-0 hover:bg-black/[0.015]">
-                <td className="px-3 py-1.5 font-mono text-black/40">{row.deb_prepa}</td>
-                <td className="px-3 py-1.5 font-mono font-medium text-black/80">{row.deb_exam}</td>
-                <td className="px-3 py-1.5 font-mono text-black/50">{row.fin_exam}</td>
-                {row.candidates.map((k, j) => (
-                  <td key={j} className="px-3 py-1 text-center">
-                    <span
-                      className="inline-block px-2 py-0.5 rounded-full font-semibold text-[11px] text-gray-700"
-                      style={{
-                        backgroundColor: TRIPLET_BG[k % TRIPLET_BG.length],
-                        outline: `1.5px solid ${TRIPLET_RING[k % TRIPLET_RING.length]}`,
-                      }}
-                    >
-                      T{k + 1}
-                    </span>
-                  </td>
-                ))}
-              </tr>
-            ))}
+            {matrix.map((row, i) => {
+              const isNewBloc = i === 0 || row.bloc_idx !== matrix[i - 1].bloc_idx;
+              const blocMatieres = p.blocs[row.bloc_idx].matieres_config;
+              return (
+                <React.Fragment key={i}>
+                  {isNewBloc && (
+                    <tr>
+                      <td colSpan={totalCols} className="px-3 py-1.5 bg-black/[0.04] text-[11px] font-semibold text-black/50 uppercase tracking-wide">
+                        Bloc {row.bloc_idx + 1} — {blocLabel(p.blocs[row.bloc_idx].heure_debut)} · {p.blocs[row.bloc_idx].heure_debut} → {p.blocs[row.bloc_idx].heure_fin}
+                      </td>
+                    </tr>
+                  )}
+                  <tr className="border-b border-black/5 last:border-0 hover:bg-black/[0.015]">
+                    <td className="px-3 py-1.5 font-mono text-black/40">{row.deb_prepa}</td>
+                    <td className="px-3 py-1.5 font-mono font-medium text-black/80">{row.deb_exam}</td>
+                    <td className="px-3 py-1.5 font-mono text-black/50">{row.fin_exam}</td>
+                    {allMC.map((mc, globalJ) => {
+                      const localJ = blocMatieres.findIndex(c => c.nom === mc.nom);
+                      if (localJ === -1) {
+                        return <td key={globalJ} className="px-3 py-1 text-center text-black/15">—</td>;
+                      }
+                      const k = row.candidates[localJ];
+                      const isOver = dragOver?.rowIdx === i && dragOver?.matIdx === localJ;
+                      const isDragging = dragSrc?.rowIdx === i && dragSrc?.matIdx === localJ;
+                      return (
+                        <td
+                          key={globalJ}
+                          className={`px-3 py-1 text-center transition ${isOver ? "bg-blue-50" : ""}`}
+                          onDragOver={editMode ? (e) => { e.preventDefault(); setDragOver({ rowIdx: i, matIdx: localJ }); } : undefined}
+                          onDragLeave={editMode ? () => setDragOver(null) : undefined}
+                          onDrop={editMode ? (e) => {
+                            e.preventDefault();
+                            if (dragSrc) swapCells(dragSrc, { rowIdx: i, matIdx: localJ });
+                            setDragSrc(null); setDragOver(null);
+                          } : undefined}
+                        >
+                          <span
+                            draggable={editMode}
+                            onDragStart={editMode ? () => setDragSrc({ rowIdx: i, matIdx: localJ }) : undefined}
+                            onDragEnd={editMode ? () => { setDragSrc(null); setDragOver(null); } : undefined}
+                            className={`inline-block px-2 py-0.5 rounded-full font-semibold text-[11px] text-gray-700 transition ${
+                              editMode ? "cursor-grab active:cursor-grabbing" : ""
+                            } ${isDragging ? "opacity-40 scale-95" : ""} ${isOver ? "ring-2 ring-blue-400" : ""}`}
+                            style={{
+                              backgroundColor: TRIPLET_BG[k % TRIPLET_BG.length],
+                              outline: isOver ? "none" : `1.5px solid ${TRIPLET_RING[k % TRIPLET_RING.length]}`,
+                            }}
+                          >
+                            T{k + 1}
+                          </span>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
-      </div>
-
-      <p className="text-xs text-black/40 leading-relaxed">
-        Chaque triplet T<em>k</em> représente un candidat passant {N} épreuve(s) à des horaires décalés (offset de {N} créneaux).
-        {p.salles_par_matiere > 1 && (
-          <> Avec {p.salles_par_matiere} salle(s) par matière, {capacite} candidats peuvent être accueillis par session.</>
-        )}
-      </p>
+        </div>
+        );
+      })()}
 
       {/* Statut initial */}
       <Field label="Statut initial des créneaux">
@@ -3296,6 +3775,12 @@ function CandidatGestionDrawer({
   const [triplets, setTriplets] = useState<TripletDisponible[]>([]);
   const [loadingAction, setLoadingAction] = useState(false);
   const [credsResult, setCredsResult] = useState<{ login: string; password: string } | null>(null);
+  // Mode assignation libre
+  const [modeLibre, setModeLibre] = useState(false);
+  const [libresDate, setLibresDate] = useState("");
+  const [libresData, setLibresData] = useState<Record<string, { id: number; heure_debut: string; heure_fin: string; statut: string }[]>>({});
+  const [selection, setSelection] = useState<Record<string, number>>({});
+  const [loadingLibres, setLoadingLibres] = useState(false);
 
   const loadData = useCallback(() => {
     get<FicheCandidat>(`gestion-candidats/candidat/${candidatId}/fiche`).then(setFiche).catch(() => {});
@@ -3336,11 +3821,55 @@ function CandidatGestionDrawer({
     finally { setLoadingAction(false); }
   };
 
+  const loadLibres = async (date: string) => {
+    if (!date) { setLibresData({}); return; }
+    setLoadingLibres(true);
+    try {
+      const eps = await get<{ id: number; matiere: string; heure_debut: string; heure_fin: string; statut: string }[]>(
+        `gestion-candidats/${planningId}/epreuves-disponibles?date=${date}`
+      );
+      const grouped: Record<string, { id: number; heure_debut: string; heure_fin: string; statut: string }[]> = {};
+      for (const ep of eps) {
+        if (!grouped[ep.matiere]) grouped[ep.matiere] = [];
+        grouped[ep.matiere].push({ id: ep.id, heure_debut: ep.heure_debut, heure_fin: ep.heure_fin, statut: ep.statut });
+      }
+      setLibresData(grouped);
+      setSelection({});
+    } catch (e) { toast.error(e instanceof Error ? e.message : String(e)); }
+    finally { setLoadingLibres(false); }
+  };
+
+  const doInscrireDirect = async () => {
+    const ids = Object.values(selection).filter(Boolean);
+    if (ids.length === 0) return;
+    setLoadingAction(true);
+    try {
+      await post(`gestion-candidats/candidat/${candidatId}/inscrire-direct`, { epreuve_ids: ids });
+      toast.success("Assignation libre effectuée");
+      setModeLibre(false);
+      setSelection({});
+      setLibresData({});
+      setLibresDate("");
+      refresh();
+    } catch (e) { toast.error(e instanceof Error ? e.message : String(e)); }
+    finally { setLoadingAction(false); }
+  };
+
   const fmt_date = (d: string) =>
     new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
 
+  const PROFIL_EXCLUSION: Record<string, string> = { HGG: "ESH", ESH: "HGG" };
+  const classeUp = (fiche?.classe || "").toUpperCase();
+  const profilUpper = (fiche?.profil || "").toUpperCase() ||
+    (classeUp.includes("ESH") ? "ESH" : classeUp.includes("HGG") ? "HGG" : "");
+  const matiereExclue = PROFIL_EXCLUSION[profilUpper];
+
   const tripletsByDate: Record<string, TripletDisponible[]> = {};
   for (const t of triplets) {
+    if (matiereExclue) {
+      const matieres = t.epreuves.map(e => e.matiere.toUpperCase());
+      if (matieres.includes(matiereExclue)) continue;
+    }
     if (!tripletsByDate[t.date]) tripletsByDate[t.date] = [];
     tripletsByDate[t.date].push(t);
   }
@@ -3513,61 +4042,123 @@ function CandidatGestionDrawer({
               </div>
             ) : null}
 
-            {/* Triplets disponibles */}
+            {/* Triplets disponibles / Assignation libre */}
             <div className="rounded-xl border bg-white shadow-sm p-4">
-              <p className="text-xs font-semibold text-black/50 mb-3">Créneaux disponibles à l&apos;inscription</p>
-              {Object.keys(tripletsByDate).length === 0 ? (
-                <p className="text-xs text-black/40">Aucun créneau disponible</p>
-              ) : (
-                <div className="space-y-4">
-                  {Object.entries(tripletsByDate).map(([date, trips]) => {
-                    const allMatieres = trips[0]?.epreuves.map(e => e.matiere) ?? [];
-                    return (
-                      <div key={date}>
-                        <p className="text-xs font-semibold text-black/50 mb-2 capitalize">{fmt_date(date)}</p>
-                        <div className="rounded-lg border overflow-hidden">
-                          <table className="w-full text-xs">
-                            <thead>
-                              <tr className="bg-gray-50 text-left">
-                                <th className="px-3 py-2 text-black/40 font-semibold">Heure</th>
-                                {allMatieres.map(m => (
-                                  <th key={m} className="px-3 py-2 text-black/40 font-semibold">{m}</th>
-                                ))}
-                                <th className="px-3 py-2"></th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {trips.map((t, idx) => (
-                                <tr
-                                  key={idx}
-                                  className={`border-t border-black/5 ${t.type_slot === "PRERESERVEE" ? "bg-amber-50/60" : ""}`}
-                                >
-                                  <td className="px-3 py-2 font-medium">{t.heure_debut}</td>
-                                  {t.epreuves.map(e => (
-                                    <td key={e.id} className="px-3 py-2">{e.heure_debut}</td>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-semibold text-black/50">
+                  {modeLibre ? "Assignation libre" : "Créneaux disponibles (rotation N²)"}
+                </p>
+                <button
+                  onClick={() => { setModeLibre(o => !o); setLibresDate(""); setLibresData({}); setSelection({}); }}
+                  className={`text-[10px] px-2.5 py-1 rounded-lg border transition ${modeLibre ? "bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100" : "bg-gray-50 text-black/50 border-gray-200 hover:bg-gray-100"}`}
+                >
+                  {modeLibre ? "← Rotation N²" : "Assignation libre →"}
+                </button>
+              </div>
+
+              {!modeLibre ? (
+                Object.keys(tripletsByDate).length === 0 ? (
+                  <p className="text-xs text-black/40">Aucun créneau disponible</p>
+                ) : (
+                  <div className="space-y-4">
+                    {Object.entries(tripletsByDate).map(([date, trips]) => {
+                      const allMatieres = trips[0]?.epreuves.map(e => e.matiere) ?? [];
+                      return (
+                        <div key={date}>
+                          <p className="text-xs font-semibold text-black/50 mb-2 capitalize">{fmt_date(date)}</p>
+                          <div className="rounded-lg border overflow-hidden">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="bg-gray-50 text-left">
+                                  <th className="px-3 py-2 text-black/40 font-semibold">Heure</th>
+                                  {allMatieres.map(m => (
+                                    <th key={m} className="px-3 py-2 text-black/40 font-semibold">{m}</th>
                                   ))}
-                                  <td className="px-3 py-2 text-right whitespace-nowrap">
-                                    {t.type_slot === "PRERESERVEE" && (
-                                      <span className="mr-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
-                                        Préréservé
-                                      </span>
-                                    )}
-                                    <button
-                                      onClick={() => doInscrire(t)}
-                                      disabled={loadingAction}
-                                      className="text-[10px] px-2.5 py-1 rounded-lg text-white transition disabled:opacity-50 bg-[#C62828] hover:bg-[#B71C1C]"
-                                    >
-                                      Inscrire
-                                    </button>
-                                  </td>
+                                  <th className="px-3 py-2"></th>
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                              </thead>
+                              <tbody>
+                                {trips.map((t, idx) => (
+                                  <tr
+                                    key={idx}
+                                    className={`border-t border-black/5 ${t.type_slot === "PRERESERVEE" ? "bg-amber-50/60" : ""}`}
+                                  >
+                                    <td className="px-3 py-2 font-medium">{t.heure_debut}</td>
+                                    {t.epreuves.map(e => (
+                                      <td key={e.id} className="px-3 py-2">{e.heure_debut}</td>
+                                    ))}
+                                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                                      {t.type_slot === "PRERESERVEE" && (
+                                        <span className="mr-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                                          Préréservé
+                                        </span>
+                                      )}
+                                      <button
+                                        onClick={() => doInscrire(t)}
+                                        disabled={loadingAction}
+                                        className="text-[10px] px-2.5 py-1 rounded-lg text-white transition disabled:opacity-50 bg-[#C62828] hover:bg-[#B71C1C]"
+                                      >
+                                        Inscrire
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
+                )
+              ) : (
+                /* Mode assignation libre */
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-black/50 shrink-0">Date</label>
+                    <input
+                      type="date"
+                      value={libresDate}
+                      onChange={(e) => { setLibresDate(e.target.value); loadLibres(e.target.value); }}
+                      className="text-xs border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-orange-200"
+                    />
+                    {loadingLibres && <Loader2 className="h-3 w-3 animate-spin text-black/30" />}
+                  </div>
+
+                  {libresDate && Object.keys(libresData).length === 0 && !loadingLibres && (
+                    <p className="text-xs text-black/40">Aucun créneau libre pour cette date.</p>
+                  )}
+
+                  {Object.keys(libresData).length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-[10px] text-black/40">Choisir un créneau par matière (★ = préréservé)</p>
+                      {Object.entries(libresData).map(([matiere, eps]) => (
+                        <div key={matiere} className="flex items-center gap-2">
+                          <span className="text-xs font-semibold w-24 shrink-0 truncate" title={matiere}>{matiere}</span>
+                          <select
+                            value={selection[matiere] ?? ""}
+                            onChange={(e) => setSelection(prev => ({ ...prev, [matiere]: Number(e.target.value) }))}
+                            className="text-xs border rounded-lg px-2 py-1.5 flex-1 focus:outline-none focus:ring-1 focus:ring-orange-200"
+                          >
+                            <option value="">-- Choisir --</option>
+                            {eps.map(ep => (
+                              <option key={ep.id} value={ep.id}>
+                                {ep.heure_debut} – {ep.heure_fin}{ep.statut === "PRERESERVEE" ? " ★" : ""}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                      <button
+                        onClick={doInscrireDirect}
+                        disabled={loadingAction || Object.keys(libresData).length === 0 || Object.keys(libresData).some(m => !selection[m])}
+                        className="text-xs px-3 py-1.5 rounded-lg text-white bg-[#C62828] hover:bg-[#B71C1C] disabled:opacity-40 flex items-center gap-1.5"
+                      >
+                        {loadingAction && <Loader2 className="h-3 w-3 animate-spin" />}
+                        Inscrire ({Object.values(selection).filter(Boolean).length}/{Object.keys(libresData).length} matières sélectionnées)
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -5737,7 +6328,7 @@ type TableauData = {
 
 function NotesSection() {
   const toast = useToast();
-  const [tab, setTab] = useState<"tableau" | "publication">("tableau");
+  const [tab, setTab] = useState<"tableau" | "publication" | "saisie">("tableau");
 
   // ── Tableau tab state ────────────────────────────────────────────────────────
   const [plannings, setPlannings] = useState<Planning[]>([]);
@@ -5860,6 +6451,89 @@ function NotesSection() {
     return acc;
   }, {});
 
+  // ── Saisie tab state ──────────────────────────────────────────────────────
+  type SaisieEpreuve = {
+    epreuve_id: number;
+    date: string;
+    matiere: string;
+    heure_debut: string;
+    heure_fin: string;
+    preparation_minutes: number | null;
+    candidat_id: number | null;
+    candidat_nom: string | null;
+    candidat_prenom: string | null;
+    note_id: number | null;
+    valeur: number | null;
+    commentaire: string | null;
+    statut: string | null;
+  };
+
+  const [saisiePlanningId, setSaisiePlanningId] = useState<number | "">("");
+  const [saisieExamId, setSaisieExamId] = useState<number | "">("");
+  const [saisieExams, setSaisieExams] = useState<Examinateur[]>([]);
+  const [saisieRows, setSaisieRows] = useState<SaisieEpreuve[]>([]);
+  const [saisieLoading, setSaisieLoading] = useState(false);
+  // Draft edits: epreuve_id → {valeur, commentaire}
+  const [saisieDraft, setSaisieDraft] = useState<Record<number, { valeur: string; commentaire: string }>>({});
+  const [saisieSaving, setSaisieSaving] = useState<Record<number, boolean>>({});
+
+  useEffect(() => {
+    if (tab !== "saisie") return;
+    const q = saisiePlanningId ? `?planning_id=${saisiePlanningId}` : "";
+    get<Examinateur[]>(`examinateurs/${q}`).then(setSaisieExams).catch(() => {});
+  }, [tab, saisiePlanningId]);
+
+  useEffect(() => {
+    if (tab !== "saisie" || !saisieExamId) { setSaisieRows([]); return; }
+    setSaisieLoading(true);
+    const q = saisiePlanningId ? `&planning_id=${saisiePlanningId}` : "";
+    get<SaisieEpreuve[]>(`notes/saisie?examinateur_id=${saisieExamId}${q}`)
+      .then((rows) => {
+        setSaisieRows(rows);
+        // Init drafts with existing values
+        const drafts: Record<number, { valeur: string; commentaire: string }> = {};
+        rows.forEach((r) => {
+          drafts[r.epreuve_id] = {
+            valeur: r.valeur !== null ? String(r.valeur) : "",
+            commentaire: r.commentaire ?? "",
+          };
+        });
+        setSaisieDraft(drafts);
+      })
+      .catch(() => {})
+      .finally(() => setSaisieLoading(false));
+  }, [tab, saisieExamId, saisiePlanningId]);
+
+  async function saveSaisie(epId: number) {
+    const draft = saisieDraft[epId];
+    if (!draft) return;
+    const valNum = draft.valeur === "" ? null : parseFloat(draft.valeur);
+    if (draft.valeur !== "" && (isNaN(valNum!) || valNum! < 0 || valNum! > 20)) {
+      toast.error("Note invalide (0–20)");
+      return;
+    }
+    setSaisieSaving((s) => ({ ...s, [epId]: true }));
+    try {
+      await post("notes/saisir", {
+        epreuve_id: epId,
+        valeur: valNum,
+        commentaire: draft.commentaire || null,
+      });
+      setSaisieRows((prev) =>
+        prev.map((r) =>
+          r.epreuve_id === epId
+            ? { ...r, valeur: valNum, commentaire: draft.commentaire || null, statut: r.statut ?? "BROUILLON" }
+            : r
+        )
+      );
+      toast.success("Note enregistrée");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaisieSaving((s) => ({ ...s, [epId]: false }));
+    }
+  }
+
   return (
     <div className="max-w-6xl mx-auto">
       {/* Header */}
@@ -5887,7 +6561,7 @@ function NotesSection() {
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 bg-black/5 p-1 rounded-xl w-fit">
-        {(["tableau", "publication"] as const).map((t) => (
+        {(["tableau", "saisie", "publication"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -5895,7 +6569,7 @@ function NotesSection() {
               tab === t ? "bg-white shadow text-black" : "text-black/50 hover:text-black/70"
             }`}
           >
-            {t === "tableau" ? "Tableau des notes" : "Publication"}
+            {t === "tableau" ? "Tableau des notes" : t === "saisie" ? "Saisie" : "Publication"}
           </button>
         ))}
       </div>
@@ -6000,6 +6674,108 @@ function NotesSection() {
                       })}
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Saisie admin ──────────────────────────────────────────────────────── */}
+      {tab === "saisie" && (
+        <div className="space-y-5">
+          <div className="flex items-end gap-4 flex-wrap">
+            <Field label="Planning (optionnel)">
+              <Select value={saisiePlanningId} onChange={(e) => { setSaisiePlanningId(e.target.value === "" ? "" : Number(e.target.value)); setSaisieExamId(""); }}>
+                <option value="">— Tous les plannings</option>
+                {plannings.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
+              </Select>
+            </Field>
+            <Field label="Examinateur">
+              <Select value={saisieExamId} onChange={(e) => setSaisieExamId(e.target.value === "" ? "" : Number(e.target.value))}>
+                <option value="">— Sélectionner un examinateur</option>
+                {saisieExams.map((ex) => (
+                  <option key={ex.id} value={ex.id}>{ex.nom.toUpperCase()} {ex.prenom}</option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+
+          {!saisieExamId ? (
+            <Empty message="Sélectionnez un examinateur" sub="Choisissez éventuellement un planning pour filtrer la liste." />
+          ) : saisieLoading ? (
+            <div className="flex justify-center py-12 text-black/30"><Spinner /></div>
+          ) : saisieRows.length === 0 ? (
+            <Empty message="Aucune épreuve trouvée pour cet examinateur" />
+          ) : (
+            <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
+              <table className="text-sm border-collapse min-w-full">
+                <thead>
+                  <tr className="bg-[#1A237E] text-white text-xs">
+                    {["Date", "Matière", "Prép.", "Passage", "Candidat", "Note /20", "Commentaire", "Statut", ""].map((h) => (
+                      <th key={h} className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {saisieRows.map((row, ri) => {
+                    const draft = saisieDraft[row.epreuve_id] ?? { valeur: "", commentaire: "" };
+                    const saving = saisieSaving[row.epreuve_id] ?? false;
+                    return (
+                      <tr key={row.epreuve_id} className={ri % 2 === 0 ? "bg-white" : "bg-[#FAFAFA]"}>
+                        <td className="px-3 py-2 border border-black/8 whitespace-nowrap text-xs text-black/60">{row.date}</td>
+                        <td className="px-3 py-2 border border-black/8 font-medium whitespace-nowrap">{row.matiere}</td>
+                        <td className="px-3 py-2 border border-black/8 text-xs text-black/50 whitespace-nowrap">
+                          {row.preparation_minutes ? `${row.heure_debut.slice(0,5)} (−${row.preparation_minutes}′)` : "—"}
+                        </td>
+                        <td className="px-3 py-2 border border-black/8 text-xs font-medium whitespace-nowrap">{row.heure_debut.slice(0,5)}–{row.heure_fin.slice(0,5)}</td>
+                        <td className="px-3 py-2 border border-black/8 whitespace-nowrap">
+                          {row.candidat_nom
+                            ? <span>{row.candidat_nom.toUpperCase()} <span className="text-black/50">{row.candidat_prenom}</span></span>
+                            : <span className="text-black/25 italic">Non assigné</span>}
+                        </td>
+                        <td className="px-2 py-1.5 border border-black/8">
+                          <input
+                            type="number"
+                            min={0} max={20} step={0.5}
+                            value={draft.valeur}
+                            onChange={(e) => setSaisieDraft((prev) => ({ ...prev, [row.epreuve_id]: { ...draft, valeur: e.target.value } }))}
+                            placeholder="—"
+                            className="w-16 px-2 py-1 rounded border border-black/15 text-sm text-center focus:outline-none focus:border-[#1A237E]"
+                          />
+                        </td>
+                        <td className="px-2 py-1.5 border border-black/8">
+                          <input
+                            type="text"
+                            value={draft.commentaire}
+                            onChange={(e) => setSaisieDraft((prev) => ({ ...prev, [row.epreuve_id]: { ...draft, commentaire: e.target.value } }))}
+                            placeholder="Commentaire…"
+                            className="w-48 px-2 py-1 rounded border border-black/15 text-sm focus:outline-none focus:border-[#1A237E]"
+                          />
+                        </td>
+                        <td className="px-3 py-2 border border-black/8 text-xs">
+                          {row.statut === "PUBLIE" ? (
+                            <span className="bg-green-100 text-green-700 rounded-full px-2 py-0.5 font-medium">Publiée</span>
+                          ) : row.statut === "BROUILLON" ? (
+                            <span className="bg-amber-100 text-amber-700 rounded-full px-2 py-0.5 font-medium">Brouillon</span>
+                          ) : (
+                            <span className="text-black/30">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 border border-black/8">
+                          <button
+                            onClick={() => saveSaisie(row.epreuve_id)}
+                            disabled={saving || !row.candidat_id}
+                            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#1A237E] text-white font-semibold hover:bg-[#283593] transition disabled:opacity-40 whitespace-nowrap"
+                            title={!row.candidat_id ? "Aucun candidat assigné à cette épreuve" : "Enregistrer"}
+                          >
+                            {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                            Enregistrer
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -6285,7 +7061,7 @@ function ParametragesSection() {
   const [loadingMsg, setLoadingMsg] = useState(true);
 
   // Reset mdp
-  const [candidatId, setCandidatId] = useState("");
+  const [candidatEmail, setCandidatEmail] = useState("");
   const [resetResult, setResetResult] = useState<{ login: string; new_password: string } | null>(null);
   const [resetting, setResetting] = useState(false);
   const [resetErr, setResetErr] = useState("");
@@ -6330,14 +7106,14 @@ function ParametragesSection() {
   };
 
   const doResetPassword = async () => {
-    const id = parseInt(candidatId);
-    if (!id) return;
+    if (!candidatEmail.trim()) return;
     setResetting(true);
     setResetErr("");
     setResetResult(null);
     try {
       const res = await post<{ login: string; new_password: string }>(
-        `parametrages/candidats/${id}/reset-password`, {}
+        `parametrages/candidats/reset-password-by-email`,
+        { email: candidatEmail.trim() }
       );
       setResetResult(res);
     } catch (e: unknown) {
@@ -6448,22 +7224,22 @@ function ParametragesSection() {
           <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-5 space-y-4">
             <h2 className="text-base font-semibold text-gray-900">Réinitialiser le mot de passe d&apos;un candidat</h2>
             <p className="text-sm text-gray-500">
-              Saisissez l&apos;ID du candidat. Un nouveau mot de passe temporaire sera généré.
+              Saisissez l&apos;adresse email du candidat. Un nouveau mot de passe temporaire sera généré.
             </p>
 
-            <Field label="ID candidat">
+            <Field label="Email candidat">
               <Input
-                type="number"
-                value={candidatId}
-                onChange={(e) => { setCandidatId(e.target.value); setResetResult(null); setResetErr(""); }}
-                placeholder="ex. 1"
+                type="email"
+                value={candidatEmail}
+                onChange={(e) => { setCandidatEmail(e.target.value); setResetResult(null); setResetErr(""); }}
+                placeholder="ex. prenom.nom@example.com"
               />
             </Field>
 
             <Btn
               label={resetting ? "Réinitialisation…" : "Générer un nouveau mot de passe"}
               onClick={doResetPassword}
-              disabled={resetting || !candidatId}
+              disabled={resetting || !candidatEmail.trim()}
               icon={RefreshCw}
             />
 
@@ -6683,6 +7459,11 @@ function SurveillantsSection() {
   } | null>(null);
   const [filterActif, setFilterActif] = useState<"tous" | "actif" | "inactif">("tous");
   const [search, setSearch] = useState("");
+  const [view, setView] = useState<"annuaire" | "planning">("annuaire");
+  const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
+  const [loadingEp, setLoadingEp] = useState(false);
+  const [filterDate, setFilterDate] = useState("");
+  const [filterSurv, setFilterSurv] = useState<string>("");
 
   useEffect(() => {
     get<Planning[]>("plannings/").then((ps) => {
@@ -6700,6 +7481,20 @@ function SurveillantsSection() {
       setLoading(false);
     }
   }, [selectedPlanningId]);
+
+  const loadEpreuves = useCallback(async () => {
+    if (!selectedPlanningId) return;
+    setLoadingEp(true);
+    try {
+      setEpreuves(await get<EpreuveFlat[]>(`plannings/${selectedPlanningId}/epreuves`));
+    } finally {
+      setLoadingEp(false);
+    }
+  }, [selectedPlanningId]);
+
+  useEffect(() => {
+    if (view === "planning") loadEpreuves();
+  }, [view, loadEpreuves]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -6744,14 +7539,34 @@ function SurveillantsSection() {
     return true;
   });
 
+  // ── Vue planning ─────────────────────────────────────────────────────────────
+  const dates = Array.from(new Set(epreuves.map((e) => e.date))).sort();
+  const epFiltered = epreuves
+    .filter((e) => !filterDate || e.date === filterDate)
+    .filter((e) => !filterSurv || String(e.surveillant_id ?? "") === filterSurv);
+
+  const epByDate = dates
+    .filter((d) => !filterDate || d === filterDate)
+    .map((d) => ({
+      date: d,
+      rows: epFiltered.filter((e) => e.date === d)
+        .sort((a, b) => a.heure_debut.localeCompare(b.heure_debut) || a.matiere.localeCompare(b.matiere)),
+    }))
+    .filter((g) => g.rows.length > 0);
+
+  const fmtDate = (d: string) => new Date(d + "T12:00:00").toLocaleDateString("fr-FR", {
+    weekday: "long", day: "numeric", month: "long",
+  });
+
   return (
-    <div className="max-w-4xl mx-auto space-y-4">
+    <div className="max-w-5xl mx-auto space-y-4">
+      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <Shield className="h-5 w-5 text-[#C62828]" />
           <div>
             <h2 className="text-xl font-semibold">Surveillants</h2>
-            <p className="text-sm text-black/40">Gestion des surveillants de salle</p>
+            <p className="text-sm text-black/40">Gestion et planning des surveillants</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -6763,94 +7578,196 @@ function SurveillantsSection() {
             <option value="">— Planning —</option>
             {plannings.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
           </select>
-          {selectedPlanningId && (
+          {selectedPlanningId && view === "annuaire" && (
             <Btn label="Nouveau surveillant" icon={Plus} onClick={() => setShowCreate(true)} />
           )}
         </div>
       </div>
 
-      {/* Filtres */}
+      {/* Onglets */}
       {selectedPlanningId && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex rounded-lg border overflow-hidden text-xs">
-            {(["tous", "actif", "inactif"] as const).map((f) => (
-              <button key={f} onClick={() => setFilterActif(f)}
-                className={`px-3 py-1.5 transition ${filterActif === f ? "bg-black text-white" : "bg-white text-black/50 hover:bg-black/5"}`}
-              >
-                {f === "tous" ? "Tous" : f === "actif" ? "Actifs" : "Inactifs"}
-              </button>
-            ))}
-          </div>
-          <input
-            type="text"
-            placeholder="Rechercher…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#C62828]/30 w-52"
-          />
+        <div className="flex rounded-xl border overflow-hidden w-fit text-xs font-medium">
+          {(["annuaire", "planning"] as const).map((v) => (
+            <button key={v} onClick={() => setView(v)}
+              className={`px-4 py-2 transition ${view === v ? "bg-black text-white" : "bg-white text-black/50 hover:bg-black/5"}`}
+            >
+              {v === "annuaire" ? "Annuaire" : "Planning des créneaux"}
+            </button>
+          ))}
         </div>
       )}
 
-      {/* Table */}
-      {loading ? (
-        <div className="p-8 text-center"><Spinner /></div>
-      ) : !selectedPlanningId ? (
-        <Empty message="Sélectionnez un planning" />
-      ) : filtered.length === 0 ? (
-        <Empty message="Aucun surveillant" sub="Créez le premier surveillant pour ce planning." />
-      ) : (
-        <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-[#F5F5F5] border-b">
-                {["Nom", "Email", "Statut", "Code accès", ""].map((h) => (
-                  <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-black/50 tracking-wide">{h}</th>
+      {/* ── Vue Annuaire ── */}
+      {view === "annuaire" && (
+        <>
+          {selectedPlanningId && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex rounded-lg border overflow-hidden text-xs">
+                {(["tous", "actif", "inactif"] as const).map((f) => (
+                  <button key={f} onClick={() => setFilterActif(f)}
+                    className={`px-3 py-1.5 transition ${filterActif === f ? "bg-black text-white" : "bg-white text-black/50 hover:bg-black/5"}`}
+                  >
+                    {f === "tous" ? "Tous" : f === "actif" ? "Actifs" : "Inactifs"}
+                  </button>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((s) => (
-                <tr key={s.id} className="border-t border-black/5 hover:bg-black/[0.012] transition">
-                  <td className="px-5 py-3">
-                    <p className="font-medium">{s.prenom} {s.nom}</p>
-                  </td>
-                  <td className="px-5 py-3 text-black/50 text-xs font-mono">{s.email}</td>
-                  <td className="px-5 py-3">
-                    <button
-                      onClick={() => handleToggleActif(s)}
-                      className={`text-xs px-2.5 py-1 rounded-full font-semibold transition ${
-                        s.actif ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                      }`}
-                    >
-                      {s.actif ? "Actif" : "Inactif"}
-                    </button>
-                  </td>
-                  <td className="px-5 py-3">
-                    <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{s.code_acces}</span>
-                  </td>
-                  <td className="px-5 py-3">
-                    <div className="flex items-center justify-end gap-1">
-                      <Btn
-                        label="Identifiants"
-                        icon={Key}
-                        onClick={() => handleSendCredentials(s)}
-                        small
-                        variant="ghost"
-                      />
-                      <Btn
-                        label="Supprimer"
-                        icon={Trash2}
-                        onClick={() => handleDelete(s)}
-                        small
-                        variant="danger"
-                      />
-                    </div>
-                  </td>
-                </tr>
+              </div>
+              <input
+                type="text"
+                placeholder="Rechercher…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#C62828]/30 w-52"
+              />
+            </div>
+          )}
+
+          {loading ? (
+            <div className="p-8 text-center"><Spinner /></div>
+          ) : !selectedPlanningId ? (
+            <Empty message="Sélectionnez un planning" />
+          ) : filtered.length === 0 ? (
+            <Empty message="Aucun surveillant" sub="Créez le premier surveillant pour ce planning." />
+          ) : (
+            <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-[#F5F5F5] border-b">
+                    {["Nom", "Email", "Statut", "Code accès", ""].map((h) => (
+                      <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-black/50 tracking-wide">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((s) => (
+                    <tr key={s.id} className="border-t border-black/5 hover:bg-black/[0.012] transition">
+                      <td className="px-5 py-3">
+                        <p className="font-medium">{s.prenom} {s.nom}</p>
+                      </td>
+                      <td className="px-5 py-3 text-black/50 text-xs font-mono">{s.email}</td>
+                      <td className="px-5 py-3">
+                        <button
+                          onClick={() => handleToggleActif(s)}
+                          className={`text-xs px-2.5 py-1 rounded-full font-semibold transition ${
+                            s.actif ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                          }`}
+                        >
+                          {s.actif ? "Actif" : "Inactif"}
+                        </button>
+                      </td>
+                      <td className="px-5 py-3">
+                        <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{s.code_acces}</span>
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="flex items-center justify-end gap-1">
+                          <Btn label="Identifiants" icon={Key} onClick={() => handleSendCredentials(s)} small variant="ghost" />
+                          <Btn label="Supprimer" icon={Trash2} onClick={() => handleDelete(s)} small variant="danger" />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── Vue Planning ── */}
+      {view === "planning" && (
+        <>
+          {/* Filtres */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              className="border rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-black/15"
+            >
+              <option value="">Toutes les journées</option>
+              {dates.map((d) => (
+                <option key={d} value={d}>{fmtDate(d)}</option>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </select>
+            <select
+              value={filterSurv}
+              onChange={(e) => setFilterSurv(e.target.value)}
+              className="border rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-black/15"
+            >
+              <option value="">Tous les surveillants</option>
+              <option value="0">— Non assignés —</option>
+              {surveillants.filter((s) => s.actif).map((s) => (
+                <option key={s.id} value={String(s.id)}>{s.nom} {s.prenom}</option>
+              ))}
+            </select>
+          </div>
+
+          {loadingEp ? (
+            <div className="p-8 text-center"><Spinner /></div>
+          ) : !selectedPlanningId ? (
+            <Empty message="Sélectionnez un planning" />
+          ) : epByDate.length === 0 ? (
+            <Empty message="Aucun créneau" sub="Appliquez un gabarit pour générer les créneaux." />
+          ) : (
+            <div className="space-y-4">
+              {epByDate.map(({ date, rows }) => {
+                const nonAssignes = rows.filter((r) => !r.surveillant_id).length;
+                return (
+                  <div key={date} className="bg-white rounded-2xl border border-black/5 shadow-sm overflow-hidden">
+                    <div className="px-4 py-2.5 bg-black/[0.02] border-b border-black/5 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-black/60 capitalize">{fmtDate(date)}</span>
+                      {nonAssignes > 0 && (
+                        <span className="flex items-center gap-1.5 text-xs text-amber-600 font-medium">
+                          <AlertTriangle className="h-3.5 w-3.5" />
+                          {nonAssignes} créneau(x) sans surveillant
+                        </span>
+                      )}
+                    </div>
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-black/5 bg-black/[0.01]">
+                          <th className="text-left px-4 py-2 text-black/40 font-medium w-28">Matière</th>
+                          <th className="text-left px-4 py-2 text-black/40 font-medium w-24">Heure</th>
+                          <th className="text-left px-4 py-2 text-black/40 font-medium">Surveillant</th>
+                          <th className="text-left px-4 py-2 text-black/40 font-medium">Candidat</th>
+                          <th className="text-left px-4 py-2 text-black/40 font-medium w-20">Statut</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((ep) => (
+                          <tr key={ep.id} className={`border-b border-black/[0.04] last:border-0 ${!ep.surveillant_id ? "bg-amber-50/40" : "hover:bg-black/[0.01]"}`}>
+                            <td className="px-4 py-2.5 font-medium text-black/70">{ep.matiere}</td>
+                            <td className="px-4 py-2.5 font-mono text-black/50">{ep.heure_debut} – {ep.heure_fin}</td>
+                            <td className="px-4 py-2.5">
+                              {ep.surveillant_nom ? (
+                                <span className="text-black/70">{ep.surveillant_nom} {ep.surveillant_prenom}</span>
+                              ) : (
+                                <span className="flex items-center gap-1 text-amber-500">
+                                  <AlertTriangle className="h-3 w-3" /> Non assigné
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5 text-black/50">
+                              {ep.candidat_nom ? `${ep.candidat_nom} ${ep.candidat_prenom}` : <span className="text-black/25">—</span>}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <span className={`inline-block px-2 py-0.5 rounded-full font-medium text-[10px] ${
+                                ep.statut === "ATTRIBUEE" ? "bg-green-100 text-green-700" :
+                                ep.statut === "LIBRE" ? "bg-gray-100 text-gray-500" :
+                                ep.statut === "PRERESERVEE" ? "bg-amber-100 text-amber-700" :
+                                "bg-gray-50 text-gray-400"
+                              }`}>
+                                {ep.statut}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
 
       {/* Modal création */}
@@ -7021,9 +7938,7 @@ function Sidebar({
             <Icon className="h-4 w-4 shrink-0" />
             <span className="flex-1">{label}</span>
             {badge !== undefined && badge > 0 && (
-              <span className="text-xs font-bold bg-amber-400 text-amber-900 rounded-full px-1.5 py-0.5 min-w-[20px] text-center">
-                {badge}
-              </span>
+              <span className="h-2 w-2 rounded-full bg-amber-400 shrink-0" />
             )}
           </button>
         ))}
@@ -7834,6 +8749,16 @@ function SallesSection() {
   const [addingS, setAddingS] = useState(false);
   const [addErr, setAddErr] = useState("");
   const [filterMatiere, setFilterMatiere] = useState("");
+  const [filterDate, setFilterDate] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkSalleId, setBulkSalleId] = useState<string>("");
+  const [bulkSallePrepId, setBulkSallePrepId] = useState<string>("");
+  // Salles par défaut
+  type SalleDefaut = { matiere: string; salle_id: number | null; salle_preparation_id: number | null; surveillant_id: number | null };
+  type SurveillantItem = { id: number; nom: string; prenom: string; actif: boolean };
+  const [defaults, setDefaults] = useState<SalleDefaut[]>([]);
+  const [savingDefaults, setSavingDefaults] = useState(false);
+  const [surveillants, setSurveillants] = useState<SurveillantItem[]>([]);
 
   const reloadSalles = useCallback(() => {
     get<Salle[]>("parametrages/salles/").then(setSalles).catch(() => {});
@@ -7845,30 +8770,65 @@ function SallesSection() {
   }, [reloadSalles]);
 
   useEffect(() => {
-    if (!planningId) { setEpreuves([]); return; }
+    if (!planningId) { setEpreuves([]); setDefaults([]); setSurveillants([]); return; }
     setLoading(true);
-    get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`)
-      .then(setEpreuves)
+    Promise.all([
+      get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`),
+      get<SalleDefaut[]>(`plannings/${planningId}/salle-defaults`),
+      get<SurveillantItem[]>(`surveillants/?planning_id=${planningId}`),
+    ])
+      .then(([eps, defs, survs]) => { setEpreuves(eps); setDefaults(defs); setSurveillants(survs); })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [planningId]);
 
-  async function assignSalle(
-    epreuveId: number,
-    field: "salle_id" | "salle_preparation_id",
+  async function saveDefaults() {
+    if (!planningId) return;
+    setSavingDefaults(true);
+    try {
+      const saved = await put<SalleDefaut[]>(`plannings/${planningId}/salle-defaults`, defaults);
+      setDefaults(saved);
+      toast.success("Défauts enregistrés");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Erreur"); }
+    finally { setSavingDefaults(false); }
+  }
+
+  async function applyDefaults() {
+    if (!planningId) return;
+    setSavingDefaults(true);
+    try {
+      await put(`plannings/${planningId}/salle-defaults`, defaults);
+      const r = await post<{ updated: number }>(`plannings/${planningId}/salle-defaults/apply`, {});
+      toast.success(`${r.updated} épreuve(s) mise(s) à jour`);
+      const eps = await get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`);
+      setEpreuves(eps);
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Erreur"); }
+    finally { setSavingDefaults(false); }
+  }
+
+  async function assignSalleBulk(
+    date: string,
+    matiere: string,
+    field: "salle_id" | "salle_preparation_id" | "surveillant_id",
     value: number | null
   ) {
-    setSaving(epreuveId);
+    const targets = epreuves.filter((e) => e.date === date && e.matiere === matiere);
+    setSaving(-1);
     try {
-      await patch(`plannings/${planningId}/epreuves/${epreuveId}`, { [field]: value });
-      const intituleField = field === "salle_id" ? "salle_intitule" : "salle_preparation_intitule";
-      const salle = salles.find((s) => s.id === value) ?? null;
+      await Promise.all(
+        targets.map((e) => patch(`plannings/${planningId}/epreuves/${e.id}`, { [field]: value }))
+      );
       setEpreuves((prev) =>
-        prev.map((e) =>
-          e.id === epreuveId
-            ? { ...e, [field]: value, [intituleField]: salle?.intitule ?? null }
-            : e
-        )
+        prev.map((e) => {
+          if (e.date !== date || e.matiere !== matiere) return e;
+          if (field === "surveillant_id") {
+            const surv = surveillants.find((s) => s.id === value) ?? null;
+            return { ...e, surveillant_id: value, surveillant_nom: surv?.nom ?? null, surveillant_prenom: surv?.prenom ?? null };
+          }
+          const intituleField = field === "salle_id" ? "salle_intitule" : "salle_preparation_intitule";
+          const salle = salles.find((s) => s.id === value) ?? null;
+          return { ...e, [field]: value, [intituleField]: salle?.intitule ?? null };
+        })
       );
     } finally {
       setSaving(null);
@@ -7901,14 +8861,67 @@ function SallesSection() {
     setSalles((prev) => prev.filter((s) => s.id !== id));
   }
 
-  // Grouper par date
+  async function applyBulkSelection() {
+    if (selected.size === 0) return;
+    setSaving(-1);
+    try {
+      await Promise.all(
+        Array.from(selected).flatMap((key) => {
+          const [date, matiere] = key.split("||");
+          const targets = epreuves.filter((e) => e.date === date && e.matiere === matiere);
+          return targets.flatMap((e) => {
+            const calls = [];
+            if (bulkSalleId !== "") calls.push(patch(`plannings/${planningId}/epreuves/${e.id}`, { salle_id: bulkSalleId ? Number(bulkSalleId) : null }));
+            if (bulkSallePrepId !== "") calls.push(patch(`plannings/${planningId}/epreuves/${e.id}`, { salle_preparation_id: bulkSallePrepId ? Number(bulkSallePrepId) : null }));
+            return calls;
+          });
+        })
+      );
+      setEpreuves((prev) =>
+        prev.map((e) => {
+          const key = `${e.date}||${e.matiere}`;
+          if (!selected.has(key)) return e;
+          const updates: Partial<EpreuveFlat> = {};
+          if (bulkSalleId !== "") {
+            updates.salle_id = bulkSalleId ? Number(bulkSalleId) : null;
+            updates.salle_intitule = salles.find((s) => s.id === Number(bulkSalleId))?.intitule ?? null;
+          }
+          if (bulkSallePrepId !== "") {
+            updates.salle_preparation_id = bulkSallePrepId ? Number(bulkSallePrepId) : null;
+            updates.salle_preparation_intitule = salles.find((s) => s.id === Number(bulkSallePrepId))?.intitule ?? null;
+          }
+          return { ...e, ...updates };
+        })
+      );
+      setSelected(new Set());
+      setBulkSalleId("");
+      setBulkSallePrepId("");
+      toast.success(`Salle affectée à ${selected.size} groupe(s)`);
+    } finally {
+      setSaving(null);
+    }
+  }
+
   const matieres = Array.from(new Set(epreuves.map((e) => e.matiere))).sort();
-  const filtered = filterMatiere ? epreuves.filter((e) => e.matiere === filterMatiere) : epreuves;
-  const byDate = filtered.reduce<Record<string, EpreuveFlat[]>>((acc, e) => {
-    (acc[e.date] ??= []).push(e);
+  const filtered = epreuves
+    .filter((e) => !filterMatiere || e.matiere === filterMatiere)
+    .filter((e) => !filterDate || e.date === filterDate);
+
+  // Grouper par (date, matière)
+  type GroupKey = { date: string; matiere: string };
+  const groupMap = filtered.reduce<Record<string, EpreuveFlat[]>>((acc, e) => {
+    const k = `${e.date}||${e.matiere}`;
+    (acc[k] ??= []).push(e);
     return acc;
   }, {});
-  const dates = Object.keys(byDate).sort();
+  const groups: (GroupKey & { epreuves: EpreuveFlat[] })[] = Object.entries(groupMap)
+    .map(([k, eps]) => {
+      const [date, matiere] = k.split("||");
+      return { date, matiere, epreuves: eps };
+    })
+    .sort((a, b) => a.date.localeCompare(b.date) || a.matiere.localeCompare(b.matiere));
+
+  const dates = Array.from(new Set(groups.map((g) => g.date))).sort();
 
   const activeSalles = salles.filter((s) => s.active);
 
@@ -7983,6 +8996,84 @@ function SallesSection() {
 
         {/* Panneau épreuves */}
         <div className="flex-1 min-w-0 space-y-4">
+
+          {/* Salles par défaut */}
+          {planningId !== "" && (
+            <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-black/50 uppercase tracking-wide">Salles par défaut par matière</p>
+                  <p className="text-[11px] text-black/30 mt-0.5">Appliquées automatiquement à la génération et à l'ajout de créneau</p>
+                </div>
+                <button onClick={applyDefaults} disabled={savingDefaults} className="text-xs px-3 py-1.5 rounded-lg text-white font-medium hover:opacity-90 transition disabled:opacity-40 flex items-center gap-1.5" style={{ backgroundColor: RED }}>
+                  {savingDefaults && <Loader2 className="h-3 w-3 animate-spin" />}
+                  Appliquer à toutes les épreuves
+                </button>
+              </div>
+              {matieres.length === 0 ? (
+                <p className="text-xs text-black/30">Aucune matière trouvée pour ce planning.</p>
+              ) : (
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-black/5">
+                      <th className="text-left py-1.5 text-black/40 font-medium w-36">Matière</th>
+                      <th className="text-left py-1.5 text-black/60 font-semibold">Salle d'examen</th>
+                      <th className="text-left py-1.5 text-black/40 font-medium">Salle de préparation</th>
+                      <th className="text-left py-1.5 text-black/40 font-medium">Surveillant</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matieres.map((m) => {
+                      const d = defaults.find((x) => x.matiere === m);
+                      const setD = (patch: Partial<SalleDefaut>) =>
+                        setDefaults((prev) => {
+                          const next = prev.filter((x) => x.matiere !== m);
+                          return [...next, { matiere: m, salle_id: d?.salle_id ?? null, salle_preparation_id: d?.salle_preparation_id ?? null, surveillant_id: d?.surveillant_id ?? null, ...patch }];
+                        });
+                      return (
+                        <tr key={m} className="border-b border-black/[0.04] last:border-0">
+                          <td className="py-2 font-medium text-black/70">{m}</td>
+                          <td className="py-2 pr-3">
+                            <select
+                              value={d?.salle_id ?? ""}
+                              onChange={(e) => setD({ salle_id: e.target.value ? Number(e.target.value) : null })}
+                              className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[120px]"
+                            >
+                              <option value="">— Aucune —</option>
+                              {activeSalles.map((s) => <option key={s.id} value={s.id}>{s.intitule}</option>)}
+                            </select>
+                          </td>
+                          <td className="py-2 pr-3">
+                            <select
+                              value={d?.salle_preparation_id ?? ""}
+                              onChange={(e) => setD({ salle_preparation_id: e.target.value ? Number(e.target.value) : null })}
+                              className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[120px]"
+                            >
+                              <option value="">— Aucune —</option>
+                              {activeSalles.map((s) => <option key={s.id} value={s.id}>{s.intitule}</option>)}
+                            </select>
+                          </td>
+                          <td className="py-2">
+                            <select
+                              value={d?.surveillant_id ?? ""}
+                              onChange={(e) => setD({ surveillant_id: e.target.value ? Number(e.target.value) : null })}
+                              className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[140px]"
+                            >
+                              <option value="">— Aucun —</option>
+                              {surveillants.filter((s) => s.actif).map((s) => (
+                                <option key={s.id} value={s.id}>{s.nom} {s.prenom}</option>
+                              ))}
+                            </select>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
           {/* Sélection planning + filtre matière */}
           <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-4 flex gap-3 flex-wrap">
             <div className="flex-1 min-w-[180px]">
@@ -8011,7 +9102,68 @@ function SallesSection() {
                 </select>
               </div>
             )}
+            {dates.length > 0 && (
+              <div className="flex-1 min-w-[160px]">
+                <label className="text-xs text-black/40 mb-1 block">Filtrer par journée</label>
+                <select
+                  value={filterDate}
+                  onChange={(e) => setFilterDate(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-black/15"
+                >
+                  <option value="">Toutes</option>
+                  {Array.from(new Set(epreuves.map((e) => e.date))).sort().map((d) => (
+                    <option key={d} value={d}>
+                      {new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
+
+          {/* Barre de sélection groupée */}
+          {selected.size > 0 && (
+            <div className="bg-white rounded-2xl border border-black/5 shadow-sm px-4 py-3 flex items-center gap-3 flex-wrap">
+              <span className="text-xs font-semibold text-black/60">{selected.size} groupe(s) sélectionné(s)</span>
+              <select
+                value={bulkSalleId}
+                onChange={(e) => setBulkSalleId(e.target.value)}
+                className="border rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15"
+              >
+                <option value="">— Salle d'examen —</option>
+                <option value="null">Aucune</option>
+                {activeSalles.map((s) => <option key={s.id} value={s.id}>{s.intitule}</option>)}
+              </select>
+              <select
+                value={bulkSallePrepId}
+                onChange={(e) => setBulkSallePrepId(e.target.value)}
+                className="border rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15"
+              >
+                <option value="">— Salle de préparation —</option>
+                <option value="null">Aucune</option>
+                {activeSalles.map((s) => <option key={s.id} value={s.id}>{s.intitule}</option>)}
+              </select>
+              <button
+                onClick={applyBulkSelection}
+                disabled={saving === -1 || (bulkSalleId === "" && bulkSallePrepId === "")}
+                className="px-3 py-1.5 rounded-lg text-xs text-white font-medium disabled:opacity-40 transition"
+                style={{ backgroundColor: RED }}
+              >
+                Appliquer
+              </button>
+              <button onClick={() => setSelected(new Set())} className="text-xs text-black/40 hover:text-black/60 transition ml-auto">
+                Annuler
+              </button>
+            </div>
+          )}
+
+          {/* Modifications ponctuelles */}
+          {planningId !== "" && dates.length > 0 && (
+            <div className="flex items-center gap-2 pt-1">
+              <p className="text-xs font-semibold text-black/40 uppercase tracking-wide">Modifications ponctuelles</p>
+              <div className="flex-1 h-px bg-black/[0.06]" />
+            </div>
+          )}
 
           {/* Tableau */}
           {loading ? (
@@ -8029,67 +9181,116 @@ function SallesSection() {
             </div>
           ) : (
             <div className="space-y-4">
-              {dates.map((date) => (
-                <div key={date} className="bg-white rounded-2xl border border-black/5 shadow-sm overflow-hidden">
-                  <div className="px-4 py-2.5 bg-black/[0.02] border-b border-black/5">
-                    <span className="text-xs font-semibold text-black/50">
-                      {new Date(date + "T12:00:00").toLocaleDateString("fr-FR", {
-                        weekday: "long", day: "numeric", month: "long",
-                      })}
-                    </span>
+              {dates.map((date) => {
+                const dayGroups = groups.filter((g) => g.date === date);
+                return (
+                  <div key={date} className="bg-white rounded-2xl border border-black/5 shadow-sm overflow-hidden">
+                    <div className="px-4 py-2.5 bg-black/[0.02] border-b border-black/5">
+                      <span className="text-xs font-semibold text-black/50">
+                        {new Date(date + "T12:00:00").toLocaleDateString("fr-FR", {
+                          weekday: "long", day: "numeric", month: "long",
+                        })}
+                      </span>
+                    </div>
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-black/5">
+                          <th className="px-4 py-2 w-8">
+                            <input
+                              type="checkbox"
+                              checked={dayGroups.every((g) => selected.has(`${g.date}||${g.matiere}`))}
+                              onChange={(e) => {
+                                setSelected((prev) => {
+                                  const next = new Set(prev);
+                                  dayGroups.forEach((g) => {
+                                    const k = `${g.date}||${g.matiere}`;
+                                    e.target.checked ? next.add(k) : next.delete(k);
+                                  });
+                                  return next;
+                                });
+                              }}
+                              className="cursor-pointer"
+                            />
+                          </th>
+                          <th className="text-left px-4 py-2 text-black/40 font-medium w-36">Matière</th>
+                          <th className="text-left px-4 py-2 text-black/40 font-medium w-20">Créneaux</th>
+                          <th className="text-left px-4 py-2 text-black/60 font-semibold">Salle d'examen</th>
+                          <th className="text-left px-4 py-2 text-black/40 font-medium">Salle de préparation</th>
+                          <th className="text-left px-4 py-2 text-black/40 font-medium">Surveillant</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dayGroups.map((g) => {
+                          const key = `${g.date}||${g.matiere}`;
+                          const isSelected = selected.has(key);
+                          const salleId = g.epreuves[0]?.salle_id ?? null;
+                          const sallesPrepId = g.epreuves[0]?.salle_preparation_id ?? null;
+                          const surveillantId = g.epreuves[0]?.surveillant_id ?? null;
+                          return (
+                            <tr key={g.matiere} className={`border-b border-black/[0.04] last:border-0 ${isSelected ? "bg-amber-50/60" : "hover:bg-black/[0.01]"}`}>
+                              <td className="px-4 py-2.5">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={(e) => {
+                                    setSelected((prev) => {
+                                      const next = new Set(prev);
+                                      e.target.checked ? next.add(key) : next.delete(key);
+                                      return next;
+                                    });
+                                  }}
+                                  className="cursor-pointer"
+                                />
+                              </td>
+                              <td className="px-4 py-2.5 font-medium text-black/70">{g.matiere}</td>
+                              <td className="px-4 py-2.5 text-black/40">{g.epreuves.length}</td>
+                              <td className="px-4 py-2.5">
+                                <select
+                                  value={salleId ?? ""}
+                                  onChange={(ev) => assignSalleBulk(g.date, g.matiere, "salle_id", ev.target.value ? Number(ev.target.value) : null)}
+                                  disabled={saving === -1}
+                                  className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[120px]"
+                                >
+                                  <option value="">— Aucune —</option>
+                                  {activeSalles.map((s) => (
+                                    <option key={s.id} value={s.id}>{s.intitule}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="px-4 py-2.5">
+                                <select
+                                  value={sallesPrepId ?? ""}
+                                  onChange={(ev) => assignSalleBulk(g.date, g.matiere, "salle_preparation_id", ev.target.value ? Number(ev.target.value) : null)}
+                                  disabled={saving === -1}
+                                  className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[120px]"
+                                >
+                                  <option value="">— Aucune —</option>
+                                  {activeSalles.map((s) => (
+                                    <option key={s.id} value={s.id}>{s.intitule}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="px-4 py-2.5">
+                                <select
+                                  value={surveillantId ?? ""}
+                                  onChange={(ev) => assignSalleBulk(g.date, g.matiere, "surveillant_id", ev.target.value ? Number(ev.target.value) : null)}
+                                  disabled={saving === -1}
+                                  className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[140px]"
+                                >
+                                  <option value="">— Aucun —</option>
+                                  {surveillants.filter((s) => s.actif).map((s) => (
+                                    <option key={s.id} value={s.id}>{s.nom} {s.prenom}</option>
+                                  ))}
+                                </select>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-black/5">
-                        <th className="text-left px-4 py-2 text-black/40 font-medium w-20">Heure</th>
-                        <th className="text-left px-4 py-2 text-black/40 font-medium w-32">Matière</th>
-                        <th className="text-left px-4 py-2 text-black/60 font-semibold">Salle d'examen</th>
-                        <th className="text-left px-4 py-2 text-black/40 font-medium">Salle de préparation</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {byDate[date]
-                        .sort((a, b) => a.heure_debut.localeCompare(b.heure_debut))
-                        .map((e) => (
-                          <tr key={e.id} className="border-b border-black/[0.04] last:border-0 hover:bg-black/[0.01]">
-                            <td className="px-4 py-2 font-mono text-black/60">{e.heure_debut}</td>
-                            <td className="px-4 py-2 font-medium text-black/70">{e.matiere}</td>
-                            <td className="px-4 py-2">
-                              <select
-                                value={e.salle_id ?? ""}
-                                onChange={(ev) =>
-                                  assignSalle(e.id, "salle_id", ev.target.value ? Number(ev.target.value) : null)
-                                }
-                                disabled={saving === e.id}
-                                className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[120px]"
-                              >
-                                <option value="">— Aucune —</option>
-                                {activeSalles.map((s) => (
-                                  <option key={s.id} value={s.id}>{s.intitule}</option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className="px-4 py-2">
-                              <select
-                                value={e.salle_preparation_id ?? ""}
-                                onChange={(ev) =>
-                                  assignSalle(e.id, "salle_preparation_id", ev.target.value ? Number(ev.target.value) : null)
-                                }
-                                disabled={saving === e.id}
-                                className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[120px]"
-                              >
-                                <option value="">— Aucune —</option>
-                                {activeSalles.map((s) => (
-                                  <option key={s.id} value={s.id}>{s.intitule}</option>
-                                ))}
-                              </select>
-                            </td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

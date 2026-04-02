@@ -107,9 +107,12 @@ def add_bloc(jt_id: int, body: JourneeTypeBlocCreate, db: Session = Depends(get_
 
     data = body.model_dump()
     matieres = data.pop("matieres", None) or []
+    matieres_config = data.pop("matieres_config", None)
 
     bloc = JourneeTypeBloc(journee_type_id=jt_id, **data)
-    bloc.matieres = matieres
+    # Si matieres_config fourni, stocker les dicts (durées variables) ;
+    # sinon stocker les strings.
+    bloc.matieres = matieres_config if matieres_config else matieres
     db.add(bloc)
     db.commit()
     db.refresh(bloc)
@@ -123,9 +126,12 @@ def update_bloc(bloc_id: int, body: JourneeTypeBlocUpdate, db: Session = Depends
         raise HTTPException(status_code=404, detail="Bloc not found")
     data = body.model_dump()
     matieres = data.pop("matieres", None) or []
+    matieres_config = data.pop("matieres_config", None)
+    custom_matrix = data.pop("custom_matrix", None)
     for k, v in data.items():
         setattr(bloc, k, v)
-    bloc.matieres = matieres
+    bloc.matieres = matieres_config if matieres_config else matieres
+    bloc.custom_matrix = custom_matrix  # None = réinitialise à la formule N²
     db.commit()
     db.refresh(bloc)
     return bloc

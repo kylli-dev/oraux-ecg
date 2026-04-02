@@ -27,6 +27,9 @@ class GenerateEpreuvesIn(BaseModel):
 
     duree_minutes: int = Field(ge=5, le=240)
     pause_minutes: int = Field(ge=0, le=120)
+    preparation_minutes: int = Field(default=0, ge=0, le=120)
+    salles_par_matiere: int = Field(default=1, ge=1, le=50)
+    nb_slots: Optional[int] = Field(default=None, ge=1, le=1000)
     statut_initial: str = "CREE"
     skip_ranges: List[SkipRange] = Field(default_factory=list)
 

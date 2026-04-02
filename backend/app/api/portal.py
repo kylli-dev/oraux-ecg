@@ -1,7 +1,7 @@
 """
 Portail candidat (routes publiques ou protégées par JWT candidat — pas de clé admin).
 """
-from datetime import date as Date, datetime, timezone, time
+from datetime import date as Date, datetime, timezone, time, timedelta
 
 
 def _now_utc() -> datetime:
@@ -134,9 +134,12 @@ class ListeAttenteOut(BaseModel):
 class TripletEpreuveOut(BaseModel):
     id: int
     matiere: str
-    heure_debut: str
-    heure_fin: str
+    heure_debut: str       # heure début examen
+    heure_fin: str         # heure fin examen
+    heure_prepa: Optional[str] = None  # heure début préparation (si prep > 0)
     demi_journee_type: str  # MATIN / APRES_MIDI
+    salle_intitule: Optional[str] = None
+    salle_preparation_intitule: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -312,17 +315,41 @@ def _build_planning_out(c: Candidat, db: Session) -> PortalPlanningOut:
 
 # ── Triplets & Inscriptions (JWT) ─────────────────────────────────────────────
 
+def _heure_prepa(heure_debut, prep_min: Optional[int]) -> Optional[str]:
+    """Retourne l'heure de début de préparation (HH:MM), ou None si pas de prépa."""
+    if not prep_min:
+        return None
+    from datetime import datetime, timedelta
+    dt = datetime.combine(datetime(2000, 1, 1), heure_debut) - timedelta(minutes=prep_min)
+    return dt.strftime("%H:%M")
+
+
+# Matieres exclusives par profil : un candidat HGG ne passe pas ESH, et vice-versa
+_PROFIL_EXCLUSION: dict = {"HGG": "ESH", "ESH": "HGG"}
+
+
+def _profil_effectif(c) -> str:
+    """Retourne le profil HGG/ESH du candidat, en se rabattant sur la classe si profil est null."""
+    if c.profil:
+        return c.profil.strip().upper()
+    classe = (c.classe or "").upper()
+    if "ESH" in classe:
+        return "ESH"
+    if "HGG" in classe:
+        return "HGG"
+    return ""
+
+
 def _cutoff_date(planning: Planning) -> Date:
-    """Date minimale disponible à l'inscription selon l'heure de préavis."""
-    from datetime import date, time
+    """
+    Avant heure_previs : J+1 accessible (cutoff = J+1, soit demain disponible).
+    Après heure_previs  : J+1 inaccessible, J+2 minimum (cutoff = J+2).
+    """
     now = datetime.now()
     previs = planning.heure_previs or time(16, 0)
-    tomorrow = date.fromordinal(date.today().toordinal() + 1)
-    day_after = date.fromordinal(date.today().toordinal() + 2)
-    # Avant l'heure de préavis : J+1 disponible ; après : seulement J+2
-    if now.time() < previs:
-        return tomorrow
-    return day_after
+    if now.time() >= previs:
+        return Date.today() + timedelta(days=2)   # après préavis : J+2 minimum
+    return Date.today() + timedelta(days=1)        # avant préavis : J+1 minimum
 
 
 @router.get("/me/triplets", response_model=List[TripletOut])
@@ -363,69 +390,130 @@ def get_triplets(
     result = []
     for date in sorted(djs_by_date.keys()):
         djs_of_day = djs_by_date[date]
-        dj_ids = [dj.id for dj in djs_of_day]
 
-        # Toutes les épreuves du jour (pour reconstituer la grille complète)
-        all_epreuves = (
-            db.query(Epreuve)
-            .filter(Epreuve.demi_journee_id.in_(dj_ids))
-            .order_by(Epreuve.heure_debut, Epreuve.matiere)
-            .all()
-        )
-        if not all_epreuves:
-            continue
-
-        all_slots = sorted(set(e.heure_debut for e in all_epreuves))
-        matieres_sorted = sorted(set(e.matiere for e in all_epreuves))
-        N_rooms = len(matieres_sorted)
-        total_slots = len(all_slots)
-        offset = total_slots // N_rooms if N_rooms else 1
-
-        # Index rapide : (matiere, heure_debut) → épreuve LIBRE
-        libres: dict = {
-            (e.matiere, e.heure_debut): e
-            for e in all_epreuves
-            if e.statut == "LIBRE"
-        }
-
-        for k in range(total_slots):
-            assigned: list = []
-            valid = True
-            for i, matiere in enumerate(matieres_sorted):
-                slot_idx = (k + i * offset) % total_slots
-                epreuve = libres.get((matiere, all_slots[slot_idx]))
-                if epreuve is None:
-                    valid = False
-                    break
-                dj = next(d for d in djs_of_day if d.id == epreuve.demi_journee_id)
-                assigned.append((epreuve, dj))
-
-            if not valid or not assigned:
+        # Calculer les triplets PAR DEMI-JOURNÉE avec le modèle N² exact.
+        # offset = N (nombre de matières), itération par round de N² créneaux.
+        for dj in djs_of_day:
+            dj_epreuves = (
+                db.query(Epreuve)
+                .filter(Epreuve.demi_journee_id == dj.id)
+                .order_by(Epreuve.heure_debut, Epreuve.matiere)
+                .all()
+            )
+            if not dj_epreuves:
                 continue
 
-            heure_fin_last = max(e.heure_fin for e, _ in assigned)
-            epreuves_out = sorted(
-                [
-                    TripletEpreuveOut(
-                        id=e.id,
-                        matiere=e.matiere,
-                        heure_debut=str(e.heure_debut)[:5],
-                        heure_fin=str(e.heure_fin)[:5],
-                        demi_journee_type=dj.type,
-                    )
-                    for e, dj in assigned
-                ],
-                key=lambda x: x.heure_debut,
+            # Filtrage par profil candidat (HGG / ESH)
+            profil_upper = _profil_effectif(c)
+            matiere_exclue = _PROFIL_EXCLUSION.get(profil_upper)
+            if matiere_exclue:
+                had_exclusion = any(e.matiere.upper() == matiere_exclue for e in dj_epreuves)
+                dj_epreuves = [e for e in dj_epreuves if e.matiere.upper() != matiere_exclue]
+                # Si la demi-journée contient la matière de l'autre filière mais pas celle du candidat → ignorer
+                if had_exclusion and not any(e.matiere.upper() == profil_upper for e in dj_epreuves):
+                    continue
+
+            matieres_sorted = sorted(set(e.matiere for e in dj_epreuves))
+            N_rooms = len(matieres_sorted)
+            if N_rooms == 0:
+                continue
+
+            # Index : (matiere, heure_debut) → liste d'épreuves LIBRES
+            from collections import defaultdict as _dd
+            libres_multi: dict = _dd(list)
+            for e in dj_epreuves:
+                if e.statut == "LIBRE":
+                    libres_multi[(e.matiere, e.heure_debut)].append(e)
+
+            # Créneaux par matière
+            matiere_slots = {
+                m: sorted(set(e.heure_debut for e in dj_epreuves if e.matiere == m))
+                for m in matieres_sorted
+            }
+
+            # Détection du modèle : interleaved (même créneaux) vs séquentiel (fenêtres distinctes)
+            first_slots = set(matiere_slots[matieres_sorted[0]])
+            all_same_times = all(
+                set(matiere_slots[m]) == first_slots for m in matieres_sorted[1:]
             )
-            result.append(
-                TripletOut(
-                    date=date,
-                    heure_debut=all_slots[k],
-                    heure_fin=heure_fin_last,
-                    nb_epreuves=len(assigned),
-                    epreuves=epreuves_out,
+
+            triplet_candidates: list = []
+
+            if all_same_times:
+                # Modèle N² interleaved : candidat k fait matière i au créneau k + i*N
+                all_slots = sorted(first_slots)
+                total_slots = len(all_slots)
+                n_sq = N_rooms * N_rooms
+                offset = N_rooms
+                rounds = total_slots // n_sq if n_sq else 0
+                for round_idx in range(rounds):
+                    base = round_idx * n_sq
+                    for k in range(n_sq):
+                        candidate: list = []
+                        valid = True
+                        for i, matiere in enumerate(matieres_sorted):
+                            slot_idx = base + k + i * offset
+                            if slot_idx >= total_slots:
+                                valid = False
+                                break
+                            ep_list = libres_multi.get((matiere, all_slots[slot_idx]), [])
+                            if not ep_list:
+                                valid = False
+                                break
+                            candidate.append((ep_list[0], dj))
+                        if valid and candidate:
+                            triplet_candidates.append(candidate)
+            else:
+                # Modèle séquentiel : triplet k = chaque matière à son k-ème créneau
+                S = min(len(matiere_slots[m]) for m in matieres_sorted)
+                for k in range(S):
+                    candidate = []
+                    valid = True
+                    for matiere in matieres_sorted:
+                        slot = matiere_slots[matiere][k]
+                        ep_list = libres_multi.get((matiere, slot), [])
+                        if not ep_list:
+                            valid = False
+                            break
+                        candidate.append((ep_list[0], dj))
+                    if valid and candidate:
+                        triplet_candidates.append(candidate)
+
+            seen: set = set()
+            for assigned in triplet_candidates:
+                # Déduplication par combinaison d'épreuves
+                key = frozenset(e.id for e, _ in assigned)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                heure_debut_first = min(e.heure_debut for e, _ in assigned)
+                heure_fin_last = max(e.heure_fin for e, _ in assigned)
+                epreuves_out = sorted(
+                    [
+                        TripletEpreuveOut(
+                            id=e.id,
+                            matiere=e.matiere,
+                            heure_debut=str(e.heure_debut)[:5],
+                            heure_fin=str(e.heure_fin)[:5],
+                            heure_prepa=_heure_prepa(e.heure_debut, e.preparation_minutes),
+                            demi_journee_type=dj.type,
+                            salle_intitule=e.salle.intitule if e.salle else None,
+                            salle_preparation_intitule=e.salle_preparation.intitule if e.salle_preparation else None,
+                        )
+                        for e, dj in assigned
+                    ],
+                    key=lambda x: x.heure_prepa or x.heure_debut,
                 )
-            )
+                result.append(
+                    TripletOut(
+                        date=date,
+                        heure_debut=heure_debut_first,
+                        heure_fin=heure_fin_last,
+                        nb_epreuves=len(assigned),
+                        epreuves=epreuves_out,
+                    )
+                )
 
     return result
 
@@ -454,10 +542,13 @@ def get_inscription(
                 matiere=e.matiere,
                 heure_debut=str(e.heure_debut)[:5],
                 heure_fin=str(e.heure_fin)[:5],
+                heure_prepa=_heure_prepa(e.heure_debut, e.preparation_minutes),
                 demi_journee_type=dj.type,
+                salle_intitule=e.salle.intitule if e.salle else None,
+                salle_preparation_intitule=e.salle_preparation.intitule if e.salle_preparation else None,
             )
         )
-    epreuves_out.sort(key=lambda x: x.heure_debut)
+    epreuves_out.sort(key=lambda x: x.heure_prepa or x.heure_debut)
 
     # Récupérer la date depuis la première épreuve
     first_dj = db.get(DemiJournee, insc.epreuves[0].epreuve.demi_journee_id)
@@ -510,56 +601,113 @@ def s_inscrire_triplet(
             detail=f"Les inscriptions pour cette date sont closes (préavis : {planning.heure_previs}).",
         )
 
-    # Récupérer toutes les épreuves du jour pour reconstituer la grille de rotation
+    # Récupérer toutes les demi-journées du jour pour reconstituer la grille de rotation
+    from collections import defaultdict as _dd
+
     djs = (
         db.query(DemiJournee)
         .filter_by(planning_id=c.planning_id)
         .filter(DemiJournee.date == body.date)
+        .order_by(DemiJournee.heure_debut)
         .all()
     )
-    dj_ids = [dj.id for dj in djs]
-    if not dj_ids:
+    if not djs:
         raise HTTPException(status_code=404, detail="Aucune épreuve trouvée pour cette date.")
 
-    all_epreuves_day = (
-        db.query(Epreuve)
-        .filter(Epreuve.demi_journee_id.in_(dj_ids))
-        .order_by(Epreuve.heure_debut, Epreuve.matiere)
-        .all()
-    )
-    if not all_epreuves_day:
-        raise HTTPException(status_code=404, detail="Aucune épreuve trouvée pour cette date.")
+    # Même algorithme N² que get_triplets : traitement par demi-journée
+    epreuves_a_attribuer = None
+    djs_ref = []  # demi-journées concernées (pour la réponse)
 
-    all_slots = sorted(set(e.heure_debut for e in all_epreuves_day))
-    matieres_sorted = sorted(set(e.matiere for e in all_epreuves_day))
-    N_rooms = len(matieres_sorted)
-    total_slots = len(all_slots)
-    offset = total_slots // N_rooms if N_rooms else 1
+    for dj in djs:
+        dj_epreuves = (
+            db.query(Epreuve)
+            .filter(Epreuve.demi_journee_id == dj.id)
+            .order_by(Epreuve.heure_debut, Epreuve.matiere)
+            .all()
+        )
+        if not dj_epreuves:
+            continue
 
-    # Trouver k = index du créneau de départ choisi
-    if body.heure_debut not in all_slots:
-        raise HTTPException(status_code=400, detail="Créneau de départ invalide.")
-    k = all_slots.index(body.heure_debut)
+        # Filtrage par profil candidat (HGG / ESH)
+        profil_upper = _profil_effectif(c)
+        matiere_exclue = _PROFIL_EXCLUSION.get(profil_upper)
+        if matiere_exclue:
+            had_exclusion = any(e.matiere.upper() == matiere_exclue for e in dj_epreuves)
+            dj_epreuves = [e for e in dj_epreuves if e.matiere.upper() != matiere_exclue]
+            if had_exclusion and not any(e.matiere.upper() == profil_upper for e in dj_epreuves):
+                continue
 
-    # Index : (matiere, heure_debut) → épreuve LIBRE
-    libres_map = {
-        (e.matiere, e.heure_debut): e
-        for e in all_epreuves_day
-        if e.statut == "LIBRE"
-    }
+        matieres_sorted = sorted(set(e.matiere for e in dj_epreuves))
+        N_rooms = len(matieres_sorted)
+        if N_rooms == 0:
+            continue
 
-    # Calculer les épreuves de la rotation k
-    epreuves_a_attribuer = []
-    for i, matiere in enumerate(matieres_sorted):
-        slot_idx = (k + i * offset) % total_slots
-        target_heure = all_slots[slot_idx]
-        epreuve = libres_map.get((matiere, target_heure))
-        if epreuve is None:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Créneau indisponible pour {matiere} à {str(target_heure)[:5]}.",
-            )
-        epreuves_a_attribuer.append(epreuve)
+        libres_multi: dict = _dd(list)
+        for e in dj_epreuves:
+            if e.statut == "LIBRE":
+                libres_multi[(e.matiere, e.heure_debut)].append(e)
+
+        matiere_slots = {
+            m: sorted(set(e.heure_debut for e in dj_epreuves if e.matiere == m))
+            for m in matieres_sorted
+        }
+        first_slots = set(matiere_slots[matieres_sorted[0]])
+        all_same_times = all(
+            set(matiere_slots[m]) == first_slots for m in matieres_sorted[1:]
+        )
+
+        triplet_candidates: list = []
+
+        if all_same_times:
+            all_slots = sorted(first_slots)
+            total_slots = len(all_slots)
+            n_sq = N_rooms * N_rooms
+            offset = N_rooms
+            rounds = total_slots // n_sq if n_sq else 0
+            for round_idx in range(rounds):
+                base = round_idx * n_sq
+                for k in range(n_sq):
+                    candidate: list = []
+                    valid = True
+                    for i, matiere in enumerate(matieres_sorted):
+                        slot_idx = base + k + i * offset
+                        if slot_idx >= total_slots:
+                            valid = False
+                            break
+                        ep_list = libres_multi.get((matiere, all_slots[slot_idx]), [])
+                        if not ep_list:
+                            valid = False
+                            break
+                        candidate.append(ep_list[0])
+                    if valid and candidate:
+                        triplet_candidates.append(candidate)
+        else:
+            S = min(len(matiere_slots[m]) for m in matieres_sorted)
+            for k in range(S):
+                candidate = []
+                valid = True
+                for matiere in matieres_sorted:
+                    slot = matiere_slots[matiere][k]
+                    ep_list = libres_multi.get((matiere, slot), [])
+                    if not ep_list:
+                        valid = False
+                        break
+                    candidate.append(ep_list[0])
+                if valid and candidate:
+                    triplet_candidates.append(candidate)
+
+        for assigned in triplet_candidates:
+            heure_debut_first = min(e.heure_debut for e in assigned)
+            if heure_debut_first == body.heure_debut:
+                epreuves_a_attribuer = assigned
+                djs_ref = [dj] * len(assigned)
+                break
+
+        if epreuves_a_attribuer is not None:
+            break
+
+    if epreuves_a_attribuer is None:
+        raise HTTPException(status_code=400, detail="Créneau de départ invalide ou indisponible.")
 
     # Annuler l'inscription existante (swap atomique)
     ancienne = (
@@ -584,13 +732,14 @@ def s_inscrire_triplet(
         e.candidat_id = candidat_id
         e.statut = "ATTRIBUEE"
         db.add(InscriptionEpreuve(inscription_id=nouvelle.id, epreuve_id=e.id))
-        dj = next(d for d in djs if d.id == e.demi_journee_id)
+        dj = next(d for d in djs_ref if d.id == e.demi_journee_id)
         epreuves_out.append(
             TripletEpreuveOut(
                 id=e.id,
                 matiere=e.matiere,
                 heure_debut=str(e.heure_debut)[:5],
                 heure_fin=str(e.heure_fin)[:5],
+                heure_prepa=_heure_prepa(e.heure_debut, e.preparation_minutes),
                 demi_journee_type=dj.type,
             )
         )
