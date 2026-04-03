@@ -946,7 +946,7 @@ function EditPlanningForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const setF = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const setF = (k: string, v: string | boolean) => setForm((f) => ({ ...f, [k]: v }));
 
   const submit = async () => {
     setLoading(true);
