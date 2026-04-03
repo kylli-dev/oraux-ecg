@@ -144,6 +144,16 @@ def _run_migrations():
         "ALTER TABLE planning ADD COLUMN envoyer_convocations BOOLEAN NOT NULL DEFAULT TRUE",
         "ALTER TABLE planning ADD COLUMN interdire_modification_candidat BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE planning ADD COLUMN interdire_changement_creneau BOOLEAN NOT NULL DEFAULT FALSE",
+        # code_uai et code_acces sur examinateur et candidat
+        "ALTER TABLE examinateur ADD COLUMN code_uai VARCHAR(20)",
+        "ALTER TABLE examinateur ADD COLUMN code_acces VARCHAR(20)",
+        "ALTER TABLE candidat ADD COLUMN code_uai VARCHAR(20)",
+        "ALTER TABLE candidat ADD COLUMN code_acces VARCHAR(20)",
+        "ALTER TABLE candidat ADD COLUMN profil VARCHAR(10)",
+        # surveillant_id sur epreuve
+        "ALTER TABLE epreuve ADD COLUMN surveillant_id INTEGER REFERENCES surveillant(id) ON DELETE SET NULL",
+        # heure_previs sur planning
+        "ALTER TABLE planning ADD COLUMN heure_previs TIME",
         # Examinateurs globaux : table de liaison examinateur ↔ planning
         "CREATE TABLE IF NOT EXISTS examinateur_planning (id SERIAL PRIMARY KEY, examinateur_id INTEGER NOT NULL REFERENCES examinateur(id) ON DELETE CASCADE, planning_id INTEGER NOT NULL REFERENCES planning(id) ON DELETE CASCADE, actif BOOLEAN NOT NULL DEFAULT TRUE, CONSTRAINT uq_ex_planning UNIQUE (examinateur_id, planning_id))",
         "INSERT INTO examinateur_planning (examinateur_id, planning_id, actif) SELECT id, planning_id, COALESCE(actif, TRUE) FROM examinateur WHERE planning_id IS NOT NULL ON CONFLICT (examinateur_id, planning_id) DO NOTHING",
