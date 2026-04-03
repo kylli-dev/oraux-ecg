@@ -7,7 +7,7 @@ from app.core.admin_guard import require_admin
 from app.db.deps import get_db
 from app.models.journee_type import JourneeType
 from app.models.journee_type_bloc import JourneeTypeBloc
-from app.schemas.journee_type import JourneeTypeCreate, JourneeTypeOut, JourneeTypePreviewOut, BlocParamsOut, PeriodePlanOut
+from app.schemas.journee_type import JourneeTypeCreate, JourneeTypeUpdate, JourneeTypeOut, JourneeTypePreviewOut, BlocParamsOut, PeriodePlanOut
 from app.services.generation import build_journee_plan
 from app.schemas.journee_type_bloc import JourneeTypeBlocCreate, JourneeTypeBlocOut, JourneeTypeBlocUpdate
 
@@ -78,6 +78,17 @@ def preview_journee_type(jt_id: int, db: Session = Depends(get_db)):
             for p in plans
         ],
     )
+
+
+@router.put("/{jt_id}", response_model=JourneeTypeOut)
+def update_journee_type(jt_id: int, body: JourneeTypeUpdate, db: Session = Depends(get_db)):
+    jt = db.get(JourneeType, jt_id)
+    if not jt:
+        raise HTTPException(status_code=404, detail="JourneeType not found")
+    jt.nom = body.nom
+    db.commit()
+    db.refresh(jt)
+    return jt
 
 
 @router.delete("/{jt_id}", status_code=204)

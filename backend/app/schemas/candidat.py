@@ -3,7 +3,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
-ALLOWED_STATUT = {"INSCRIT", "CONFIRME", "ANNULE"}
+ALLOWED_STATUT = {"IMPORTE", "INSCRIT", "CONFIRME", "ANNULE"}
 
 
 class CandidatCreate(BaseModel):

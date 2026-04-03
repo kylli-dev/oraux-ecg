@@ -26,6 +26,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-oraux}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-oraux}
       ADMIN_API_KEY: ${ADMIN_API_KEY:?ADMIN_API_KEY required}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY required}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
     depends_on:
       db:
         condition: service_healthy

@@ -4,7 +4,6 @@ from pydantic import BaseModel, Field
 
 
 class ExaminateurCreate(BaseModel):
-    planning_id: int
     nom: str = Field(min_length=1, max_length=100)
     prenom: str = Field(min_length=1, max_length=100)
     email: str = Field(min_length=1, max_length=255)
@@ -13,7 +12,6 @@ class ExaminateurCreate(BaseModel):
     etablissement: Optional[str] = Field(default=None, max_length=200)
     telephone: Optional[str] = Field(default=None, max_length=30)
     commentaire: Optional[str] = Field(default=None, max_length=1000)
-    actif: bool = True
 
 
 class ExaminateurUpdate(BaseModel):
@@ -30,7 +28,6 @@ class ExaminateurUpdate(BaseModel):
 
 class ExaminateurOut(BaseModel):
     id: int
-    planning_id: int
     nom: str
     prenom: str
     email: str
@@ -41,6 +38,8 @@ class ExaminateurOut(BaseModel):
     commentaire: Optional[str] = None
     actif: bool
     code_acces: str
+    # Présent uniquement quand la liste est filtrée par planning_id
+    actif_planning: Optional[bool] = None
 
     class Config:
         from_attributes = True

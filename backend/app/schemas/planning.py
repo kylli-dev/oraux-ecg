@@ -49,6 +49,9 @@ class PlanningOut(BaseModel):
     date_fermeture_inscriptions: datetime
     statut: str
     heure_previs: Optional[time] = None
+    envoyer_convocations: bool = True
+    interdire_modification_candidat: bool = False
+    interdire_changement_creneau: bool = False
 
     class Config:
         from_attributes = True
@@ -62,6 +65,9 @@ class PlanningUpdate(BaseModel):
     date_fermeture_inscriptions: Optional[datetime] = None
     statut: Optional[str] = None
     heure_previs: Optional[time] = None
+    envoyer_convocations: Optional[bool] = None
+    interdire_modification_candidat: Optional[bool] = None
+    interdire_changement_creneau: Optional[bool] = None
 
     @field_validator("statut")
     @classmethod

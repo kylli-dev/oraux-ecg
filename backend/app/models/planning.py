@@ -1,4 +1,4 @@
-from sqlalchemy import Date, DateTime, Time, String, CheckConstraint, func
+from sqlalchemy import Date, DateTime, Time, String, Boolean, CheckConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 import datetime
 
@@ -23,6 +23,11 @@ class Planning(Base):
     )
 
     statut: Mapped[str] = mapped_column(String(20), nullable=False, default="BROUILLON")
+
+    # Paramètres comportementaux
+    envoyer_convocations: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    interdire_modification_candidat: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    interdire_changement_creneau: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

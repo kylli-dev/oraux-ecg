@@ -68,7 +68,7 @@ class Candidat(Base):
         String(20), unique=True, nullable=False, default=_gen_code
     )
 
-    statut: Mapped[str] = mapped_column(String(20), nullable=False, default="INSCRIT")
+    statut: Mapped[str] = mapped_column(String(20), nullable=False, default="IMPORTE")
 
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -194,6 +194,9 @@ def change_password(
     c = db.get(Candidat, candidat_id)
     if not c:
         raise HTTPException(status_code=404, detail="Candidat introuvable")
+    planning = db.get(Planning, c.planning_id)
+    if planning and planning.interdire_modification_candidat:
+        raise HTTPException(status_code=403, detail="La modification du profil est interdite pour ce planning.")
     if not c.password_hash or not verify_password(body.current_password, c.password_hash):
         raise HTTPException(status_code=401, detail="Mot de passe actuel incorrect")
     if len(body.new_password) < 8:
@@ -601,6 +604,19 @@ def s_inscrire_triplet(
             detail=f"Les inscriptions pour cette date sont closes (préavis : {planning.heure_previs}).",
         )
 
+    # Vérifier l'interdiction de changement de créneau (si déjà inscrit)
+    if planning.interdire_changement_creneau:
+        inscription_active = (
+            db.query(Inscription)
+            .filter_by(candidat_id=candidat_id, statut="ACTIVE")
+            .first()
+        )
+        if inscription_active:
+            raise HTTPException(
+                status_code=403,
+                detail="Le changement de créneau est interdit pour ce planning.",
+            )
+
     # Récupérer toutes les demi-journées du jour pour reconstituer la grille de rotation
     from collections import defaultdict as _dd
 
@@ -744,8 +760,10 @@ def s_inscrire_triplet(
             )
         )
 
+    candidat.statut = "INSCRIT"
     db.commit()
-    # TODO: envoyer Message-type Convocation
+    if planning.envoyer_convocations:
+        pass  # TODO: envoyer Message-type Convocation par email
 
     return InscriptionActiveOut(
         id=nouvelle.id,
@@ -769,6 +787,8 @@ def annuler_inscription(
     planning = db.get(Planning, db.get(Candidat, candidat_id).planning_id)
     if planning.statut != "OUVERT":
         raise HTTPException(status_code=403, detail="Les inscriptions ne sont pas ouvertes.")
+    if planning.interdire_changement_creneau:
+        raise HTTPException(status_code=403, detail="La désinscription est interdite pour ce planning.")
     now = _now_utc()
     if now > _ensure_naive(planning.date_fermeture_inscriptions):
         raise HTTPException(status_code=403, detail="La période d'inscription est terminée.")
@@ -786,6 +806,7 @@ def annuler_inscription(
         ie.epreuve.statut = "LIBRE"
     insc.statut = "ANNULEE"
     insc.cancelled_at = _now_utc()
+    db.get(Candidat, candidat_id).statut = "IMPORTE"
     db.commit()
     # TODO: envoyer Message-type Désinscription
 

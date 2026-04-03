@@ -78,6 +78,8 @@ type EpreuveCard = {
   examinateur_id?: number | null;
   examinateur_nom?: string | null;
   examinateur_prenom?: string | null;
+  planche_id?: number | null;
+  planche_nom?: string | null;
 };
 
 type DemiJournee = {
@@ -690,6 +692,8 @@ export default function PlanificationView({ planning, onBack }: { planning: Plan
   // Drag triplet row (Niveau 2)
   const [pendingSwapSlot, setPendingSwapSlot] = useState<string | null>(null);
   const [swapWarning, setSwapWarning] = useState<string | null>(null);
+  // Warning planche (persistant — fermeture manuelle)
+  const [plancheWarnings, setPlancheWarnings] = useState<string[]>([]);
 
   // Nouvelle session (Niveau 1)
   const [newSessionType, setNewSessionType] = useState<"MATIN" | "APRES_MIDI" | null>(null);
@@ -728,8 +732,22 @@ export default function PlanificationView({ planning, onBack }: { planning: Plan
   async function assignCandidat(candidatId: number, epreuveId: number) {
     setPendingEpreuveId(epreuveId);
     try {
+      const allEpreuves = (dayData?.demi_journees ?? []).flatMap(dj => dj.epreuves);
+      const destEp = allEpreuves.find(e => e.id === epreuveId);
+      const srcEp = allEpreuves.find(e => e.candidat_id === candidatId);
+
       await apiFetch("POST", `candidats/epreuves/${epreuveId}/assigner`, { candidat_id: candidatId });
       await loadDay();
+
+      // Avertir si des planches sont concernées par ce mouvement
+      const destHasPlanche = destEp?.planche_id != null;
+      const srcHasPlanche = srcEp?.planche_id != null;
+      if (destHasPlanche || srcHasPlanche) {
+        const msgs: string[] = [];
+        if (destHasPlanche) msgs.push(`Créneau ${destEp!.heure_debut} ${destEp!.matiere} : la planche « ${destEp!.planche_nom} » peut ne plus correspondre au nouveau candidat.`);
+        if (srcHasPlanche) msgs.push(`Créneau ${srcEp!.heure_debut} ${srcEp!.matiere} : la planche « ${srcEp!.planche_nom} » est maintenant sans candidat.`);
+        setPlancheWarnings(prev => [...prev, ...msgs]);
+      }
     } catch (err) { alert((err as Error).message); }
     finally { setPendingEpreuveId(null); }
   }
@@ -828,7 +846,7 @@ export default function PlanificationView({ planning, onBack }: { planning: Plan
         </button>
       </div>
 
-      {/* Avertissement échange (Niveau 2 — non bloquant) */}
+      {/* Avertissement échange de lignes (Niveau 2 — auto-dismiss) */}
       {swapWarning && (
         <div className="shrink-0 flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-800">
           <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
@@ -836,6 +854,25 @@ export default function PlanificationView({ planning, onBack }: { planning: Plan
           <button onClick={() => setSwapWarning(null)} className="ml-auto text-amber-500 hover:text-amber-700">
             <X className="h-3.5 w-3.5" />
           </button>
+        </div>
+      )}
+
+      {/* Avertissement planches (persistant — fermeture manuelle requise) */}
+      {plancheWarnings.length > 0 && (
+        <div className="shrink-0 px-4 py-3 bg-orange-50 border-b border-orange-300 text-xs text-orange-900">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-semibold mb-1">Planches à vérifier après ce déplacement</p>
+              <ul className="space-y-0.5">
+                {plancheWarnings.map((w, i) => <li key={i}>• {w}</li>)}
+              </ul>
+              <p className="mt-1.5 text-orange-700">Rendez-vous dans la section <strong>Planches</strong> pour réassigner les sujets PDF.</p>
+            </div>
+            <button onClick={() => setPlancheWarnings([])} className="text-orange-400 hover:text-orange-600 shrink-0">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
       )}
 

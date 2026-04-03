@@ -6,6 +6,7 @@ from app.core.admin_guard import require_admin
 from app.db.deps import get_db
 from app.models.examinateur import Examinateur
 from app.models.examinateur_indisponibilite import ExaminateurIndisponibilite
+from app.models.examinateur_planning import ExaminateurPlanning
 from app.models.epreuve import Epreuve
 from app.models.demi_journee import DemiJournee
 from app.schemas.examinateur import (
@@ -25,10 +26,20 @@ router = APIRouter(
 
 @router.get("/", response_model=List[ExaminateurOut])
 def list_examinateurs(planning_id: Optional[int] = None, db: Session = Depends(get_db)):
-    q = db.query(Examinateur)
-    if planning_id:
-        q = q.filter_by(planning_id=planning_id)
-    return q.order_by(Examinateur.nom, Examinateur.prenom).all()
+    examinateurs = db.query(Examinateur).order_by(Examinateur.nom, Examinateur.prenom).all()
+    if not planning_id:
+        return examinateurs
+    # Enrichit chaque examinateur avec son statut pour ce planning
+    liens = {
+        ep.examinateur_id: ep.actif
+        for ep in db.query(ExaminateurPlanning).filter_by(planning_id=planning_id).all()
+    }
+    result = []
+    for ex in examinateurs:
+        out = ExaminateurOut.model_validate(ex)
+        out.actif_planning = liens.get(ex.id)  # None si non associé
+        result.append(out)
+    return result
 
 
 @router.post("/", response_model=ExaminateurOut, status_code=201)
@@ -66,15 +77,26 @@ def update_examinateur(examinateur_id: int, body: ExaminateurUpdate, db: Session
     return ex
 
 
-@router.patch("/{examinateur_id}/actif", response_model=ExaminateurOut)
-def toggle_actif(examinateur_id: int, body: dict, db: Session = Depends(get_db)):
+@router.patch("/{examinateur_id}/plannings/{planning_id}", response_model=ExaminateurOut)
+def set_actif_planning(examinateur_id: int, planning_id: int, body: dict, db: Session = Depends(get_db)):
+    """Crée ou met à jour l'association examinateur ↔ planning avec le flag actif."""
     ex = db.get(Examinateur, examinateur_id)
     if not ex:
         raise HTTPException(status_code=404, detail="Examinateur not found")
-    ex.actif = bool(body.get("actif", True))
+    actif = bool(body.get("actif", True))
+    lien = db.query(ExaminateurPlanning).filter_by(
+        examinateur_id=examinateur_id, planning_id=planning_id
+    ).first()
+    if lien:
+        lien.actif = actif
+    else:
+        lien = ExaminateurPlanning(examinateur_id=examinateur_id, planning_id=planning_id, actif=actif)
+        db.add(lien)
     db.commit()
     db.refresh(ex)
-    return ex
+    out = ExaminateurOut.model_validate(ex)
+    out.actif_planning = actif
+    return out
 
 
 @router.delete("/{examinateur_id}", status_code=204)

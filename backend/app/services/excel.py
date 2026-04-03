@@ -22,6 +22,7 @@ from app.models.candidat import Candidat
 from app.models.demi_journee import DemiJournee
 from app.models.epreuve import Epreuve
 from app.models.examinateur import Examinateur
+from app.models.examinateur_planning import ExaminateurPlanning
 from app.models.planning import Planning
 
 RED_HEX = "C62828"
@@ -314,7 +315,6 @@ def import_examinateurs(db: Session, planning_id: int, file_bytes: bytes) -> dic
             matieres = [m.strip() for m in matieres_raw.split(";") if m.strip()]
 
             ex = Examinateur(
-                planning_id=planning_id,
                 nom=nom,
                 prenom=prenom,
                 email=email,
@@ -323,6 +323,7 @@ def import_examinateurs(db: Session, planning_id: int, file_bytes: bytes) -> dic
             )
             db.add(ex)
             db.flush()
+            db.add(ExaminateurPlanning(examinateur_id=ex.id, planning_id=planning_id, actif=True))
             created.append({
                 "id": ex.id,
                 "nom": nom,
@@ -687,7 +688,7 @@ def import_candidats_complet(db: Session, planning_id: int, file_bytes: bytes) -
             email=_get(row, "EMAIL"),
             login=_get(row, "EMAIL"),
             password_hash=hash_password(plain_pwd, rounds=4),
-            statut="INSCRIT",
+            statut="IMPORTE",
             code_candidat=_get(row, "CODE_CANDIDAT"),
             numero_ine=_get(row, "NUMERO_INE"),
             civilite=_get(row, "CIVILITE"),

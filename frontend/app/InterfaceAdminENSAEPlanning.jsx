@@ -87,7 +87,7 @@ const TRIPLET_RING = [
 
 const STATUT_OPTIONS = [
   { value: "LIBRE",      label: "Libre",       icon: CheckCircle2, color: "#15803D", bg: "#F0FDF4" },
-  { value: "PRERESERVE", label: "Préréservé",   icon: Lock,         color: "#B45309", bg: "#FFFBEB" },
+  { value: "PRERESERVEE", label: "Préréservé",   icon: Lock,         color: "#B45309", bg: "#FFFBEB" },
   { value: "CREE",       label: "Créé",         icon: EyeOff,       color: "#7C3AED", bg: "#FAF5FF" },
 ];
 
@@ -1053,7 +1053,7 @@ export default function InterfaceAdminENSAEPlanning() {
   const handleTripletClick = useCallback((k) => {
     setTripletStatuts((prev) => {
       const current = prev[k] ?? "LIBRE";
-      const next = current === "LIBRE" ? "PRERESERVE" : current === "PRERESERVE" ? "CREE" : "LIBRE";
+      const next = current === "LIBRE" ? "PRERESERVEE" : current === "PRERESERVEE" ? "CREE" : "LIBRE";
       if (next === "LIBRE") {
         const { [k]: _, ...rest } = prev;
         return rest;

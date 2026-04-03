@@ -42,6 +42,7 @@ import {
   Mail,
   FileText,
   Save,
+  Pencil,
 } from "lucide-react";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -58,6 +59,9 @@ type Planning = {
   date_fermeture_inscriptions: string;
   statut: string;
   heure_previs: string | null;
+  envoyer_convocations: boolean;
+  interdire_modification_candidat: boolean;
+  interdire_changement_creneau: boolean;
 };
 
 type JourneeType = {
@@ -163,7 +167,6 @@ type PlancheItem = {
 
 type Examinateur = {
   id: number;
-  planning_id: number;
   nom: string;
   prenom: string;
   email: string;
@@ -174,6 +177,7 @@ type Examinateur = {
   commentaire: string | null;
   actif: boolean;
   code_acces: string;
+  actif_planning: boolean | null;
 };
 
 type Indisponibilite = {
@@ -680,22 +684,25 @@ function ErrorMsg({ msg }: { msg: string }) {
 }
 
 function StatutBadge({ statut }: { statut: string }) {
-  const map: Record<string, string> = {
-    BROUILLON: "bg-gray-100 text-gray-500",
-    OUVERT: "bg-green-100 text-green-700",
-    CLOS: "bg-black/10 text-black/50",
-    LIBRE: "bg-green-100 text-green-700",
-    CREE: "bg-gray-100 text-gray-500",
-    ATTRIBUEE: "bg-blue-100 text-blue-700",
-    EN_EVALUATION: "bg-yellow-100 text-yellow-700",
-    FINALISEE: "bg-purple-100 text-purple-700",
-    ANNULEE: "bg-red-100 text-red-500",
+  const map: Record<string, [string, string]> = {
+    BROUILLON:     ["bg-gray-100 text-gray-500",   "Brouillon"],
+    OUVERT:        ["bg-green-100 text-green-700",  "Ouvert"],
+    CLOS:          ["bg-black/10 text-black/50",    "Clos"],
+    LIBRE:         ["bg-green-100 text-green-700",  "Libre"],
+    CREE:          ["bg-gray-100 text-gray-500",    "Créé"],
+    ATTRIBUEE:     ["bg-blue-100 text-blue-700",    "Réservé"],
+    EN_EVALUATION: ["bg-yellow-100 text-yellow-700","En éval."],
+    FINALISEE:     ["bg-purple-100 text-purple-700","Finalisé"],
+    ANNULEE:       ["bg-red-100 text-red-500",      "Annulé"],
+    IMPORTE:       ["bg-gray-100 text-gray-400",    "À placer"],
+    INSCRIT:       ["bg-green-100 text-green-700",  "Inscrit"],
+    CONFIRME:      ["bg-blue-100 text-blue-700",    "Confirmé"],
+    ANNULE:        ["bg-red-100 text-red-500",      "Annulé"],
   };
+  const [cls, label] = map[statut] ?? ["bg-gray-100 text-gray-500", statut];
   return (
-    <span
-      className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${map[statut] ?? "bg-gray-100 text-gray-500"}`}
-    >
-      {statut}
+    <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>
+      {label}
     </span>
   );
 }
@@ -722,7 +729,6 @@ function PlanningsSection({
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [editPlanning, setEditPlanning] = useState<Planning | null>(null);
-  const [importPlanning, setImportPlanning] = useState<Planning | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -868,13 +874,6 @@ function PlanningsSection({
                         icon={Download}
                       />
                       <Btn
-                        label="Import"
-                        onClick={() => setImportPlanning(p)}
-                        small
-                        variant="ghost"
-                        icon={Upload}
-                      />
-                      <Btn
                         label="Supprimer"
                         onClick={() => handleDelete(p.id)}
                         small
@@ -921,21 +920,6 @@ function PlanningsSection({
         )}
       </Modal>
 
-      <Modal
-        open={!!importPlanning}
-        onClose={() => setImportPlanning(null)}
-        title={`Importer Excel — ${importPlanning?.nom ?? ""}`}
-      >
-        {importPlanning && (
-          <ImportPlanningForm
-            planningId={importPlanning.id}
-            onSuccess={() => {
-              setImportPlanning(null);
-              load();
-            }}
-          />
-        )}
-      </Modal>
     </div>
   );
 }
@@ -955,6 +939,9 @@ function EditPlanningForm({
     date_fermeture_inscriptions: planning.date_fermeture_inscriptions ?? "",
     statut: planning.statut,
     heure_previs: planning.heure_previs ?? "16:00",
+    envoyer_convocations: planning.envoyer_convocations ?? true,
+    interdire_modification_candidat: planning.interdire_modification_candidat ?? false,
+    interdire_changement_creneau: planning.interdire_changement_creneau ?? false,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -1006,6 +993,24 @@ function EditPlanningForm({
         <Field label="Heure de préavis">
           <Input type="time" value={form.heure_previs} onChange={(e) => setF("heure_previs", e.target.value)} />
         </Field>
+      </div>
+      <div className="space-y-2 rounded-xl border border-black/8 bg-gray-50/60 px-4 py-3">
+        <p className="text-[11px] font-semibold text-black/40 uppercase tracking-wide mb-1">Paramètres</p>
+        {([
+          { key: "envoyer_convocations", label: "Envoyer les convocations aux candidats" },
+          { key: "interdire_modification_candidat", label: "Interdire la modification par le candidat" },
+          { key: "interdire_changement_creneau", label: "Interdire le changement de créneau" },
+        ] as { key: keyof typeof form; label: string }[]).map(({ key, label }) => (
+          <label key={key} className="flex items-center gap-2.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={form[key] as boolean}
+              onChange={(e) => setF(key, e.target.checked)}
+              className="w-4 h-4 rounded border-black/20 accent-black"
+            />
+            <span className="text-sm text-black/70">{label}</span>
+          </label>
+        ))}
       </div>
       <ErrorMsg msg={error} />
       <Btn
@@ -1208,7 +1213,7 @@ function minToHm(total: number): string {
 function statutBadgeCell(statut: string) {
   if (statut === "LIBRE")
     return <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-medium bg-green-100 text-green-700">Libre</span>;
-  if (statut === "PRERESERVE")
+  if (statut === "PRERESERVEE")
     return <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-medium bg-amber-100 text-amber-700">Prérés.</span>;
   if (statut === "ATTRIBUEE")
     return <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-medium bg-blue-100 text-blue-700">Réservé</span>;
@@ -1225,7 +1230,7 @@ function rowStatut(byMat: Record<string, EpreuveFlat[]>): string {
   const statuts = new Set(all.map((e) => e.statut));
   if (statuts.has("ATTRIBUEE") || statuts.has("FINALISEE") || statuts.has("EN_EVALUATION")) return "ATTRIBUEE";
   if (statuts.has("LIBRE")) return "LIBRE";
-  if (statuts.has("PRERESERVE")) return "PRERESERVE";
+  if (statuts.has("PRERESERVEE")) return "PRERESERVEE";
   return all[0].statut;
 }
 
@@ -1322,7 +1327,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
         >
           <option value="">Tous les statuts</option>
           <option value="LIBRE">Libre</option>
-          <option value="PRERESERVE">Préréservé</option>
+          <option value="PRERESERVEE">Préréservé</option>
           <option value="ATTRIBUEE">Réservé</option>
           <option value="EN_EVALUATION">En évaluation</option>
           <option value="FINALISEE">Finalisé</option>
@@ -1378,7 +1383,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                   const rs = rowStatut(row.byMat);
                   const rowBg =
                     rs === "LIBRE" ? "bg-green-50/50"
-                    : rs === "PRERESERVE" ? "bg-amber-50/50"
+                    : rs === "PRERESERVEE" ? "bg-amber-50/50"
                     : rs === "ATTRIBUEE" ? "bg-blue-50/30"
                     : "";
 
@@ -1456,7 +1461,7 @@ function PlanningDaySection({
   onBack: () => void;
 }) {
   const matieres = useMatieres();
-  const [viewMode, setViewMode] = useState<"journee" | "tableau">("journee");
+  const [viewMode, setViewMode] = useState<"journee" | "tableau">("tableau");
   const [date, setDate] = useState(planning.date_debut);
   const [dayData, setDayData] = useState<DayViewData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1505,7 +1510,7 @@ function PlanningDaySection({
 
       {/* Onglets Vue journée / Vue tableau */}
       <div className="flex gap-1 mb-5 border-b border-black/10">
-        {(["journee", "tableau"] as const).map((m) => (
+        {(["tableau", "journee"] as const).map((m) => (
           <button
             key={m}
             onClick={() => setViewMode(m)}
@@ -1618,7 +1623,11 @@ function PlanningDaySection({
   );
 }
 
-const EPREUVE_STATUTS = ["CREE", "LIBRE", "ATTRIBUEE", "EN_EVALUATION", "FINALISEE", "ANNULEE"];
+const EPREUVE_STATUTS = ["CREE", "LIBRE", "PRERESERVEE", "ATTRIBUEE", "EN_EVALUATION", "FINALISEE", "ANNULEE"];
+const EPREUVE_STATUT_LABEL: Record<string, string> = {
+  CREE: "Créé", LIBRE: "Libre", PRERESERVEE: "Préréservé",
+  ATTRIBUEE: "Réservé", EN_EVALUATION: "En évaluation", FINALISEE: "Finalisé", ANNULEE: "Annulé",
+};
 
 function EpreuveRow({
   epreuve,
@@ -1641,6 +1650,7 @@ function EpreuveRow({
 
   const statutCls = (s: string) => {
     if (s === "LIBRE") return "bg-green-50 text-green-700";
+    if (s === "PRERESERVEE") return "bg-amber-50 text-amber-700";
     if (s === "ATTRIBUEE") return "bg-blue-50 text-blue-700";
     if (s === "CREE") return "bg-gray-50 text-gray-500";
     if (s === "EN_EVALUATION") return "bg-yellow-50 text-yellow-700";
@@ -1736,7 +1746,7 @@ function EpreuveRow({
                 onClick={() => setOpen((o) => !o)}
                 className={`text-xs px-2 py-0.5 rounded-full cursor-pointer hover:opacity-80 transition ${statutCls(epreuve.statut)}`}
               >
-                {epreuve.statut}
+                {EPREUVE_STATUT_LABEL[epreuve.statut] ?? epreuve.statut}
               </button>
             )}
             {open && (
@@ -1747,7 +1757,7 @@ function EpreuveRow({
                     onClick={() => handleStatut(s)}
                     className={`w-full text-left px-3 py-1.5 text-xs hover:bg-black/5 transition ${s === epreuve.statut ? "font-semibold" : ""}`}
                   >
-                    {s}
+                    {EPREUVE_STATUT_LABEL[s] ?? s}
                   </button>
                 ))}
               </div>
@@ -2216,12 +2226,28 @@ function BlocTimeline({
 }
 
 // ── JourneeTypeEditor ─────────────────────────────────────────────────────────
-function JourneeTypeEditor({ jt }: { jt: JourneeType }) {
+function JourneeTypeEditor({ jt, onRename }: { jt: JourneeType; onRename?: (newNom: string) => void }) {
   const toast = useToast();
   const confirm = useConfirm();
   const [blocs, setBlocs] = useState<Bloc[]>([]);
   const [selectedBlocId, setSelectedBlocId] = useState<number | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+
+  // Renommage
+  const [editingNom, setEditingNom] = useState(false);
+  const [nomValue, setNomValue] = useState(jt.nom);
+  const [savingNom, setSavingNom] = useState(false);
+  const saveNom = async () => {
+    if (!nomValue.trim() || nomValue === jt.nom) { setEditingNom(false); setNomValue(jt.nom); return; }
+    setSavingNom(true);
+    try {
+      await put(`journee-types/${jt.id}`, { nom: nomValue.trim() });
+      onRename?.(nomValue.trim());
+      toast.success("Nom mis à jour");
+      setEditingNom(false);
+    } catch { toast.error("Erreur lors de la sauvegarde"); }
+    finally { setSavingNom(false); }
+  };
 
   // Planning application
   const [plannings, setPlannings] = useState<Planning[]>([]);
@@ -2272,6 +2298,36 @@ function JourneeTypeEditor({ jt }: { jt: JourneeType }) {
     <div className="flex divide-x border-t">
       {/* ── Panneau gauche : Timeline + édition ── */}
       <div className="flex-1 p-5 min-w-0">
+        {/* Nom de la journée type */}
+        <div className="flex items-center gap-2 mb-4">
+          {editingNom ? (
+            <>
+              <input
+                autoFocus
+                className="flex-1 text-sm font-medium border border-black/20 rounded-lg px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-black/30"
+                value={nomValue}
+                onChange={(e) => setNomValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") saveNom(); if (e.key === "Escape") { setEditingNom(false); setNomValue(jt.nom); } }}
+              />
+              <button onClick={saveNom} disabled={savingNom} className="text-xs px-3 py-1 bg-black text-white rounded-lg font-medium disabled:opacity-40">
+                {savingNom ? "…" : "OK"}
+              </button>
+              <button onClick={() => { setEditingNom(false); setNomValue(jt.nom); }} className="text-xs text-black/40 hover:text-black/70 px-2 py-1">
+                Annuler
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => setEditingNom(true)}
+              className="text-sm font-medium text-black/70 hover:text-black flex items-center gap-1.5 group"
+              title="Modifier le nom"
+            >
+              {nomValue}
+              <Pencil className="h-3 w-3 text-black/20 group-hover:text-black/50 transition" />
+            </button>
+          )}
+        </div>
+
         <div className="flex items-center justify-between mb-4">
           <span className="text-xs font-semibold text-black/40 uppercase tracking-wide">
             Blocs ({blocs.length})
@@ -2507,6 +2563,7 @@ function JourneeTypesSection() {
               <div className="flex items-center justify-between px-5 py-4">
                 <div className="flex items-center gap-3">
                   <span className="font-medium">{jt.nom}</span>
+
                   <span className="text-xs text-black/30">
                     {jt.duree_defaut_minutes}min &bull; pause{" "}
                     {jt.pause_defaut_minutes}min
@@ -2544,7 +2601,7 @@ function JourneeTypesSection() {
                     transition={{ duration: 0.2 }}
                     className="overflow-hidden border-t"
                   >
-                    <JourneeTypeEditor jt={jt} />
+                    <JourneeTypeEditor jt={jt} onRename={(newNom) => setJts(prev => prev.map(j => j.id === jt.id ? { ...j, nom: newNom } : j))} />
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -2597,14 +2654,17 @@ type BlocWizard = {
   heure_debut: string;
   heure_fin: string;
   pause_minutes: number;
-  nb_slots: number | null;  // null → N² automatique
+  nb_slots: number | null;        // null → N² automatique (créneaux ORAL)
   matieres_config: MatiereConfig[];
+  pause_midi_slots: number;       // 0 = pas de pause ; >0 = créneaux de pause (journée complète)
+  pause_midi_after: number | null; // null = auto (moitié des créneaux oraux)
 };
 
 type WizardParams = {
   nom: string;
   salles_par_matiere: number;
   statut_initial: string;
+  mode: "demi-journee" | "journee-complete";
   blocs: BlocWizard[];
 };
 
@@ -2614,6 +2674,7 @@ type MatrixRow = {
   fin_exam: string;
   candidates: number[];
   bloc_idx: number;
+  isPause?: boolean;
 };
 
 function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, bloc_idx: number): MatrixRow[] {
@@ -2627,24 +2688,38 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
   const [efh, efm] = bloc.heure_fin.split(":").map(Number);
   const start = hh * 60 + mm;
   const end = efh * 60 + efm;
-  const available = end - start;
   const interval = maxDuree + bloc.pause_minutes;
   const slotDuration = maxPrep + maxDuree;
-  const maxSlots = interval > 0 ? Math.floor((available - slotDuration) / interval) + 1 : Nsq;
-  const total = bloc.nb_slots !== null ? bloc.nb_slots : Math.max(1, Math.floor(maxSlots / Nsq)) * Nsq;
-  return Array.from({ length: total }, (_, i) => {
-    const local_i = i % Nsq;
-    const dPrepa = start + i * interval;
-    const dExam = dPrepa + maxPrep;
-    const fExam = dExam + maxDuree;
-    return {
-      deb_prepa: minutesToHM(dPrepa),
-      deb_exam: minutesToHM(dExam),
-      fin_exam: minutesToHM(fExam),
+  const pauseSlots = bloc.pause_midi_slots ?? 0;
+  // Available time for oral only (subtract pause duration)
+  const availableOral = (end - start) - pauseSlots * interval;
+  const maxSlots = interval > 0 ? Math.floor((availableOral - slotDuration) / interval) + 1 : Nsq;
+  const nbOral = bloc.nb_slots !== null ? bloc.nb_slots : Math.max(1, Math.floor(maxSlots / Nsq)) * Nsq;
+  const pauseAfter = bloc.pause_midi_after ?? Math.ceil(nbOral / 2);
+
+  const rows: MatrixRow[] = [];
+  let t = start;
+  let oral = 0;
+  while (oral < nbOral) {
+    if (pauseSlots > 0 && oral === pauseAfter) {
+      for (let p = 0; p < pauseSlots; p++) {
+        rows.push({ deb_prepa: minutesToHM(t), deb_exam: minutesToHM(t + maxPrep), fin_exam: minutesToHM(t + maxPrep + maxDuree), candidates: [], bloc_idx, isPause: true });
+        t += interval;
+      }
+    }
+    const local_i = oral % Nsq;
+    rows.push({
+      deb_prepa: minutesToHM(t),
+      deb_exam: minutesToHM(t + maxPrep),
+      fin_exam: minutesToHM(t + maxPrep + maxDuree),
       candidates: Array.from({ length: N }, (_, j) => ((local_i - j * N) % Nsq + Nsq) % Nsq),
       bloc_idx,
-    };
-  });
+      isPause: false,
+    });
+    t += interval;
+    oral++;
+  }
+  return rows;
 }
 
 function buildMatrix(p: WizardParams): MatrixRow[] {
@@ -2655,14 +2730,15 @@ function buildMatrix(p: WizardParams): MatrixRow[] {
 function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
   const [step, setStep] = useState<1 | 2>(1);
   const allMatieres = useMatieres();
-  const DEFAULT_BLOC: BlocWizard = { heure_debut: "08:00", heure_fin: "13:00", pause_minutes: 0, nb_slots: null, matieres_config: [] };
+  const DEFAULT_BLOC: BlocWizard = { heure_debut: "08:00", heure_fin: "13:00", pause_minutes: 0, nb_slots: null, matieres_config: [], pause_midi_slots: 0, pause_midi_after: null };
   const [p, setP] = useState<WizardParams>({
     nom: "",
     salles_par_matiere: 1,
     statut_initial: "LIBRE",
+    mode: "demi-journee",
     blocs: [
-      { heure_debut: "08:00", heure_fin: "13:00", pause_minutes: 0, nb_slots: null, matieres_config: [] },
-      { heure_debut: "14:00", heure_fin: "18:00", pause_minutes: 0, nb_slots: null, matieres_config: [] },
+      { heure_debut: "08:00", heure_fin: "13:00", pause_minutes: 0, nb_slots: null, matieres_config: [], pause_midi_slots: 0, pause_midi_after: null },
+      { heure_debut: "14:00", heure_fin: "18:00", pause_minutes: 0, nb_slots: null, matieres_config: [], pause_midi_slots: 0, pause_midi_after: null },
     ],
   });
   const [matrix, setMatrix] = useState<MatrixRow[]>([]);
@@ -2730,6 +2806,7 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
         preparation_defaut_minutes: maxPrep,
         statut_initial: p.statut_initial,
       });
+      let ordre = 1;
       for (let idx = 0; idx < p.blocs.length; idx++) {
         const bloc = p.blocs[idx];
         if (!bloc.matieres_config.length) continue;
@@ -2737,19 +2814,29 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
         if (!blocRows.length) continue;
         const bMaxDuree = Math.max(...bloc.matieres_config.map(c => c.duree_minutes));
         const bMaxPrep = Math.max(...bloc.matieres_config.map(c => c.preparation_minutes));
-        await post(`journee-types/${jt.id}/blocs`, {
-          ordre: idx + 1,
+        const blocPayload = {
           type_bloc: "GENERATION",
-          heure_debut: bloc.heure_debut + ":00",
-          heure_fin: blocRows[blocRows.length - 1].fin_exam + ":00",
           matieres: bloc.matieres_config.map(c => c.nom),
           matieres_config: bloc.matieres_config,
           duree_minutes: bMaxDuree,
           pause_minutes: bloc.pause_minutes,
           preparation_minutes: bMaxPrep,
           salles_par_matiere: p.salles_par_matiere,
-          nb_slots: bloc.nb_slots ?? null,
-        });
+        };
+
+        if (p.mode === "journee-complete" && (bloc.pause_midi_slots ?? 0) > 0) {
+          // Journée complète : split en 2 blocs (Matin + Après-midi) autour de la pause
+          const oralBefore = blocRows.filter(r => !r.isPause).slice(0, bloc.pause_midi_after ?? Math.ceil(blocRows.filter(r => !r.isPause).length / 2));
+          const oralAfter = blocRows.filter(r => !r.isPause).slice(oralBefore.length);
+          if (oralBefore.length) {
+            await post(`journee-types/${jt.id}/blocs`, { ...blocPayload, ordre: ordre++, heure_debut: oralBefore[0].deb_prepa + ":00", heure_fin: oralBefore[oralBefore.length - 1].fin_exam + ":00", nb_slots: oralBefore.length });
+          }
+          if (oralAfter.length) {
+            await post(`journee-types/${jt.id}/blocs`, { ...blocPayload, ordre: ordre++, heure_debut: oralAfter[0].deb_prepa + ":00", heure_fin: oralAfter[oralAfter.length - 1].fin_exam + ":00", nb_slots: oralAfter.length });
+          }
+        } else {
+          await post(`journee-types/${jt.id}/blocs`, { ...blocPayload, ordre: ordre++, heure_debut: bloc.heure_debut + ":00", heure_fin: blocRows[blocRows.length - 1].fin_exam + ":00", nb_slots: bloc.nb_slots ?? null });
+        }
       }
       onSuccess();
     } catch (e: any) {
@@ -2781,9 +2868,55 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
     const activeMatieres = allMatieres.filter(m => m.active);
     const blocLabel = (heure_debut: string) => parseInt(heure_debut) < 13 ? "Matin" : "Après-midi";
 
+    const isJC = p.mode === "journee-complete";
+
+    // Quand on bascule en journée complète, forcer 1 seul bloc avec pause_midi_slots=2
+    const switchMode = (m: WizardParams["mode"]) => {
+      if (m === "journee-complete") {
+        setP(prev => ({
+          ...prev,
+          mode: m,
+          blocs: [{
+            ...prev.blocs[0],
+            heure_debut: "08:30",
+            heure_fin: "18:30",
+            nb_slots: null,
+            pause_midi_slots: 2,
+            pause_midi_after: null,
+          }],
+        }));
+      } else {
+        setP(prev => ({
+          ...prev,
+          mode: m,
+          blocs: [
+            { ...prev.blocs[0], pause_midi_slots: 0, pause_midi_after: null },
+            { heure_debut: "14:00", heure_fin: "18:00", pause_minutes: prev.blocs[0].pause_minutes, nb_slots: null, matieres_config: [], pause_midi_slots: 0, pause_midi_after: null },
+          ],
+        }));
+      }
+    };
+
     return (
       <div className="space-y-4">
         <StepPills />
+
+        {/* ── Sélecteur de mode ── */}
+        <div className="flex gap-2">
+          {(["demi-journee", "journee-complete"] as const).map(m => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => switchMode(m)}
+              className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition ${
+                p.mode === m ? "bg-black text-white border-black" : "bg-white text-black/50 border-black/15 hover:border-black/30"
+              }`}
+            >
+              {m === "demi-journee" ? "Demi-journée" : "Journée complète"}
+            </button>
+          ))}
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           <Field label="Nom">
             <Input value={p.nom} onChange={(e) => set("nom", e.target.value)} placeholder="Journée standard ECG" />
@@ -2888,48 +3021,95 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
 
                 {/* Horaires du bloc */}
                 {(() => {
-                  // Fin calculée quand nb_slots est fixé
                   const slotAdvance = bMaxDuree + bloc.pause_minutes;
                   const [sdh, sdm] = bloc.heure_debut.split(":").map(Number);
                   const startMin = sdh * 60 + sdm;
-                  const computedFinMin = bloc.nb_slots !== null && slotAdvance > 0
-                    ? startMin + bMaxPrep + bloc.nb_slots * slotAdvance
+                  const pauseMidi = bloc.pause_midi_slots ?? 0;
+                  // heure_fin inclut les créneaux de pause midi
+                  const nbOralForFin = bloc.nb_slots ?? autoTotal;
+                  const computedFinMin = nbOralForFin > 0 && slotAdvance > 0
+                    ? startMin + bMaxPrep + (nbOralForFin + pauseMidi) * slotAdvance
                     : null;
-                  const computedFin = computedFinMin !== null
-                    ? `${String(Math.floor(computedFinMin / 60)).padStart(2, "0")}:${String(computedFinMin % 60).padStart(2, "0")}`
-                    : null;
+                  const toHM = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+                  const computedFin = computedFinMin !== null ? toHM(computedFinMin) : null;
+
+                  const updateNbSlots = (val: number | null) => {
+                    setP(prev => ({
+                      ...prev,
+                      blocs: prev.blocs.map((b, i) => {
+                        if (i !== idx) return b;
+                        const sAdv = bMaxDuree + b.pause_minutes;
+                        const pm = b.pause_midi_slots ?? 0;
+                        const [sh, sm] = b.heure_debut.split(":").map(Number);
+                        const finMin = val !== null && sAdv > 0 ? (sh * 60 + sm) + bMaxPrep + (val + pm) * sAdv : null;
+                        return { ...b, nb_slots: val, heure_fin: finMin !== null ? toHM(finMin) : b.heure_fin };
+                      }),
+                    }));
+                  };
+
+                  const updatePauseMidi = (pm: number) => {
+                    setP(prev => ({
+                      ...prev,
+                      blocs: prev.blocs.map((b, i) => {
+                        if (i !== idx) return b;
+                        const sAdv = bMaxDuree + b.pause_minutes;
+                        const nb = b.nb_slots ?? autoTotal;
+                        const [sh, sm] = b.heure_debut.split(":").map(Number);
+                        const finMin = nb > 0 && sAdv > 0 ? (sh * 60 + sm) + bMaxPrep + (nb + pm) * sAdv : null;
+                        return { ...b, pause_midi_slots: pm, heure_fin: finMin !== null ? toHM(finMin) : b.heure_fin };
+                      }),
+                    }));
+                  };
+
                   return (
-                    <div className="grid grid-cols-3 gap-3">
-                      <Field label="Début du bloc">
-                        <Input type="time" value={bloc.heure_debut} onChange={(e) => setBloc(idx, "heure_debut", e.target.value)} />
-                      </Field>
-                      <Field label="Pause entre créneaux (min)">
-                        <Input type="number" value={bloc.pause_minutes} onChange={(e) => setBloc(idx, "pause_minutes", Number(e.target.value))} min={0} max={120} />
-                      </Field>
-                      <Field label="Nb de créneaux" hint={bloc.nb_slots !== null && computedFin ? `→ fin à ${computedFin}` : autoTotal > 0 ? `vide = ${autoTotal} calculé` : ""}>
-                        <Input
-                          type="number"
-                          value={bloc.nb_slots ?? ""}
-                          placeholder={autoTotal > 0 ? String(autoTotal) : "—"}
-                          onChange={(e) => {
-                            const val = e.target.value === "" ? null : Math.max(1, Number(e.target.value));
-                            setP(prev => ({
-                              ...prev,
-                              blocs: prev.blocs.map((b, i) => {
-                                if (i !== idx) return b;
-                                const sAdv = bMaxDuree + b.pause_minutes;
-                                const [sh, sm] = b.heure_debut.split(":").map(Number);
-                                const finMin = val !== null && sAdv > 0 ? (sh * 60 + sm) + bMaxPrep + val * sAdv : null;
-                                const newFin = finMin !== null
-                                  ? `${String(Math.floor(finMin / 60)).padStart(2, "0")}:${String(finMin % 60).padStart(2, "0")}`
-                                  : b.heure_fin;
-                                return { ...b, nb_slots: val, heure_fin: newFin };
-                              }),
-                            }));
-                          }}
-                          min={1}
-                        />
-                      </Field>
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-3 gap-3">
+                        <Field label="Début du bloc">
+                          <Input type="time" value={bloc.heure_debut} onChange={(e) => setBloc(idx, "heure_debut", e.target.value)} />
+                        </Field>
+                        <Field label="Pause entre créneaux (min)">
+                          <Input type="number" value={bloc.pause_minutes} onChange={(e) => setBloc(idx, "pause_minutes", Number(e.target.value))} min={0} max={120} />
+                        </Field>
+                        <Field label="Nb créneaux oraux" hint={computedFin ? `→ fin à ${computedFin}` : autoTotal > 0 ? `vide = ${autoTotal} calculé` : ""}>
+                          <Input
+                            type="number"
+                            value={bloc.nb_slots ?? ""}
+                            placeholder={autoTotal > 0 ? String(autoTotal) : "—"}
+                            onChange={(e) => updateNbSlots(e.target.value === "" ? null : Math.max(1, Number(e.target.value)))}
+                            min={1}
+                          />
+                        </Field>
+                      </div>
+
+                      {/* Pause de midi — visible seulement en mode journée complète */}
+                      {isJC && (
+                        <div className="rounded-lg border border-orange-100 bg-orange-50/50 px-3 py-2.5 flex items-center gap-4">
+                          <span className="text-[11px] font-semibold text-orange-700 uppercase tracking-wide shrink-0">Pause déjeuner</span>
+                          <Field label="Nb créneaux de pause">
+                            <Input
+                              type="number"
+                              value={pauseMidi}
+                              onChange={(e) => updatePauseMidi(Math.max(0, Number(e.target.value)))}
+                              min={0} max={10}
+                              className="w-16"
+                            />
+                          </Field>
+                          <Field label="Après le créneau n°" hint="vide = milieu auto">
+                            <Input
+                              type="number"
+                              value={bloc.pause_midi_after ?? ""}
+                              placeholder="auto"
+                              onChange={(e) => setBloc(idx, "pause_midi_after", e.target.value === "" ? null : Math.max(1, Number(e.target.value)))}
+                              min={1}
+                            />
+                          </Field>
+                          {computedFin && (
+                            <span className="text-xs text-orange-700 font-medium ml-auto shrink-0">
+                              {(bloc.nb_slots ?? autoTotal) + pauseMidi} créneaux · fin à {computedFin}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
@@ -2938,12 +3118,14 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
           })}
         </div>
 
-        <button
-          onClick={addBloc}
-          className="w-full py-2 rounded-xl border border-dashed border-black/20 text-xs text-black/40 hover:border-black/40 hover:text-black/60 transition flex items-center justify-center gap-1.5"
-        >
-          <Plus className="h-3.5 w-3.5" /> Ajouter un bloc
-        </button>
+        {!isJC && (
+          <button
+            onClick={addBloc}
+            className="w-full py-2 rounded-xl border border-dashed border-black/20 text-xs text-black/40 hover:border-black/40 hover:text-black/60 transition flex items-center justify-center gap-1.5"
+          >
+            <Plus className="h-3.5 w-3.5" /> Ajouter un bloc
+          </button>
+        )}
 
         <ErrorMsg msg={error} />
         <Btn label="Générer la matrice →" icon={LayoutGrid} onClick={handleGenerate} disabled={!p.nom.trim() || p.blocs.every(b => b.matieres_config.length === 0)} />
@@ -3043,6 +3225,14 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
                       </td>
                     </tr>
                   )}
+                  {row.isPause ? (
+                    <tr className="border-b border-orange-100 bg-orange-50/40">
+                      <td className="px-3 py-1.5 font-mono text-orange-300">{row.deb_prepa}</td>
+                      <td colSpan={totalCols - 1} className="px-3 py-1.5 text-[11px] font-semibold text-orange-400 tracking-wide">
+                        — Pause déjeuner —
+                      </td>
+                    </tr>
+                  ) : (
                   <tr className="border-b border-black/5 last:border-0 hover:bg-black/[0.015]">
                     <td className="px-3 py-1.5 font-mono text-black/40">{row.deb_prepa}</td>
                     <td className="px-3 py-1.5 font-mono font-medium text-black/80">{row.deb_exam}</td>
@@ -3085,6 +3275,7 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
                       );
                     })}
                   </tr>
+                  )}
                 </React.Fragment>
               );
             })}
@@ -3098,7 +3289,6 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
       <Field label="Statut initial des créneaux">
         <Select value={p.statut_initial} onChange={(e) => set("statut_initial", e.target.value)}>
           <option value="LIBRE">Libre (inscription ouverte)</option>
-          <option value="PRERESERVE">Préréservé</option>
           <option value="CREE">Créé (non publié)</option>
         </Select>
       </Field>
@@ -3578,7 +3768,7 @@ function CandidatsSection() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-[#F5F5F5] text-left">
-                        {["Nom", "Prénom", "Email", "Code d'accès", "Statut", ""].map((h) => (
+                        {["Nom", "Prénom", "Email", "Statut", ""].map((h) => (
                           <th key={h} className="px-5 py-3.5 text-xs font-semibold text-black/50 tracking-wide">{h}</th>
                         ))}
                       </tr>
@@ -3597,9 +3787,6 @@ function CandidatsSection() {
                           <td className="px-5 py-3.5 font-medium">{c.nom}</td>
                           <td className="px-5 py-3.5">{c.prenom}</td>
                           <td className="px-5 py-3.5 text-black/50">{c.email}</td>
-                          <td className="px-5 py-3.5">
-                            <code className="text-xs bg-black/5 px-2 py-0.5 rounded font-mono">{c.code_acces}</code>
-                          </td>
                           <td className="px-5 py-3.5"><StatutBadge statut={c.statut} /></td>
                           <td className="px-5 py-3.5 text-right">
                             <div className="flex items-center justify-end gap-2">
@@ -5689,8 +5876,12 @@ function ExaminateurFiche({
 
   async function toggleActif() {
     try {
-      const updated = await patch<Examinateur>(`examinateurs/${ex.id}/actif`, { actif: !ex.actif });
-      toast.success(updated.actif ? "Examinateur activé" : "Examinateur désactivé");
+      const newActif = ex.actif_planning !== true;
+      const updated = await patch<Examinateur>(
+        `examinateurs/${ex.id}/plannings/${planningId}`,
+        { actif: newActif }
+      );
+      toast.success(newActif ? "Actif pour ce planning" : "Inactif pour ce planning");
       onUpdated(updated);
     } catch (e: unknown) { toast.error(e instanceof Error ? e.message : "Erreur"); }
   }
@@ -5718,13 +5909,15 @@ function ExaminateurFiche({
           <button
             onClick={toggleActif}
             className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border font-medium transition ${
-              ex.actif
+              ex.actif_planning === true
                 ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
-                : "bg-black/5 text-black/40 border-black/10 hover:bg-black/10"
+                : ex.actif_planning === false
+                  ? "bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100"
+                  : "bg-black/5 text-black/40 border-black/10 hover:bg-black/10"
             }`}
           >
-            <span className={`h-1.5 w-1.5 rounded-full ${ex.actif ? "bg-green-500" : "bg-black/30"}`} />
-            {ex.actif ? "Actif" : "Inactif"}
+            <span className={`h-1.5 w-1.5 rounded-full ${ex.actif_planning === true ? "bg-green-500" : ex.actif_planning === false ? "bg-orange-400" : "bg-black/30"}`} />
+            {ex.actif_planning === true ? "Actif ce planning" : ex.actif_planning === false ? "Inactif ce planning" : "Non associé"}
           </button>
           <button
             onClick={() => setShowIdentifiants(true)}
@@ -5822,22 +6015,21 @@ function CreateExaminateurForm({
   const [selectedMatieres, setSelectedMatieres] = useState<string[]>([]);
   const [codeUai, setCodeUai] = useState("");
   const [etablissement, setEtablissement] = useState("");
-  const [actif, setActif] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   async function submit() {
     setLoading(true); setError("");
     try {
-      await post("examinateurs/", {
-        planning_id: planningId,
+      const created = await post<Examinateur>("examinateurs/", {
         nom: nom.trim().toUpperCase(), prenom: prenom.trim(), email: email.trim(),
         telephone: telephone.trim() || null,
         matieres: selectedMatieres,
         code_uai: codeUai.trim() || null,
         etablissement: etablissement.trim() || null,
-        actif,
       });
+      // Associer automatiquement au planning courant
+      await patch(`examinateurs/${created.id}/plannings/${planningId}`, { actif: true });
       onCreated();
     } catch (e: unknown) { setError(e instanceof Error ? e.message : "Erreur"); }
     finally { setLoading(false); }
@@ -5865,10 +6057,6 @@ function CreateExaminateurForm({
         <Field label="Matière(s) *">
           <MatieresCheckboxes selected={selectedMatieres} onChange={setSelectedMatieres} matieres={matieres} />
         </Field>
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" checked={actif} onChange={(e) => setActif(e.target.checked)} className="rounded" />
-          <span className="text-sm">Actif (mobilisable dans le planning)</span>
-        </label>
         <ErrorMsg msg={error} />
         <div className="flex gap-2">
           <Btn label={loading ? "Création…" : "Créer l'examinateur"} icon={Plus} onClick={submit}
@@ -5915,7 +6103,9 @@ function ExaminateursSection() {
   useEffect(() => { loadExaminateurs(); }, [loadExaminateurs]);
 
   const filtered = examinateurs.filter((ex) => {
-    const actifOk = filterActif === "tous" ? true : filterActif === "actif" ? ex.actif : !ex.actif;
+    const actifOk = filterActif === "tous" ? true
+      : filterActif === "actif" ? ex.actif_planning === true
+      : ex.actif_planning !== true;
     if (!actifOk) return false;
     if (!searchEx.trim()) return true;
     const q = searchEx.trim().toLowerCase();
@@ -6002,7 +6192,7 @@ function ExaminateursSection() {
                       : "hover:bg-black/[0.02] text-black border-l-2 border-transparent"
                   }`}
                 >
-                  <span className={`h-2 w-2 rounded-full shrink-0 ${ex.actif ? "bg-green-500" : "bg-black/20"}`} />
+                  <span className={`h-2 w-2 rounded-full shrink-0 ${ex.actif_planning === true ? "bg-green-500" : ex.actif_planning === false ? "bg-orange-400" : "bg-black/15"}`} />
                   <div className="min-w-0">
                     <p className="truncate font-medium text-sm">{ex.prenom} {ex.nom}</p>
                     <p className="truncate text-xs text-black/40">{ex.matieres.join(", ") || "—"}</p>
@@ -7632,7 +7822,7 @@ function SurveillantsSection() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-[#F5F5F5] border-b">
-                    {["Nom", "Email", "Statut", "Code accès", ""].map((h) => (
+                    {["Nom", "Email", "Statut", ""].map((h) => (
                       <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-black/50 tracking-wide">{h}</th>
                     ))}
                   </tr>
@@ -7653,9 +7843,6 @@ function SurveillantsSection() {
                         >
                           {s.actif ? "Actif" : "Inactif"}
                         </button>
-                      </td>
-                      <td className="px-5 py-3">
-                        <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{s.code_acces}</span>
                       </td>
                       <td className="px-5 py-3">
                         <div className="flex items-center justify-end gap-1">
@@ -8042,19 +8229,8 @@ function PlanchesSection() {
   useEffect(() => {
     loadPlanches();
     get<Planning[]>("plannings/").then(setPlannings).catch(() => {});
-    // Fetch all examinateurs (no planning filter needed here)
-    get<Examinateur[]>("examinateurs/?planning_id=0").catch(() => {});
+    get<Examinateur[]>("examinateurs/").then(setExaminateurs).catch(() => {});
   }, [loadPlanches]);
-
-  // Load examinateurs without planning filter
-  useEffect(() => {
-    // Try fetching examinateurs from all plannings
-    if (plannings.length > 0) {
-      get<Examinateur[]>(`examinateurs/?planning_id=${plannings[0].id}`)
-        .then(setExaminateurs)
-        .catch(() => {});
-    }
-  }, [plannings]);
 
   useEffect(() => {
     if (!planningId) { setEpreuves([]); return; }

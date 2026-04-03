@@ -12,6 +12,7 @@ from app.models.message_type import MessageType
 from app.models.matiere import Matiere
 from app.models.salle import Salle
 from app.models.examinateur_indisponibilite import ExaminateurIndisponibilite
+from app.models.examinateur_planning import ExaminateurPlanning
 from app.models.surveillant import Surveillant
 from app.models.planche import Planche
 from app.models.planning_salle_defaut import PlanningMatiereSalleDefaut
@@ -32,6 +33,7 @@ __all__ = [
     "Matiere",
     "Salle",
     "ExaminateurIndisponibilite",
+    "ExaminateurPlanning",
     "Surveillant",
     "Planche",
     "PlanningMatiereSalleDefaut",

@@ -11,6 +11,10 @@ class JourneeTypeCreate(BaseModel):
     statut_initial: str = "CREE"
 
 
+class JourneeTypeUpdate(BaseModel):
+    nom: str = Field(min_length=1, max_length=255)
+
+
 class JourneeTypeOut(BaseModel):
     id: int
     nom: str

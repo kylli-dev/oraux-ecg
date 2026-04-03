@@ -497,6 +497,7 @@ def admin_inscrire(
     # Supprimer les entrées de liste d'attente du candidat
     db.query(ListeAttente).filter_by(candidat_id=candidat_id).delete()
 
+    c.statut = "INSCRIT"
     db.commit()
     # TODO: envoyer Message-type Convocation
     return {"candidat_id": candidat_id, "inscription_id": nouvelle.id, "statut": "ACTIVE"}
@@ -509,6 +510,8 @@ def admin_desinscrire(candidat_id: int, db: Session = Depends(get_db)):
     if not insc:
         raise HTTPException(status_code=404, detail="Aucune inscription active")
     _cancel_inscription(insc, "LIBRE", db)
+    c = db.get(Candidat, candidat_id)
+    c.statut = "IMPORTE"
     db.commit()
     # TODO: envoyer Message-type Désinscription
     return {"candidat_id": candidat_id, "statut": "ANNULEE", "epreuves_statut": "LIBRE"}
@@ -521,6 +524,8 @@ def admin_desinscrire_prereserver(candidat_id: int, db: Session = Depends(get_db
     if not insc:
         raise HTTPException(status_code=404, detail="Aucune inscription active")
     _cancel_inscription(insc, "PRERESERVEE", db)
+    c = db.get(Candidat, candidat_id)
+    c.statut = "IMPORTE"
     db.commit()
     # TODO: envoyer Message-type Désinscription
     return {"candidat_id": candidat_id, "statut": "ANNULEE", "epreuves_statut": "PRERESERVEE"}
@@ -608,6 +613,7 @@ def admin_inscrire_direct(
         db.add(InscriptionEpreuve(inscription_id=nouvelle.id, epreuve_id=ep.id))
 
     db.query(ListeAttente).filter_by(candidat_id=candidat_id).delete()
+    c.statut = "INSCRIT"
     db.commit()
     return {"candidat_id": candidat_id, "inscription_id": nouvelle.id, "statut": "ACTIVE", "nb_epreuves": len(epreuves_a_attribuer)}
 
@@ -622,5 +628,7 @@ def admin_casser_triplet(candidat_id: int, db: Session = Depends(get_db)):
     if not insc:
         raise HTTPException(status_code=404, detail="Aucune inscription active")
     _cancel_inscription(insc, "LIBRE", db)
+    c = db.get(Candidat, candidat_id)
+    c.statut = "IMPORTE"
     db.commit()
     return {"candidat_id": candidat_id, "statut": "ANNULEE", "epreuves_statut": "LIBRE"}

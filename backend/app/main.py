@@ -27,6 +27,7 @@ from app.models import (  # noqa: F401
     Matiere,
     Salle,
     ExaminateurIndisponibilite,
+    ExaminateurPlanning,  # noqa: F401
     Surveillant,  # noqa: F401
     Planche,  # noqa: F401
 )
@@ -49,6 +50,7 @@ from app.api.planches import router as planches_router
 
 app = FastAPI(title="Oraux Platform")
 
+_extra_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -56,6 +58,7 @@ app.add_middleware(
         "http://localhost:3001",
         "http://localhost:3002",
         "https://oraux-tau.vercel.app",
+        *_extra_origins,
     ],
     allow_methods=["*"],
     allow_headers=["*"],
@@ -137,6 +140,14 @@ def _run_migrations():
         "ALTER TABLE note ADD COLUMN commentaire VARCHAR(500)",
         # Disposition personnalisée des triplets dans la vue matricielle
         "ALTER TABLE journee_type_bloc ADD COLUMN custom_matrix_json TEXT",
+        # Paramètres comportementaux du planning
+        "ALTER TABLE planning ADD COLUMN envoyer_convocations BOOLEAN NOT NULL DEFAULT TRUE",
+        "ALTER TABLE planning ADD COLUMN interdire_modification_candidat BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE planning ADD COLUMN interdire_changement_creneau BOOLEAN NOT NULL DEFAULT FALSE",
+        # Examinateurs globaux : table de liaison examinateur ↔ planning
+        "CREATE TABLE IF NOT EXISTS examinateur_planning (id SERIAL PRIMARY KEY, examinateur_id INTEGER NOT NULL REFERENCES examinateur(id) ON DELETE CASCADE, planning_id INTEGER NOT NULL REFERENCES planning(id) ON DELETE CASCADE, actif BOOLEAN NOT NULL DEFAULT TRUE, CONSTRAINT uq_ex_planning UNIQUE (examinateur_id, planning_id))",
+        "INSERT INTO examinateur_planning (examinateur_id, planning_id, actif) SELECT id, planning_id, COALESCE(actif, TRUE) FROM examinateur WHERE planning_id IS NOT NULL ON CONFLICT (examinateur_id, planning_id) DO NOTHING",
+        "ALTER TABLE examinateur DROP COLUMN IF EXISTS planning_id",
     ]
     with engine.connect() as conn:
         for sql in migrations:

@@ -17,6 +17,8 @@ services:
   frontend:
     environment:
       NODE_ENV: production
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD required}
 
   nginx:
     volumes:
