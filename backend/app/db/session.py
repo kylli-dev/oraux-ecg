@@ -8,7 +8,7 @@ if DATABASE_URL:
     if DATABASE_URL.startswith("sqlite"):
         connect_args = {"check_same_thread": False}
     else:
-        connect_args = {"connect_timeout": 10, "client_encoding": "utf8"}
+        connect_args = {"connect_timeout": 10}
     engine = create_engine(DATABASE_URL, pool_pre_ping=True, connect_args=connect_args)
     if DATABASE_URL.startswith("sqlite"):
         @event.listens_for(engine, "connect")
