@@ -246,6 +246,12 @@ export default function CandidatPlanningPage() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
+      <button
+        onClick={() => router.push("/candidat/accueil")}
+        className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 mb-6 transition"
+      >
+        ← Retour à l&apos;accueil
+      </button>
       <h1 className="text-xl font-bold text-gray-900 mb-6">Mes créneaux d&apos;oral</h1>
 
       {error && (
@@ -377,14 +383,6 @@ export default function CandidatPlanningPage() {
         </div>
       )}
 
-      <div className="mt-8 pt-6 border-t border-gray-100 text-center">
-        <button
-          onClick={() => router.push("/candidat/accueil")}
-          className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2"
-        >
-          ← Retour à l&apos;accueil
-        </button>
-      </div>
     </div>
   );
 }
