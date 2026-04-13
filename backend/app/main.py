@@ -157,6 +157,7 @@ def _run_migrations():
         # Examinateurs globaux : table de liaison examinateur ↔ planning
         "CREATE TABLE IF NOT EXISTS examinateur_planning (id SERIAL PRIMARY KEY, examinateur_id INTEGER NOT NULL REFERENCES examinateur(id) ON DELETE CASCADE, planning_id INTEGER NOT NULL REFERENCES planning(id) ON DELETE CASCADE, actif BOOLEAN NOT NULL DEFAULT TRUE, CONSTRAINT uq_ex_planning UNIQUE (examinateur_id, planning_id))",
         "INSERT INTO examinateur_planning (examinateur_id, planning_id, actif) SELECT id, planning_id, COALESCE(actif, TRUE) FROM examinateur WHERE planning_id IS NOT NULL ON CONFLICT (examinateur_id, planning_id) DO NOTHING",
+        "ALTER TABLE examinateur DROP CONSTRAINT IF EXISTS examinateur_planning_id_fkey",
         "ALTER TABLE examinateur ALTER COLUMN planning_id DROP NOT NULL",
         "ALTER TABLE examinateur DROP COLUMN IF EXISTS planning_id",
     ]
