@@ -2708,11 +2708,12 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
       }
     }
     const local_i = oral % Nsq;
+    const round_offset = oral - local_i; // floor(oral/Nsq) * Nsq — évite les doublons T après N² créneaux
     rows.push({
       deb_prepa: minutesToHM(t),
       deb_exam: minutesToHM(t + maxPrep),
       fin_exam: minutesToHM(t + maxPrep + maxDuree),
-      candidates: Array.from({ length: N }, (_, j) => ((local_i - j * N) % Nsq + Nsq) % Nsq + oralOffset),
+      candidates: Array.from({ length: N }, (_, j) => ((local_i - j * N) % Nsq + Nsq) % Nsq + round_offset + oralOffset),
       bloc_idx,
       isPause: false,
     });
