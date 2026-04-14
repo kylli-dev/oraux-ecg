@@ -97,7 +97,11 @@ def db_check():
         return {"db": "missing DATABASE_URL"}
     with engine.connect() as conn:
         conn.execute(text("SELECT 1"))
-    return {"db": "ok"}
+        cols = conn.execute(text(
+            "SELECT column_name, is_nullable FROM information_schema.columns "
+            "WHERE table_name='examinateur' ORDER BY ordinal_position"
+        )).fetchall()
+    return {"db": "ok", "examinateur_columns": [{"name": c[0], "nullable": c[1]} for c in cols]}
 
 
 def _run_migrations():
