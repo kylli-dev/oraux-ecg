@@ -95,7 +95,9 @@ def health():
 def run_migrations_endpoint():
     results = []
     sqls = [
+        "ALTER TABLE examinateur ALTER COLUMN actif DROP DEFAULT",
         "ALTER TABLE examinateur ALTER COLUMN actif TYPE BOOLEAN USING actif::boolean",
+        "ALTER TABLE examinateur ALTER COLUMN actif SET DEFAULT TRUE",
     ]
     with engine.connect() as conn:
         conn.execution_options(isolation_level="AUTOCOMMIT")
