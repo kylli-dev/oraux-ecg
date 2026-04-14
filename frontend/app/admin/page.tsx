@@ -2677,7 +2677,7 @@ type MatrixRow = {
   isPause?: boolean;
 };
 
-function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, bloc_idx: number): MatrixRow[] {
+function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, bloc_idx: number, oralOffset = 0): MatrixRow[] {
   configs = configs ?? bloc.matieres_config;
   const N = configs.length;
   if (!N) return [];
@@ -2712,7 +2712,7 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
       deb_prepa: minutesToHM(t),
       deb_exam: minutesToHM(t + maxPrep),
       fin_exam: minutesToHM(t + maxPrep + maxDuree),
-      candidates: Array.from({ length: N }, (_, j) => ((local_i - j * N) % Nsq + Nsq) % Nsq),
+      candidates: Array.from({ length: N }, (_, j) => ((local_i - j * N) % Nsq + Nsq) % Nsq + oralOffset),
       bloc_idx,
       isPause: false,
     });
@@ -2723,7 +2723,12 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
 }
 
 function buildMatrix(p: WizardParams): MatrixRow[] {
-  return p.blocs.flatMap((bloc, idx) => buildBlocRows(bloc, bloc.matieres_config, idx));
+  let oralOffset = 0;
+  return p.blocs.flatMap((bloc, idx) => {
+    const rows = buildBlocRows(bloc, bloc.matieres_config, idx, oralOffset);
+    oralOffset += rows.filter(r => !r.isPause).length;
+    return rows;
+  });
 }
 
 // ── Wizard création journée type (2 étapes) ────────────────────────────────────
