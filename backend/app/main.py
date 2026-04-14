@@ -93,11 +93,19 @@ def health():
 
 @app.get("/run-migrations")
 def run_migrations_endpoint():
-    try:
-        _run_migrations()
-        return {"status": "done"}
-    except Exception as e:
-        return {"status": "error", "detail": str(e)}
+    results = []
+    sqls = [
+        "ALTER TABLE examinateur ALTER COLUMN actif TYPE BOOLEAN USING actif::boolean",
+    ]
+    with engine.connect() as conn:
+        conn.execution_options(isolation_level="AUTOCOMMIT")
+        for sql in sqls:
+            try:
+                conn.execute(text(sql))
+                results.append({"sql": sql[:60], "status": "ok"})
+            except Exception as e:
+                results.append({"sql": sql[:60], "status": "error", "detail": str(e)})
+    return {"results": results}
 
 
 @app.get("/db-check")
