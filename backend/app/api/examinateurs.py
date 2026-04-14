@@ -44,19 +44,14 @@ def list_examinateurs(planning_id: Optional[int] = None, db: Session = Depends(g
 
 @router.post("/", response_model=ExaminateurOut, status_code=201)
 def create_examinateur(body: ExaminateurCreate, db: Session = Depends(get_db)):
-    import traceback
-    try:
-        data = body.model_dump()
-        matieres = data.pop("matieres")
-        ex = Examinateur(**data)
-        ex.matieres = matieres
-        db.add(ex)
-        db.commit()
-        db.refresh(ex)
-        return ex
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}\n{traceback.format_exc()}")
+    data = body.model_dump()
+    matieres = data.pop("matieres")
+    ex = Examinateur(**data)
+    ex.matieres = matieres
+    db.add(ex)
+    db.commit()
+    db.refresh(ex)
+    return ex
 
 
 @router.get("/{examinateur_id}", response_model=ExaminateurOut)
