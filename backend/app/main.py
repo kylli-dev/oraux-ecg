@@ -112,6 +112,7 @@ def _run_migrations():
         "ALTER TABLE journee_type_bloc ADD COLUMN salles_par_matiere INTEGER NOT NULL DEFAULT 1",
         "ALTER TABLE epreuve ADD COLUMN preparation_minutes INTEGER",
         "ALTER TABLE examinateur ADD COLUMN actif INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE examinateur ALTER COLUMN actif TYPE BOOLEAN USING actif::boolean",
         "ALTER TABLE examinateur ADD COLUMN etablissement VARCHAR(200)",
         "ALTER TABLE examinateur ADD COLUMN telephone VARCHAR(30)",
         "ALTER TABLE examinateur ADD COLUMN commentaire VARCHAR(1000)",
