@@ -12,15 +12,15 @@ Architecture en deux phases séparées :
     apply_journee_type(db, planning_id, journee_type, target_date)
     Applique le plan en base : upsert des demi-journées + génération des épreuves.
 
-Modèle rotatif K libre (generate_in_range) :
-  Pour N matières et K créneaux (K = fenêtre horaire / durée_créneau), génère K candidats complets.
+Modèle rotatif N² (generate_in_range) :
+  Pour N matières, génère exactement N² créneaux par bloc.
   Chaque créneau contient une épreuve par matière (N épreuves simultanées).
   Le modèle d'inscription assigne à un candidat k les épreuves aux créneaux
-  k, k+1, k+2, ... (offset=1) — soit 1 épreuve par matière à un horaire différent.
-  Exemple N=3, K=7 : 7 créneaux, 7 candidats complets.
-    candidat 0 → Anglais@slot0, ESH@slot1, Maths@slot2
-    candidat 1 → Anglais@slot1, ESH@slot2, Maths@slot3
-    candidat 6 → Anglais@slot6, ESH@slot0, Maths@slot1  (wrap autour de K)
+  k, k+N, k+2N, ... (offset=N) — soit 1 épreuve par matière à un horaire différent.
+  Exemple N=3 : 9 créneaux, 9 candidats, offset=3.
+    candidat 0 → Maths@slot0, Anglais@slot3, ESH@slot6
+    candidat 1 → Maths@slot1, Anglais@slot4, ESH@slot7
+    candidat 4 → Maths@slot4, Anglais@slot7, ESH@slot1  (wrap autour de N²)
 """
 from __future__ import annotations
 
@@ -209,10 +209,10 @@ def generate_in_range(
     """
     Génère et persiste les épreuves dans la plage [debut, fin[.
 
-    Modèle K libre : K = nombre de créneaux qui tiennent dans la fenêtre horaire.
-    Pour N matières et K créneaux, produit exactement K candidats complets.
-    Chaque créneau contient N épreuves simultanées (une par matière).
-    Exemple : 3 matières, fenêtre 3h30, exam 30min → K=7 créneaux, 7 candidats.
+    Modèle rotatif N² : pour N matières, génère exactement N² créneaux horaires.
+    Cela produit N² rotations possibles avec un offset=N entre matières, permettant
+    d'accueillir N² × salles_par_matiere candidats par demi-journée.
+    Exemple : 3 matières, 7 salles/matière → 9 créneaux × 7 = 63 candidats.
 
     matieres_config (optionnel) : liste de dicts {"nom", "duree_minutes", "preparation_minutes"}
     pour des durées variables par matière. La rotation utilise max(duree) comme avance
@@ -238,15 +238,7 @@ def generate_in_range(
         max_prep = preparation_minutes
 
     n_matieres = len(names)
-    # Modèle K libre : K = créneaux disponibles dans la fenêtre horaire (plus de contrainte N²)
-    if nb_slots is not None:
-        n_slots_max = nb_slots
-    else:
-        slot_advance_td = timedelta(minutes=max_duree)
-        pause_td = timedelta(minutes=pause_minutes)
-        prep_delta_td = timedelta(minutes=max_prep)
-        window = _time_to_dt(fin) - _time_to_dt(debut)
-        n_slots_max = max(n_matieres, int((window - prep_delta_td) / (slot_advance_td + pause_td)))
+    n_slots_max = nb_slots if nb_slots is not None else n_matieres * n_matieres
 
     # Avance de créneau basée sur la durée maximale (préparation concurrente).
     # exam_start = t + max_prep ; chaque matière j finit à exam_start + duree_j.
@@ -286,7 +278,7 @@ def generate_in_range(
     warning = None
     if slots_placed < n_slots_max:
         duree_requise = max_prep + n_slots_max * max_duree
-        source = f"manuel ({n_slots_max})" if nb_slots is not None else f"K={n_slots_max}"
+        source = f"manuel ({n_slots_max})" if nb_slots is not None else f"N²={n_slots_max}"
         warning = (
             f"Fenêtre trop courte : {slots_placed}/{n_slots_max} créneaux générés "
             f"({debut.strftime('%H:%M')}→{fin.strftime('%H:%M')}). "
