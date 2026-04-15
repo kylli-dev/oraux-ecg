@@ -2677,11 +2677,26 @@ type MatrixRow = {
   isPause?: boolean;
 };
 
-function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, bloc_idx: number, oralOffset = 0): MatrixRow[] {
-  configs = configs ?? bloc.matieres_config;
+function gcd(a: number, b: number): number {
+  return b === 0 ? a : gcd(b, a % b);
+}
+
+// Trouve le meilleur step pour K créneaux et N matières :
+// - Le plus grand step ≤ floor(K/N) qui soit copremier avec K (pgcd=1)
+// - Garantit une rotation connectée (pas de sous-groupes) et un espacement maximal
+// - Fallback sur 1 si aucun step copremier n'est trouvé
+function bestStep(K: number, N: number): number {
+  const ideal = Math.floor(K / N);
+  for (let s = ideal; s >= 1; s--) {
+    if (gcd(s, K) === 1) return s;
+  }
+  return 1;
+}
+
+function blocCapacity(bloc: BlocWizard, configs: MatiereConfig[]): number {
   const N = configs.length;
-  if (!N) return [];
-  const Nsq = N * N;
+  if (!N) return 0;
+  if (bloc.nb_slots !== null) return bloc.nb_slots;
   const maxDuree = Math.max(...configs.map(c => c.duree_minutes));
   const maxPrep = Math.max(...configs.map(c => c.preparation_minutes));
   const [hh, mm] = bloc.heure_debut.split(":").map(Number);
@@ -2691,29 +2706,46 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
   const interval = maxDuree + bloc.pause_minutes;
   const slotDuration = maxPrep + maxDuree;
   const pauseSlots = bloc.pause_midi_slots ?? 0;
-  // Available time for oral only (subtract pause duration)
   const availableOral = (end - start) - pauseSlots * interval;
-  const maxSlots = interval > 0 ? Math.floor((availableOral - slotDuration) / interval) + 1 : Nsq;
-  const nbOral = bloc.nb_slots !== null ? bloc.nb_slots : Math.max(1, Math.floor(maxSlots / Nsq)) * Nsq;
-  const pauseAfter = bloc.pause_midi_after ?? Math.ceil(nbOral / 2);
+  const maxSlots = interval > 0 ? Math.floor((availableOral - slotDuration) / interval) + 1 : N;
+  return Math.max(N, maxSlots);
+}
+
+function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, bloc_idx: number, oralOffset: number): MatrixRow[] {
+  configs = configs ?? bloc.matieres_config;
+  const N = configs.length;
+  if (!N) return [];
+  const maxDuree = Math.max(...configs.map(c => c.duree_minutes));
+  const maxPrep = Math.max(...configs.map(c => c.preparation_minutes));
+  const [hh, mm] = bloc.heure_debut.split(":").map(Number);
+  const start = hh * 60 + mm;
+  const interval = maxDuree + bloc.pause_minutes;
+  const pauseSlots = bloc.pause_midi_slots ?? 0;
+  // K = capacité propre de ce bloc (pool indépendant par bloc)
+  const K = blocCapacity(bloc, configs);
+  const pauseAfter = bloc.pause_midi_after ?? Math.ceil(K / 2);
+  // step optimal : le plus grand step copremier avec K ≤ floor(K/N)
+  // Garantit rotation connectée (pgcd=1) + espacement maximal
+  // Exemples : K=16 → step=5 (1h30), K=18 → step=5 (1h30), K=21 → step=5 (1h30)
+  const step = bestStep(K, N);
 
   const rows: MatrixRow[] = [];
   let t = start;
   let oral = 0;
-  while (oral < nbOral) {
+  while (oral < K) {
     if (pauseSlots > 0 && oral === pauseAfter) {
       for (let p = 0; p < pauseSlots; p++) {
         rows.push({ deb_prepa: minutesToHM(t), deb_exam: minutesToHM(t + maxPrep), fin_exam: minutesToHM(t + maxPrep + maxDuree), candidates: [], bloc_idx, isPause: true });
         t += interval;
       }
     }
-    const local_i = oral % Nsq;
-    const round_offset = oral - local_i; // floor(oral/Nsq) * Nsq — évite les doublons T après N² créneaux
+    // Rotation K libre : candidat k → matière j au créneau (k + j*step) mod K
+    // Vu depuis le créneau : slot oral, colonne j → candidat (oral - j*step + K*N) % K + oralOffset
     rows.push({
       deb_prepa: minutesToHM(t),
       deb_exam: minutesToHM(t + maxPrep),
       fin_exam: minutesToHM(t + maxPrep + maxDuree),
-      candidates: Array.from({ length: N }, (_, j) => ((local_i - j * N) % Nsq + Nsq) % Nsq + round_offset + oralOffset),
+      candidates: Array.from({ length: N }, (_, j) => (oral - j * step + K * N) % K + oralOffset),
       bloc_idx,
       isPause: false,
     });
@@ -2724,10 +2756,13 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
 }
 
 function buildMatrix(p: WizardParams): MatrixRow[] {
+  // Chaque bloc a son propre pool de candidats — les T se prolongent sans doublon
+  // Matin T1-TK, après-midi T(K+1)-T(2K), etc.
   let oralOffset = 0;
   return p.blocs.flatMap((bloc, idx) => {
+    const K = blocCapacity(bloc, bloc.matieres_config ?? []);
     const rows = buildBlocRows(bloc, bloc.matieres_config, idx, oralOffset);
-    oralOffset += rows.filter(r => !r.isPause).length;
+    oralOffset += K;
     return rows;
   });
 }
@@ -2751,6 +2786,7 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [editMode, setEditMode] = useState(false);
+  const [manualMode, setManualMode] = useState(false);
   const [dragSrc, setDragSrc] = useState<{ rowIdx: number; matIdx: number } | null>(null);
   const [dragOver, setDragOver] = useState<{ rowIdx: number; matIdx: number } | null>(null);
 
@@ -3140,8 +3176,12 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
   }
 
   // ── Étape 2 ─────────────────────────────────────────────────────────────────
+  // Capacité totale = somme des K de chaque bloc (pools indépendants)
+  const totalCandidats = p.blocs.reduce((s, b) => s + blocCapacity(b, b.matieres_config ?? []), 0);
+  // Matières par candidat = nb de matières dans son bloc
   const maxBlocN = Math.max(...p.blocs.map(b => b.matieres_config.length), 0);
-  const capacite = matrix.length * p.salles_par_matiere;
+  const capacite = totalCandidats * p.salles_par_matiere;
+
 
   const swapCells = (a: { rowIdx: number; matIdx: number }, b: { rowIdx: number; matIdx: number }) => {
     if (a.rowIdx === b.rowIdx && a.matIdx === b.matIdx) return;
@@ -3153,6 +3193,40 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
       next[b.rowIdx].candidates[b.matIdx] = va;
       return next;
     });
+  };
+
+  const enterManualMode = () => {
+    setMatrix(prev => prev.map(row => ({
+      ...row,
+      candidates: row.isPause ? [] : row.candidates.map(() => -1),
+    })));
+    setManualMode(true);
+    setEditMode(false);
+  };
+
+  const exitManualMode = () => {
+    setMatrix(buildMatrix(p));
+    setManualMode(false);
+  };
+
+  const setCellValue = (rowIdx: number, matIdx: number, tNum: number | null) => {
+    setMatrix(prev => {
+      const next = prev.map(r => ({ ...r, candidates: [...r.candidates] }));
+      next[rowIdx].candidates[matIdx] = tNum === null ? -1 : tNum - 1;
+      return next;
+    });
+  };
+
+  // Conflits dans une ligne : même T assigné à 2 matières au même créneau
+  const rowConflicts = (row: MatrixRow): Set<number> => {
+    const seen = new Map<number, number>();
+    const bad = new Set<number>();
+    row.candidates.forEach((k, j) => {
+      if (k < 0) return;
+      if (seen.has(k)) { bad.add(j); bad.add(seen.get(k)!); }
+      else seen.set(k, j);
+    });
+    return bad;
   };
 
   const blocLabel = (heure_debut: string) => parseInt(heure_debut) < 13 ? "Matin" : "Après-midi";
@@ -3173,28 +3247,46 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
             </span>
           );
         })}
-        <span className="font-medium text-black/70">{matrix.length} créneaux · {capacite} candidat(s)</span>
+        <span className="font-medium text-black/70">{matrix.filter(r => !r.isPause).length} créneaux · {totalCandidats} candidat(s)</span>
       </div>
 
       {/* Barre d'outils matrice */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-black/40">
-          Chaque triplet T<em>k</em> = un candidat passant {maxBlocN} épreuve(s) à des horaires décalés.
+          Chaque T<em>k</em> = un candidat passant {maxBlocN} épreuve(s) à des horaires décalés.
           {p.salles_par_matiere > 1 && <> · {capacite} candidats au total.</>}
         </p>
-        <button
-          type="button"
-          onClick={() => { setEditMode(e => !e); setDragSrc(null); setDragOver(null); }}
-          className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition ${
-            editMode ? "bg-black text-white border-black" : "bg-white text-black/50 border-black/15 hover:border-black/30"
-          }`}
-        >
-          {editMode ? "✓ Mode édition actif" : "Modifier manuellement"}
-        </button>
+        <div className="flex gap-2 shrink-0">
+          {!manualMode && (
+            <button
+              type="button"
+              onClick={() => { setEditMode(e => !e); setDragSrc(null); setDragOver(null); }}
+              className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition ${
+                editMode ? "bg-black text-white border-black" : "bg-white text-black/50 border-black/15 hover:border-black/30"
+              }`}
+            >
+              {editMode ? "✓ Swap actif" : "Échanger"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={manualMode ? exitManualMode : enterManualMode}
+            className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition ${
+              manualMode ? "bg-amber-500 text-white border-amber-500" : "bg-white text-black/50 border-black/15 hover:border-black/30"
+            }`}
+          >
+            {manualMode ? "✕ Quitter mode manuel" : "Créer manuellement"}
+          </button>
+        </div>
       </div>
-      {editMode && (
+      {editMode && !manualMode && (
         <p className="text-[11px] text-black/30 -mt-2">
           Glissez un triplet vers une autre cellule pour l'échanger.
+        </p>
+      )}
+      {manualMode && (
+        <p className="text-[11px] text-amber-600 -mt-2">
+          Mode manuel — cliquez sur une cellule pour saisir un numéro de triplet. En rouge = conflit sur ce créneau.
         </p>
       )}
 
@@ -3249,8 +3341,35 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
                         return <td key={globalJ} className="px-3 py-1 text-center text-black/15">—</td>;
                       }
                       const k = row.candidates[localJ];
+                      const conflicts = manualMode ? rowConflicts(row) : new Set<number>();
+                      const isConflict = conflicts.has(localJ);
                       const isOver = dragOver?.rowIdx === i && dragOver?.matIdx === localJ;
                       const isDragging = dragSrc?.rowIdx === i && dragSrc?.matIdx === localJ;
+
+                      if (manualMode) {
+                        return (
+                          <td key={globalJ} className="px-2 py-1 text-center">
+                            <input
+                              type="number"
+                              min={1}
+                              placeholder="—"
+                              value={k < 0 ? "" : k + 1}
+                              onChange={(e) => {
+                                const val = e.target.value === "" ? null : parseInt(e.target.value);
+                                setCellValue(i, localJ, val);
+                              }}
+                              className={`w-12 text-center text-[11px] font-semibold rounded border py-0.5 outline-none transition
+                                ${isConflict
+                                  ? "border-red-400 bg-red-50 text-red-600 ring-1 ring-red-300"
+                                  : k < 0
+                                    ? "border-black/10 bg-black/[0.02] text-black/30"
+                                    : "border-black/20 bg-white text-gray-700"
+                                }`}
+                            />
+                          </td>
+                        );
+                      }
+
                       return (
                         <td
                           key={globalJ}
