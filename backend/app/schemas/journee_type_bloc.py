@@ -31,6 +31,7 @@ class JourneeTypeBlocCreate(BaseModel):
     preparation_minutes: Optional[int] = Field(default=None, ge=0, le=120)
     salles_par_matiere: int = Field(default=1, ge=1, le=50)
     nb_slots: Optional[int] = Field(default=None, ge=1, le=10000)
+    bonus_slots: int = Field(default=0, ge=0, le=1000)
 
     @field_validator("type_bloc")
     @classmethod
@@ -69,6 +70,7 @@ class JourneeTypeBlocUpdate(BaseModel):
     preparation_minutes: Optional[int] = Field(default=None, ge=0, le=120)
     salles_par_matiere: int = Field(default=1, ge=1, le=50)
     nb_slots: Optional[int] = Field(default=None, ge=1, le=10000)
+    bonus_slots: int = Field(default=0, ge=0, le=1000)
     # Disposition personnalisée des triplets : None = réinitialiser à la formule N²
     custom_matrix: Optional[List[List[int]]] = None
 
@@ -102,6 +104,7 @@ class JourneeTypeBlocOut(BaseModel):
     preparation_minutes: Optional[int]
     salles_par_matiere: int
     nb_slots: Optional[int] = None
+    bonus_slots: int = 0
     custom_matrix: Optional[List[List[int]]] = None
 
     class Config:

@@ -450,6 +450,7 @@ def day_view(planning_id: int, date: Date = Query(...), db: Session = Depends(ge
                         examinateur_id=e.examinateur_id,
                         examinateur_nom=e.examinateur.nom if e.examinateur else None,
                         examinateur_prenom=e.examinateur.prenom if e.examinateur else None,
+                        preparation_minutes=e.preparation_minutes,
                         salle_intitule=e.salle.intitule if e.salle else None,
                         salle_preparation_intitule=e.salle_preparation.intitule if e.salle_preparation else None,
                     )

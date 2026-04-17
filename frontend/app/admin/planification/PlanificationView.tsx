@@ -172,6 +172,11 @@ function buildTripletRows(dj: DemiJournee, allMatieres: string[]): TripletRow[] 
 
 // ── Constantes de style ───────────────────────────────────────────────────────
 
+// Palette T-chip — identique à la matrice du wizard (cycle de 10 teintes)
+const TRIPLET_BG   = ["#EFF6FF","#F0FDF4","#FFFBEB","#FFF7ED","#F5F3FF","#ECFEFF","#FFF1F2","#F0FAFA","#FDF4FF","#F7F7F7"];
+const TRIPLET_RING = ["#BFDBFE","#BBF7D0","#FDE68A","#FED7AA","#DDD6FE","#A5F3FC","#FECDD3","#99F6E4","#E9D5FF","#E5E7EB"];
+const TRIPLET_TEXT = ["#1D4ED8","#15803D","#B45309","#C2410C","#6D28D9","#0E7490","#BE123C","#0F766E","#7E22CE","#374151"];
+
 const STATUT_STYLE: Record<string, { bg: string; border: string; text: string }> = {
   LIBRE:         { bg: "#EFF6FF", border: "#BFDBFE", text: "#1D4ED8" },
   ATTRIBUEE:     { bg: "#F0FDF4", border: "#BBF7D0", text: "#15803D" },
@@ -477,7 +482,7 @@ function SessionConfigPanel({
 // ── Grille principale d'une demi-journée ──────────────────────────────────────
 
 function DemiJourneeGrid({
-  dj, matieres, pendingEpreuveId, pendingSwap, onUnassign, onSwapRows, planningId, date, onRefresh,
+  dj, matieres, pendingEpreuveId, pendingSwap, onUnassign, onSwapRows, planningId, date, onRefresh, tripletOffset,
 }: {
   dj: DemiJournee;
   matieres: string[];
@@ -488,6 +493,7 @@ function DemiJourneeGrid({
   planningId: number;
   date: string;
   onRefresh: () => void;
+  tripletOffset: number;
 }) {
   const isMatin = dj.type === "MATIN";
   const accentColor = isMatin ? "#F59E0B" : "#6366F1";
@@ -581,7 +587,7 @@ function DemiJourneeGrid({
               <th className="text-left px-3 py-2 text-xs font-semibold text-black/40 border-b border-black/8 whitespace-nowrap">Dép. prépa</th>
               <th className="text-left px-3 py-2 text-xs font-semibold text-black/60 border-b border-black/8 whitespace-nowrap">Dép. exam</th>
               <th className="text-left px-3 py-2 text-xs font-semibold text-black/40 border-b border-black/8 whitespace-nowrap">Fin</th>
-              <th className="px-2 py-2 text-xs font-semibold border-b border-black/8 text-center text-black/30 w-[32px]">N°</th>
+              <th className="px-2 py-2 text-xs font-semibold border-b border-black/8 text-center text-black/30 w-[44px]">Triplet</th>
               {matieres.map(m => (
                 <th key={m} className="px-3 py-2 text-xs font-semibold border-b border-black/8 text-center" style={{ color: accentColor }}>{m}</th>
               ))}
@@ -610,23 +616,36 @@ function DemiJourneeGrid({
                       <td className="px-3 py-1.5 border-b border-black/5 whitespace-nowrap">
                         <span className="font-mono text-xs text-black/50">{finExam}</span>
                       </td>
-                      {/* N° + statut Niveau 3 */}
-                      <td className="px-2 py-1.5 border-b border-black/5 text-center">
-                        <div className="flex flex-col items-center gap-0.5">
-                          <span className="text-[10px] font-mono font-bold text-black/30 bg-black/5 rounded px-1.5 py-0.5">{idx + 1}</span>
-                          {/* Niveau 3 : indicateurs ligne */}
-                          {!row.isComplete && (
-                            <span title="Triplet incomplet : matières manquantes" className="text-[8px] text-orange-500">
-                              <AlertTriangle className="h-2.5 w-2.5" />
-                            </span>
-                          )}
-                          {row.hasAssigned && (
-                            <span title="Candidat affecté" className="text-[8px] text-green-500">
-                              <CheckCircle2 className="h-2.5 w-2.5" />
-                            </span>
-                          )}
-                        </div>
-                      </td>
+                      {/* Triplet T-chip */}
+                      {(() => {
+                        const globalIdx = tripletOffset + idx;
+                        const bg   = TRIPLET_BG[globalIdx % TRIPLET_BG.length];
+                        const ring = TRIPLET_RING[globalIdx % TRIPLET_RING.length];
+                        const txt  = TRIPLET_TEXT[globalIdx % TRIPLET_TEXT.length];
+                        return (
+                          <td className="px-2 py-1.5 border-b border-black/5 text-center">
+                            <div className="flex flex-col items-center gap-0.5">
+                              <span
+                                className="text-[11px] font-mono font-bold rounded-full px-2 py-0.5 leading-tight"
+                                style={{ backgroundColor: bg, outline: `1.5px solid ${ring}`, color: txt }}
+                              >
+                                T{globalIdx + 1}
+                              </span>
+                              {/* Niveau 3 : indicateurs ligne */}
+                              {!row.isComplete && (
+                                <span title="Triplet incomplet : matières manquantes" className="text-[8px] text-orange-500">
+                                  <AlertTriangle className="h-2.5 w-2.5" />
+                                </span>
+                              )}
+                              {row.hasAssigned && (
+                                <span title="Candidat affecté" className="text-[8px] text-green-500">
+                                  <CheckCircle2 className="h-2.5 w-2.5" />
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        );
+                      })()}
                       {/* Cellules matières */}
                       {matieres.map(matiere => {
                         const epreuve = row.epreuves.find(e => e.matiere === matiere);
@@ -912,7 +931,15 @@ export default function PlanificationView({ planning, onBack }: { planning: Plan
             ) : (
               <>
                 {/* Sessions existantes */}
-                {(dayData?.demi_journees ?? []).map((dj, idx) => (
+                {(dayData?.demi_journees ?? []).map((dj, idx) => {
+                  // Offset cumulatif : nb de créneaux (slots distincts) dans les demi-journées précédentes
+                  const tripletOffset = (dayData?.demi_journees ?? [])
+                    .slice(0, idx)
+                    .reduce((acc, prev) => {
+                      const slots = new Set(prev.epreuves.map(e => hm(e.heure_debut)));
+                      return acc + slots.size;
+                    }, 0);
+                  return (
                   <div key={dj.id}>
                     <DemiJourneeGrid
                       dj={dj}
@@ -924,6 +951,7 @@ export default function PlanificationView({ planning, onBack }: { planning: Plan
                       planningId={planning.id}
                       date={date}
                       onRefresh={loadDay}
+                      tripletOffset={tripletOffset}
                     />
                     {idx < (dayData?.demi_journees ?? []).length - 1 && (
                       <div className="flex items-center gap-3 my-4 px-1">
@@ -933,7 +961,8 @@ export default function PlanificationView({ planning, onBack }: { planning: Plan
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
 
                 {/* Boutons "Nouvelle session" si la session n'existe pas encore (Niveau 1) */}
                 <div className="flex gap-3 mt-2">

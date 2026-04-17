@@ -69,6 +69,7 @@ class BlocParams:
     salles_par_matiere: int = 1
     matieres_config: Optional[List[dict]] = None  # durées variables par matière
     nb_slots: Optional[int] = None                # si None → N² automatique
+    bonus_slots: int = 0                          # créneaux bonus urgences (statut LIBRE)
 
     @classmethod
     def from_bloc(cls, bloc: JourneeTypeBloc, jt: JourneeType) -> "BlocParams":
@@ -104,6 +105,7 @@ class BlocParams:
             salles_par_matiere=bloc.salles_par_matiere,
             matieres_config=matieres_config,
             nb_slots=bloc.nb_slots,
+            bonus_slots=bloc.bonus_slots,
         )
 
 
@@ -205,6 +207,7 @@ def generate_in_range(
     salles_par_matiere: int = 1,
     matieres_config: Optional[List[dict]] = None,
     nb_slots: Optional[int] = None,
+    bonus_slots: int = 0,
 ) -> int:
     """
     Génère et persiste les épreuves dans la plage [debut, fin[.
@@ -286,6 +289,30 @@ def generate_in_range(
             f"{n_slots_max}×{max_duree} exam) pour {source} créneaux complets."
         )
 
+    # Créneaux bonus (urgences) — toujours en statut LIBRE, placés en séquence après les créneaux réguliers
+    bonus_placed = 0
+    while bonus_placed < bonus_slots and t + prep_delta + slot_advance <= fin_dt:
+        exam_start = t + prep_delta
+        exam_end_max = exam_start + slot_advance
+        skip_fin = _overlaps_skip(exam_start.time(), exam_end_max.time(), skip_ranges)
+        if skip_fin is not None:
+            t = _time_to_dt(skip_fin) - prep_delta
+            continue
+        for nom, duree_j, prep_j in zip(names, durees, preps):
+            exam_end_j = exam_start + timedelta(minutes=duree_j)
+            for _ in range(salles_par_matiere):
+                db.add(Epreuve(
+                    demi_journee_id=demi_journee_id,
+                    matiere=nom,
+                    heure_debut=exam_start.time(),
+                    heure_fin=exam_end_j.time(),
+                    statut="LIBRE",
+                    preparation_minutes=prep_j if prep_j > 0 else None,
+                ))
+        count += n_matieres * salles_par_matiere
+        bonus_placed += 1
+        t = t + slot_advance + pause
+
     return count, warning
 
 
@@ -362,6 +389,7 @@ def _apply_periode_plan(
             salles_par_matiere=bloc.salles_par_matiere,
             matieres_config=bloc.matieres_config,
             nb_slots=bloc.nb_slots,
+            bonus_slots=bloc.bonus_slots,
         )
         total += n
         matiere_offset += n

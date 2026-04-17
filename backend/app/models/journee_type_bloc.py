@@ -29,6 +29,7 @@ class JourneeTypeBloc(Base):
     preparation_minutes: Mapped[int] = mapped_column(Integer, nullable=True)
     salles_par_matiere: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     nb_slots: Mapped[int] = mapped_column(Integer, nullable=True)  # si None → modèle N²
+    bonus_slots: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # créneaux bonus urgences
 
     journee_type = relationship("JourneeType", back_populates="blocs")
 

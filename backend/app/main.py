@@ -162,6 +162,8 @@ def _run_migrations():
         "ALTER TABLE epreuve ADD COLUMN surveillant_id INTEGER REFERENCES surveillant(id) ON DELETE SET NULL",
         # heure_previs sur planning
         "ALTER TABLE planning ADD COLUMN heure_previs TIME",
+        # bonus_slots sur journee_type_bloc
+        "ALTER TABLE journee_type_bloc ADD COLUMN bonus_slots INTEGER NOT NULL DEFAULT 0",
         # Examinateurs globaux : table de liaison examinateur ↔ planning
         "CREATE TABLE IF NOT EXISTS examinateur_planning (id SERIAL PRIMARY KEY, examinateur_id INTEGER NOT NULL REFERENCES examinateur(id) ON DELETE CASCADE, planning_id INTEGER NOT NULL REFERENCES planning(id) ON DELETE CASCADE, actif BOOLEAN NOT NULL DEFAULT TRUE, CONSTRAINT uq_ex_planning UNIQUE (examinateur_id, planning_id))",
         "INSERT INTO examinateur_planning (examinateur_id, planning_id, actif) SELECT id, planning_id, COALESCE(actif, TRUE) FROM examinateur WHERE planning_id IS NOT NULL ON CONFLICT (examinateur_id, planning_id) DO NOTHING",

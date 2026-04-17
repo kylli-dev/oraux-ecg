@@ -15,6 +15,7 @@ class DayEpreuveOut(BaseModel):
     examinateur_id: Optional[int] = None
     examinateur_nom: Optional[str] = None
     examinateur_prenom: Optional[str] = None
+    preparation_minutes: Optional[int] = None
     salle_intitule: Optional[str] = None
     salle_preparation_intitule: Optional[str] = None
 

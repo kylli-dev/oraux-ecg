@@ -81,10 +81,13 @@ type Bloc = {
   heure_debut: string;
   heure_fin: string;
   matieres: string[];
+  matieres_config: MatiereConfig[] | null;
   duree_minutes: number | null;
   pause_minutes: number | null;
   preparation_minutes: number | null;
   salles_par_matiere: number;
+  nb_slots: number | null;
+  bonus_slots: number;
 };
 
 type Epreuve = {
@@ -93,6 +96,8 @@ type Epreuve = {
   heure_debut: string;
   heure_fin: string;
   statut: string;
+  preparation_minutes?: number | null;
+  candidat_id?: number | null;
   candidat_nom?: string | null;
   candidat_prenom?: string | null;
   salle_intitule?: string | null;
@@ -1348,7 +1353,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
               {matieres.map((m) => (
                 <th
                   key={m}
-                  colSpan={2}
+                  colSpan={3}
                   className="px-3 py-2.5 text-center text-xs font-semibold whitespace-nowrap border-l border-black/10"
                 >
                   {m}
@@ -1362,6 +1367,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                 <React.Fragment key={m}>
                   <th className="px-3 py-1.5 text-left font-normal border-l border-black/10">Candidat</th>
                   <th className="px-3 py-1.5 text-left font-normal">Examinateur</th>
+                  <th className="px-3 py-1.5 text-left font-normal">Salle</th>
                 </React.Fragment>
               ))}
             </tr>
@@ -1372,7 +1378,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                 {/* En-tête de date */}
                 <tr>
                   <td
-                    colSpan={4 + matieres.length * 2}
+                    colSpan={4 + matieres.length * 3}
                     className="px-4 py-2 bg-black/[0.05] font-semibold text-black/60 text-xs uppercase tracking-widest sticky left-0"
                   >
                     {formatDate(date)}
@@ -1405,7 +1411,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                         if (eps.length === 0) {
                           return (
                             <React.Fragment key={m}>
-                              <td className="px-3 py-2 text-black/20 text-xs border-l border-black/[0.06]" colSpan={2}>—</td>
+                              <td className="px-3 py-2 text-black/20 text-xs border-l border-black/[0.06]" colSpan={3}>—</td>
                             </React.Fragment>
                           );
                         }
@@ -1432,6 +1438,23 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                                   {e.examinateur_nom
                                     ? `${e.examinateur_nom}${e.examinateur_prenom ? " " + e.examinateur_prenom[0] + "." : ""}`
                                     : <span className="text-black/20 italic">—</span>}
+                                </div>
+                              ))}
+                            </td>
+                            {/* Salle */}
+                            <td className="px-3 py-2">
+                              {eps.map((e) => (
+                                <div key={e.id} className="text-xs text-black/50">
+                                  {e.salle_intitule ? (
+                                    <>
+                                      {e.salle_preparation_intitule && (
+                                        <span className="text-black/35" title="Salle préparation">{e.salle_preparation_intitule} → </span>
+                                      )}
+                                      <span title="Salle oral">{e.salle_intitule}</span>
+                                    </>
+                                  ) : (
+                                    <span className="text-black/20 italic">—</span>
+                                  )}
                                 </div>
                               ))}
                             </td>
@@ -1462,6 +1485,7 @@ function PlanningDaySection({
 }) {
   const matieres = useMatieres();
   const [viewMode, setViewMode] = useState<"journee" | "tableau">("tableau");
+  const [daySubView, setDaySubView] = useState<"triplets" | "creneaux">("triplets");
   const [date, setDate] = useState(planning.date_debut);
   const [dayData, setDayData] = useState<DayViewData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1563,6 +1587,20 @@ function PlanningDaySection({
             </div>
           </div>
 
+          {/* Sous-onglets Triplets / Créneaux */}
+          {!loading && dayData && dayData.demi_journees.length > 0 && (
+            <div className="flex gap-1 mb-4 border-b border-black/8">
+              {(["triplets", "creneaux"] as const).map(v => (
+                <button key={v} onClick={() => setDaySubView(v)}
+                  className={`px-4 py-1.5 text-xs font-semibold rounded-t-lg transition -mb-px border border-b-0 ${
+                    daySubView === v ? "bg-white border-black/10 text-black" : "border-transparent text-black/40 hover:text-black/60"
+                  }`}>
+                  {v === "triplets" ? "Association triplets" : "Vue créneaux"}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Day content */}
           {loading ? (
             <div className="flex justify-center py-16 text-black/30"><Spinner /></div>
@@ -1574,18 +1612,26 @@ function PlanningDaySection({
                 Cliquez sur &laquo; Appliquer un gabarit &raquo; pour générer les créneaux de cette journée.
               </p>
             </div>
+          ) : daySubView === "triplets" ? (
+            <TripletAssociationView dayData={dayData} />
           ) : (
             <div className="grid gap-5 md:grid-cols-2">
-              {dayData.demi_journees.map((dj) => (
-                <DemiJourneeCard
-                  key={dj.id}
-                  dj={dj}
-                  planningId={planning.id}
-                  matieres={matieres}
-                  onRegen={() => setRegenDj(dj)}
-                  onRefresh={loadDay}
-                />
-              ))}
+              {dayData.demi_journees.map((dj, djIdx) => {
+                const tripletOffset = dayData.demi_journees
+                  .slice(0, djIdx)
+                  .reduce((acc, prev) => acc + new Set(prev.epreuves.map(e => hm(e.heure_debut))).size, 0);
+                return (
+                  <DemiJourneeCard
+                    key={dj.id}
+                    dj={dj}
+                    planningId={planning.id}
+                    matieres={matieres}
+                    onRegen={() => setRegenDj(dj)}
+                    onRefresh={loadDay}
+                    tripletOffset={tripletOffset}
+                  />
+                );
+              })}
             </div>
           )}
 
@@ -1803,18 +1849,203 @@ function EpreuveRow({
   );
 }
 
+// ── Vue association triplets (par candidat, journée complète) ─────────────────
+
+function TripletAssociationView({ dayData }: { dayData: DayViewData }) {
+  // Toutes les épreuves de la journée (matin + après-midi fusionnés)
+  const allEpreuves = dayData.demi_journees.flatMap(dj =>
+    dj.epreuves.map(e => ({ ...e, djType: dj.type }))
+  );
+
+  // Matières présentes, triées alphabétiquement
+  const allMatieres = [...new Set(allEpreuves.map(e => e.matiere))].sort();
+
+  // Grouper par candidat_id (non null) → un triplet = un candidat + ses épreuves
+  const candidatMap = new Map<number, { nom: string; prenom: string; epreuves: typeof allEpreuves }>();
+  for (const ep of allEpreuves) {
+    if (ep.candidat_id == null) continue;
+    if (!candidatMap.has(ep.candidat_id)) {
+      candidatMap.set(ep.candidat_id, {
+        nom: ep.candidat_nom ?? "",
+        prenom: ep.candidat_prenom ?? "",
+        epreuves: [],
+      });
+    }
+    candidatMap.get(ep.candidat_id)!.epreuves.push(ep);
+  }
+
+  // Trier les candidats par heure de leur première épreuve
+  const triplets = [...candidatMap.entries()]
+    .map(([id, c]) => ({
+      id,
+      nom: c.nom,
+      prenom: c.prenom,
+      epreuves: [...c.epreuves].sort((a, b) => hm(a.heure_debut).localeCompare(hm(b.heure_debut))),
+    }))
+    .sort((a, b) => hm(a.epreuves[0]?.heure_debut ?? "").localeCompare(hm(b.epreuves[0]?.heure_debut ?? "")));
+
+  // Créneaux libres (sans candidat, non annulés) par matière
+  const libreByMatiere = new Map<string, typeof allEpreuves>();
+  for (const ep of allEpreuves) {
+    if (ep.candidat_id != null || ep.statut === "ANNULEE") continue;
+    if (!libreByMatiere.has(ep.matiere)) libreByMatiere.set(ep.matiere, []);
+    libreByMatiere.get(ep.matiere)!.push(ep);
+  }
+  const totalLibres = allEpreuves.filter(e => e.candidat_id == null && e.statut !== "ANNULEE").length;
+
+  const statutCls = (s: string) => {
+    if (s === "LIBRE") return "text-blue-600 bg-blue-50 border-blue-100";
+    if (s === "ATTRIBUEE") return "text-green-700 bg-green-50 border-green-100";
+    if (s === "ANNULEE") return "text-red-500 bg-red-50 border-red-100";
+    if (s === "CREE") return "text-purple-600 bg-purple-50 border-purple-100";
+    if (s === "EN_EVALUATION") return "text-yellow-700 bg-yellow-50 border-yellow-100";
+    if (s === "FINALISEE") return "text-cyan-600 bg-cyan-50 border-cyan-100";
+    return "text-gray-500 bg-gray-50 border-gray-100";
+  };
+
+  if (triplets.length === 0 && totalLibres === 0) {
+    return <p className="text-sm text-black/30 text-center py-10">Aucune épreuve pour cette date.</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Résumé */}
+      <div className="flex flex-wrap items-center gap-4 px-1 text-xs text-black/50">
+        <span><span className="font-semibold text-black/70">{triplets.length}</span> triplet{triplets.length > 1 ? "s" : ""} assigné{triplets.length > 1 ? "s" : ""}</span>
+        {totalLibres > 0 && <span className="text-amber-600"><span className="font-semibold">{totalLibres}</span> créneau{totalLibres > 1 ? "x" : ""} libre{totalLibres > 1 ? "s" : ""}</span>}
+        <span>{allMatieres.join(" · ")}</span>
+      </div>
+
+      {/* Tableau principal : un triplet = une ligne */}
+      <div className="overflow-x-auto rounded-xl border border-black/8 bg-white">
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr className="bg-gray-50">
+              <th className="px-3 py-2.5 text-left font-semibold text-black/40 border-b border-black/8 w-[64px]">Triplet</th>
+              <th className="px-3 py-2.5 text-left font-semibold text-black/60 border-b border-black/8">Candidat</th>
+              {allMatieres.map(m => (
+                <th key={m} className="px-3 py-2.5 text-center font-semibold text-black/70 border-b border-black/8 whitespace-nowrap">{m}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {triplets.map((t, i) => {
+              const bg   = TRIPLET_BG[i % TRIPLET_BG.length];
+              const ring = TRIPLET_RING[i % TRIPLET_RING.length];
+              return (
+                <tr key={t.id} className="border-b border-black/5 last:border-0 hover:bg-black/[0.012]">
+                  {/* T-chip */}
+                  <td className="px-3 py-2 text-center">
+                    <span className="inline-block font-mono font-bold text-[11px] rounded-full px-2 py-0.5 text-gray-700"
+                      style={{ backgroundColor: bg, outline: `1.5px solid ${ring}` }}>
+                      T{i + 1}
+                    </span>
+                  </td>
+                  {/* Candidat */}
+                  <td className="px-3 py-2 font-medium text-black/80 whitespace-nowrap">
+                    {t.nom} {t.prenom}
+                  </td>
+                  {/* Une cellule par matière */}
+                  {allMatieres.map(matiere => {
+                    const ep = t.epreuves.find(e => e.matiere === matiere);
+                    if (!ep) return (
+                      <td key={matiere} className="px-3 py-2 text-center text-black/20">—</td>
+                    );
+                    const periode = ep.djType === "MATIN" ? "Matin" : "AM";
+                    // Heure de préparation = heure_debut - preparation_minutes
+                    const heurePrepa = ep.preparation_minutes
+                      ? (() => {
+                          const [h, m] = hm(ep.heure_debut).split(":").map(Number);
+                          const total = h * 60 + m - ep.preparation_minutes;
+                          return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+                        })()
+                      : hm(ep.heure_debut);
+                    return (
+                      <td key={matiere} className="px-2 py-1.5">
+                        <div className={`rounded-lg border px-2.5 py-1.5 text-center ${statutCls(ep.statut)}`}>
+                          <div className="font-mono text-[11px] leading-tight">
+                            <span className="opacity-60">{heurePrepa}</span>
+                            <span className="opacity-30 mx-0.5">→</span>
+                            <span className="font-semibold">{hm(ep.heure_fin)}</span>
+                          </div>
+                          <div className="text-[9px] opacity-60 mt-0.5 uppercase tracking-wide">
+                            {periode} · {ep.statut}
+                          </div>
+                          {ep.salle_intitule && (
+                            <div className="text-[9px] opacity-70 mt-0.5 font-medium">
+                              {ep.salle_preparation_intitule && (
+                                <span title="Salle préparation">{ep.salle_preparation_intitule} → </span>
+                              )}
+                              <span title="Salle oral">{ep.salle_intitule}</span>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Créneaux libres */}
+      {totalLibres > 0 && (
+        <div className="rounded-xl border border-amber-100 bg-amber-50/40 overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-amber-100 flex items-center gap-2">
+            <span className="text-xs font-semibold text-amber-700">Créneaux libres — sans candidat</span>
+            <span className="text-[10px] text-amber-500 font-mono">{totalLibres} épreuve{totalLibres > 1 ? "s" : ""}</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="bg-amber-50/60">
+                  <th className="px-3 py-2 text-left font-semibold text-amber-600/60 border-b border-amber-100">Matière</th>
+                  <th className="px-3 py-2 text-left font-semibold text-amber-600/60 border-b border-amber-100">Session</th>
+                  <th className="px-3 py-2 text-left font-semibold text-amber-600/60 border-b border-amber-100">Horaire</th>
+                  <th className="px-3 py-2 text-left font-semibold text-amber-600/60 border-b border-amber-100">Statut</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allEpreuves
+                  .filter(e => e.candidat_id == null && e.statut !== "ANNULEE")
+                  .sort((a, b) => hm(a.heure_debut).localeCompare(hm(b.heure_debut)))
+                  .map(ep => (
+                    <tr key={ep.id} className="border-b border-amber-100/60 last:border-0">
+                      <td className="px-3 py-1.5 font-medium text-black/70">{ep.matiere}</td>
+                      <td className="px-3 py-1.5 text-black/40">{ep.djType === "MATIN" ? "Matin" : "Après-midi"}</td>
+                      <td className="px-3 py-1.5 font-mono text-black/60">{hm(ep.heure_debut)} → {hm(ep.heure_fin)}</td>
+                      <td className="px-3 py-1.5">
+                        <span className={`inline-block px-2 py-0.5 rounded-full border text-[10px] font-semibold ${statutCls(ep.statut)}`}>{ep.statut}</span>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Carte demi-journée (vue créneaux) ─────────────────────────────────────────
+
 function DemiJourneeCard({
   dj,
   planningId,
   matieres,
   onRegen,
   onRefresh,
+  tripletOffset,
 }: {
   dj: DemiJournee;
   planningId: number;
   matieres: MatiereItem[];
   onRegen: () => void;
   onRefresh: () => void;
+  tripletOffset: number;
 }) {
   const toast = useToast();
   const [addOpen, setAddOpen] = useState(false);
@@ -1855,51 +2086,147 @@ function DemiJourneeCard({
     }
   };
 
+  // ── Construction de la vue matricielle triplets ──────────────────────────────
+  // Grouper les épreuves par heure_debut (= un créneau = une ligne)
+  const slotMap = new Map<string, Epreuve[]>();
+  for (const ep of dj.epreuves) {
+    const key = hm(ep.heure_debut);
+    if (!slotMap.has(key)) slotMap.set(key, []);
+    slotMap.get(key)!.push(ep);
+  }
+  const slots = [...slotMap.entries()].sort(([a], [b]) => a.localeCompare(b));
+
+  // Matières présentes dans cette demi-journée, triées
+  const djMatieres = [...new Set(dj.epreuves.map(e => e.matiere))].sort();
+
+  // Calcul dép. prépa : basé sur preparation_minutes de l'épreuve ou écart entre créneaux
+  const slotTimes = slots.map(([s]) => {
+    const [h, m] = s.split(":").map(Number);
+    return h * 60 + m;
+  });
+  const slotGap = slotTimes.length > 1 ? slotTimes[1] - slotTimes[0] : 0;
+
+  const debPrepa = (slotIdx: number, slot: string): string => {
+    const ep0 = slotMap.get(slot)?.[0];
+    const prep = ep0?.preparation_minutes ?? slotGap;
+    if (!prep) return slot;
+    const [h, m] = slot.split(":").map(Number);
+    const total = h * 60 + m - prep;
+    return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+  };
+
+  const statutCls = (s: string) => {
+    if (s === "LIBRE") return "bg-blue-50 text-blue-600 border-blue-100";
+    if (s === "ATTRIBUEE") return "bg-green-50 text-green-700 border-green-100";
+    if (s === "ANNULEE") return "bg-red-50 text-red-500 border-red-100";
+    if (s === "CREE") return "bg-purple-50 text-purple-600 border-purple-100";
+    if (s === "EN_EVALUATION") return "bg-yellow-50 text-yellow-700 border-yellow-100";
+    if (s === "FINALISEE") return "bg-cyan-50 text-cyan-600 border-cyan-100";
+    return "bg-gray-50 text-gray-500 border-gray-100";
+  };
+
+  const isMatin = dj.type === "MATIN";
+  const accentColor = isMatin ? "#F59E0B" : "#6366F1";
+
   return (
-    <div className="rounded-xl border bg-white shadow-sm">
-      <div className="flex items-center justify-between px-4 py-3 bg-[#FAFAFA] border-b rounded-t-xl">
+    <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+      {/* En-tête */}
+      <div className="flex items-center justify-between px-4 py-3 border-b" style={{ backgroundColor: isMatin ? "#FFFBEB" : "#EEF2FF", borderLeftWidth: 4, borderLeftColor: accentColor }}>
         <div className="flex items-center gap-2">
-          <span className="font-semibold text-sm">
-            {dj.type === "MATIN" ? "Matin" : "Après-midi"}
+          <span className="font-semibold text-sm" style={{ color: accentColor }}>
+            {isMatin ? "Matin" : "Après-midi"}
           </span>
-          <span className="text-xs text-black/40">
-            {hm(dj.heure_debut)} – {hm(dj.heure_fin)}
-          </span>
+          <span className="text-xs text-black/40">{hm(dj.heure_debut)} – {hm(dj.heure_fin)}</span>
+          {slots.length > 0 && (
+            <span className="text-[10px] text-black/30">
+              · {slots.length} triplets · T{tripletOffset + 1}→T{tripletOffset + slots.length}
+            </span>
+          )}
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-black/30">{dj.epreuves.length} créneaux</span>
-          <Btn
-            label="+ Créneau"
-            icon={Plus}
-            onClick={() => setAddOpen((o) => !o)}
-            small
-            variant="ghost"
-          />
-          <Btn
-            label="Régénérer"
-            icon={RefreshCw}
-            onClick={onRegen}
-            small
-            variant="ghost"
-          />
+        <div className="flex items-center gap-1">
+          <Btn label="+ Créneau" icon={Plus} onClick={() => setAddOpen(o => !o)} small variant="ghost" />
+          <Btn label="Régénérer" icon={RefreshCw} onClick={onRegen} small variant="ghost" />
         </div>
       </div>
 
-      <div className="divide-y divide-black/5">
-        {dj.epreuves.length === 0 ? (
-          <p className="px-4 py-3 text-sm text-black/30">Aucune épreuve</p>
-        ) : (
-          dj.epreuves.map((e) => (
-            <EpreuveRow
-              key={e.id}
-              epreuve={e}
-              planningId={planningId}
-              onRefresh={onRefresh}
-            />
-          ))
-        )}
-      </div>
+      {/* Matrice triplets */}
+      {dj.epreuves.length === 0 ? (
+        <p className="px-4 py-5 text-sm text-black/30 text-center">Aucune épreuve</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr style={{ backgroundColor: accentColor + "10" }}>
+                <th className="px-3 py-2 text-left font-semibold text-black/40 border-b border-black/8 whitespace-nowrap w-[60px]">Triplet</th>
+                <th className="px-3 py-2 text-left font-semibold text-black/50 border-b border-black/8 whitespace-nowrap">Horaire</th>
+                {djMatieres.map(m => (
+                  <th key={m} className="px-3 py-2 text-center font-semibold border-b border-black/8 whitespace-nowrap" style={{ color: accentColor }}>{m}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {slots.map(([slot, epreuves], slotIdx) => {
+                const globalIdx = tripletOffset + slotIdx;
+                const bg   = TRIPLET_BG[globalIdx % TRIPLET_BG.length];
+                const ring = TRIPLET_RING[globalIdx % TRIPLET_RING.length];
+                const finExam = epreuves[0]?.heure_fin ? hm(epreuves[0].heure_fin) : "—";
+                return (
+                  <tr key={slot} className="border-b border-black/5 last:border-0 hover:bg-black/[0.012]">
+                    {/* T-chip */}
+                    <td className="px-3 py-2 text-center">
+                      <span
+                        className="inline-block text-[11px] font-mono font-bold rounded-full px-2 py-0.5 text-gray-700"
+                        style={{ backgroundColor: bg, outline: `1.5px solid ${ring}` }}
+                      >
+                        T{globalIdx + 1}
+                      </span>
+                    </td>
+                    {/* Horaire prépa → fin */}
+                    <td className="px-3 py-2 font-mono whitespace-nowrap">
+                      <span className="text-black/40">{debPrepa(slotIdx, slot)}</span>
+                      <span className="text-black/20 mx-1">→</span>
+                      <span className="text-black/70 font-semibold">{finExam}</span>
+                    </td>
+                    {/* Cellules par matière */}
+                    {djMatieres.map(matiere => {
+                      const ep = epreuves.find(e => e.matiere === matiere);
+                      if (!ep) return (
+                        <td key={matiere} className="px-2 py-1.5 text-center">
+                          <span className="text-black/20">—</span>
+                        </td>
+                      );
+                      return (
+                        <td key={matiere} className="px-2 py-1.5">
+                          <div className={`rounded-lg border px-2 py-1.5 text-center min-h-[38px] flex flex-col items-center justify-center gap-0.5 ${statutCls(ep.statut)}`}>
+                            {ep.candidat_nom ? (
+                              <span className="font-semibold leading-tight truncate max-w-[110px] block">
+                                {ep.candidat_nom} {ep.candidat_prenom?.charAt(0)}.
+                              </span>
+                            ) : (
+                              <span className="text-[10px] opacity-50">libre</span>
+                            )}
+                            <span className="text-[9px] opacity-60 uppercase tracking-wide">{ep.statut}</span>
+                            {ep.salle_intitule && (
+                              <span className="text-[9px] opacity-70 font-medium">
+                                {ep.salle_preparation_intitule && (
+                                  <span title="Salle préparation">{ep.salle_preparation_intitule} → </span>
+                                )}
+                                <span title="Salle oral">{ep.salle_intitule}</span>
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
+      {/* Formulaire ajout créneau */}
       {addOpen && (
         <div className="px-4 py-3 border-t bg-gray-50/60">
           <p className="text-xs font-semibold text-black/50 mb-2">Nouveau créneau</p>
@@ -2481,6 +2808,16 @@ function JourneeTypesSection() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<number | null>(null);
+  const [wizardEdit, setWizardEdit] = useState<{ jt: JourneeType; blocs: Bloc[] } | null>(null);
+
+  const openWizardEdit = async (jt: JourneeType) => {
+    try {
+      const blocs = await get<Bloc[]>(`journee-types/${jt.id}/blocs`);
+      setWizardEdit({ jt, blocs });
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -2575,7 +2912,14 @@ function JourneeTypesSection() {
                 </div>
                 <div className="flex gap-2">
                   <Btn
-                    label={editing === jt.id ? "Fermer" : "Éditer"}
+                    label="Modifier"
+                    icon={Pencil}
+                    onClick={() => openWizardEdit(jt)}
+                    small
+                    variant="ghost"
+                  />
+                  <Btn
+                    label={editing === jt.id ? "Fermer" : "Blocs"}
                     icon={Settings2}
                     onClick={() => setEditing(editing === jt.id ? null : jt.id)}
                     small
@@ -2624,6 +2968,24 @@ function JourneeTypesSection() {
           }}
         />
       </Modal>
+
+      <Modal
+        open={!!wizardEdit}
+        onClose={() => setWizardEdit(null)}
+        title={wizardEdit ? `Modifier — ${wizardEdit.jt.nom}` : ""}
+        wide
+      >
+        {wizardEdit && (
+          <CreateJourneeTypeForm
+            editJt={wizardEdit}
+            onSuccess={() => {
+              setWizardEdit(null);
+              toast.success("Journée type mise à jour");
+              load();
+            }}
+          />
+        )}
+      </Modal>
     </div>
   );
 }
@@ -2655,6 +3017,7 @@ type BlocWizard = {
   heure_fin: string;
   pause_minutes: number;
   nb_slots: number | null;        // null → N² automatique (créneaux ORAL)
+  bonus_slots: number;            // créneaux bonus urgences (après les oraux réguliers)
   matieres_config: MatiereConfig[];
   pause_midi_slots: number;       // 0 = pas de pause ; >0 = créneaux de pause (journée complète)
   pause_midi_after: number | null; // null = auto (moitié des créneaux oraux)
@@ -2675,13 +3038,55 @@ type MatrixRow = {
   candidates: number[];
   bloc_idx: number;
   isPause?: boolean;
+  isBonus?: boolean;
 };
 
-function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, bloc_idx: number, oralOffset = 0): MatrixRow[] {
-  configs = configs ?? bloc.matieres_config;
+function gcd(a: number, b: number): number {
+  return b === 0 ? a : gcd(b, a % b);
+}
+
+// Trouve le step optimal pour K créneaux, N matières (modèle K-libre).
+//
+// Contrainte temporelle stricte (pour tout candidat, y compris les cas de boucle) :
+//   s ≥ minGap=2  ET  K-(N-1)×s ≥ minGap=2
+//   → maxStep = floor((K-2)/(N-1))
+//
+// Priorité 1 — gap maximal : targetStep = min(5, maxStep)
+//   gap candidat = (step - 2) × interval (ex. step=5 → 1h30 avec interval=30min)
+// Priorité 2 — rotation connectée : gcd(s,K)=1, sinon sous-groupes acceptés
+//
+// Règle : si le meilleur step copremier donne gap=0min, on préfère targetStep même avec sous-groupes.
+// Exemples :
+//   K=9,  N=3 → maxStep=3, targetStep=3, bestCoprime=2 (gap=0) → return 3 (gap=30min, sous-groupes)
+//   K=16, N=3 → maxStep=7, targetStep=5, bestCoprime=5 (gcd=1) → return 5 (gap=1h30, connecté)
+//   K=18, N=3 → maxStep=8, targetStep=5, bestCoprime=5 (gcd=1) → return 5 (gap=1h30, connecté)
+//   K=21, N=3 → maxStep=9, targetStep=5, bestCoprime=5 (gcd=1) → return 5 (gap=1h30, connecté)
+function bestStep(K: number, N: number): number {
+  if (N <= 1) return 1;
+  const maxStep = Math.floor((K - 2) / (N - 1));
+  if (maxStep < 1) return 1;
+  const minGap = 2;   // ceil(slotDuration/interval) = ceil(60/30) = 2 — évite le chevauchement réel
+  const targetStep = Math.min(5, maxStep);
+
+  // Largest coprime step in [minGap, targetStep] (rotation connectée = pas de sous-groupes)
+  let bestCoprime = 0;
+  for (let s = targetStep; s >= minGap; s--) {
+    if (gcd(s, K) === 1) { bestCoprime = s; break; }
+  }
+
+  // Si le step copremier donne un gap positif, l'utiliser (pas de sacrifice de gap)
+  if (bestCoprime > minGap) return bestCoprime;
+
+  // Sinon, utiliser targetStep même avec sous-groupes (meilleur gap qu'un step copremier à 0min)
+  if (targetStep > minGap) return targetStep;
+
+  // Dernier recours : minGap (gap=0min, mais pas de chevauchement physique)
+  return minGap;
+}
+
+function blocCapacity(bloc: BlocWizard, configs: MatiereConfig[]): number {
   const N = configs.length;
-  if (!N) return [];
-  const Nsq = N * N;
+  if (!N) return 0;
   const maxDuree = Math.max(...configs.map(c => c.duree_minutes));
   const maxPrep = Math.max(...configs.map(c => c.preparation_minutes));
   const [hh, mm] = bloc.heure_debut.split(":").map(Number);
@@ -2691,62 +3096,147 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
   const interval = maxDuree + bloc.pause_minutes;
   const slotDuration = maxPrep + maxDuree;
   const pauseSlots = bloc.pause_midi_slots ?? 0;
-  // Available time for oral only (subtract pause duration)
   const availableOral = (end - start) - pauseSlots * interval;
-  const maxSlots = interval > 0 ? Math.floor((availableOral - slotDuration) / interval) + 1 : Nsq;
-  const nbOral = bloc.nb_slots !== null ? bloc.nb_slots : Math.max(1, Math.floor(maxSlots / Nsq)) * Nsq;
-  const pauseAfter = bloc.pause_midi_after ?? Math.ceil(nbOral / 2);
+  const maxSlots = interval > 0 ? Math.floor((availableOral - slotDuration) / interval) + 1 : 0;
+  if (bloc.nb_slots !== null) return bloc.nb_slots;
+  return Math.max(N, maxSlots);
+}
+
+function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, bloc_idx: number, oralOffset = 0): MatrixRow[] {
+  configs = configs ?? bloc.matieres_config;
+  const N = configs.length;
+  if (!N) return [];
+  const maxDuree = Math.max(...configs.map(c => c.duree_minutes));
+  const maxPrep = Math.max(...configs.map(c => c.preparation_minutes));
+  const [hh, mm] = bloc.heure_debut.split(":").map(Number);
+  const start = hh * 60 + mm;
+  const interval = maxDuree + bloc.pause_minutes;
+  const pauseSlots = bloc.pause_midi_slots ?? 0;
+  const Kregular = blocCapacity(bloc, configs);
+  const Kbonus = bloc.bonus_slots ?? 0;
+  const Ktotal = Kregular + Kbonus;
+  // Les bonus s'intègrent dans la même rotation : step calculé sur Ktotal
+  const step = bestStep(Ktotal, N);
+  const pauseAfter = bloc.pause_midi_after ?? Math.ceil(Kregular / 2);
 
   const rows: MatrixRow[] = [];
   let t = start;
-  let oral = 0;
-  while (oral < nbOral) {
+  for (let oral = 0; oral < Ktotal; oral++) {
     if (pauseSlots > 0 && oral === pauseAfter) {
-      for (let p = 0; p < pauseSlots; p++) {
-        rows.push({ deb_prepa: minutesToHM(t), deb_exam: minutesToHM(t + maxPrep), fin_exam: minutesToHM(t + maxPrep + maxDuree), candidates: [], bloc_idx, isPause: true });
-        t += interval;
-      }
+      // La pause affichée commence à fin_exam du dernier oral (pas au prochain deb_prepa)
+      // afin d'éviter le décalage visuel entre "début de pause" et fin de l'examen en cours.
+      // break_réel = (pauseSlots+1)*interval - slotDuration
+      const pauseDisplayStart = t + (maxPrep + maxDuree - interval);
+      const pauseDisplayEnd = pauseDisplayStart + pauseSlots * interval;
+      rows.push({ deb_prepa: minutesToHM(pauseDisplayStart), deb_exam: minutesToHM(pauseDisplayStart), fin_exam: minutesToHM(pauseDisplayEnd), candidates: [], bloc_idx, isPause: true });
+      for (let p = 0; p < pauseSlots; p++) t += interval;
     }
-    const local_i = oral % Nsq;
-    const round_offset = oral - local_i; // floor(oral/Nsq) * Nsq — évite les doublons T après N² créneaux
     rows.push({
       deb_prepa: minutesToHM(t),
       deb_exam: minutesToHM(t + maxPrep),
       fin_exam: minutesToHM(t + maxPrep + maxDuree),
-      candidates: Array.from({ length: N }, (_, j) => ((local_i - j * N) % Nsq + Nsq) % Nsq + round_offset + oralOffset),
+      // Modèle K-libre sur Ktotal : candidat k passe matière j au créneau (k + j*step) % Ktotal
+      // Inverse : à l'oral `oral`, matière j → candidat = (oral - j*step + Ktotal*N) % Ktotal
+      candidates: Array.from({ length: N }, (_, j) => (oral - j * step + Ktotal * N) % Ktotal + oralOffset),
       bloc_idx,
       isPause: false,
+      isBonus: oral >= Kregular,   // les derniers Kbonus créneaux sont marqués bonus
     });
     t += interval;
-    oral++;
   }
+
   return rows;
 }
 
 function buildMatrix(p: WizardParams): MatrixRow[] {
   let oralOffset = 0;
   return p.blocs.flatMap((bloc, idx) => {
+    const Kregular = blocCapacity(bloc, bloc.matieres_config ?? []);
+    const Kbonus = bloc.bonus_slots ?? 0;
     const rows = buildBlocRows(bloc, bloc.matieres_config, idx, oralOffset);
-    oralOffset += rows.filter(r => !r.isPause).length;
+    oralOffset += Kregular + Kbonus;
     return rows;
   });
 }
 
 // ── Wizard création journée type (2 étapes) ────────────────────────────────────
-function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
+// Converts an API Bloc to a BlocWizard for the wizard form
+function blocToWizard(b: Bloc): BlocWizard {
+  const toHM = (t: string) => t.length === 8 ? t.slice(0, 5) : t; // "08:00:00" → "08:00"
+  const configs: MatiereConfig[] = b.matieres_config?.length
+    ? b.matieres_config
+    : b.matieres.map(nom => ({ nom, duree_minutes: b.duree_minutes ?? 30, preparation_minutes: b.preparation_minutes ?? 30 }));
+  return {
+    heure_debut: toHM(b.heure_debut),
+    heure_fin: toHM(b.heure_fin),
+    pause_minutes: b.pause_minutes ?? 0,
+    nb_slots: b.nb_slots ?? null,
+    bonus_slots: b.bonus_slots ?? 0,
+    matieres_config: configs,
+    pause_midi_slots: 0,
+    pause_midi_after: null,
+  };
+}
+
+function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; editJt?: { jt: JourneeType; blocs: Bloc[] } }) {
+  const isEdit = !!editJt;
   const [step, setStep] = useState<1 | 2>(1);
   const allMatieres = useMatieres();
-  const DEFAULT_BLOC: BlocWizard = { heure_debut: "08:00", heure_fin: "13:00", pause_minutes: 0, nb_slots: null, matieres_config: [], pause_midi_slots: 0, pause_midi_after: null };
-  const [p, setP] = useState<WizardParams>({
-    nom: "",
-    salles_par_matiere: 1,
-    statut_initial: "LIBRE",
-    mode: "demi-journee",
-    blocs: [
-      { heure_debut: "08:00", heure_fin: "13:00", pause_minutes: 0, nb_slots: null, matieres_config: [], pause_midi_slots: 0, pause_midi_after: null },
-      { heure_debut: "14:00", heure_fin: "18:00", pause_minutes: 0, nb_slots: null, matieres_config: [], pause_midi_slots: 0, pause_midi_after: null },
-    ],
-  });
+  const DEFAULT_BLOC: BlocWizard = { heure_debut: "08:00", heure_fin: "13:00", pause_minutes: 0, nb_slots: null, bonus_slots: 0, matieres_config: [], pause_midi_slots: 0, pause_midi_after: null };
+
+  const initParams = (): WizardParams => {
+    if (editJt) {
+      const genBlocs = editJt.blocs.filter(b => b.type_bloc === "GENERATION");
+      // Détection du mode : journée complète si 1 seul bloc,
+      // ou 2 blocs avec les mêmes matières (sauvegardé avec pause déjeuner)
+      const key = (b: Bloc) => [...b.matieres].sort().join(",");
+      const isJC = genBlocs.length <= 1 || genBlocs.every(b => key(b) === key(genBlocs[0]));
+      const inferredMode: WizardParams["mode"] = isJC ? "journee-complete" : "demi-journee";
+
+      // En journée complète avec 2 blocs sauvegardés, les fusionner en 1 bloc wizard
+      // avec pause_midi_slots et pause_midi_after reconstruits
+      const inferredBlocs: BlocWizard[] = (() => {
+        if (!genBlocs.length) return [DEFAULT_BLOC];
+        if (!isJC || genBlocs.length < 2) return genBlocs.map(blocToWizard);
+        const toHM = (t: string) => t.length === 8 ? t.slice(0, 5) : t;
+        const toMin = (hhmm: string) => { const [h, m] = hhmm.split(":").map(Number); return h * 60 + m; };
+        const b0 = blocToWizard(genBlocs[0]);
+        const maxDuree = b0.matieres_config.reduce((mx, c) => Math.max(mx, c.duree_minutes), 30);
+        const maxPrep  = b0.matieres_config.reduce((mx, c) => Math.max(mx, c.preparation_minutes), 0);
+        const interval = maxDuree + (b0.pause_minutes ?? 0);
+        const gap = toMin(toHM(genBlocs[1].heure_debut)) - toMin(toHM(genBlocs[0].heure_fin));
+        const pause_midi_slots = interval > 0 ? Math.max(1, Math.round((gap + maxPrep - (b0.pause_minutes ?? 0)) / interval)) : 2;
+        return [{
+          ...b0,
+          heure_debut: toHM(genBlocs[0].heure_debut),
+          heure_fin: toHM(genBlocs[genBlocs.length - 1].heure_fin),
+          nb_slots: genBlocs.reduce((s, b) => s + (b.nb_slots ?? 0), 0) || null,
+          pause_midi_slots,
+          pause_midi_after: genBlocs[0].nb_slots ?? null,
+        }];
+      })();
+
+      return {
+        nom: editJt.jt.nom,
+        salles_par_matiere: genBlocs[0]?.salles_par_matiere ?? 1,
+        statut_initial: editJt.jt.statut_initial,
+        mode: inferredMode,
+        blocs: inferredBlocs,
+      };
+    }
+    return {
+      nom: "",
+      salles_par_matiere: 1,
+      statut_initial: "LIBRE",
+      mode: "demi-journee",
+      blocs: [
+        { heure_debut: "08:00", heure_fin: "13:00", pause_minutes: 0, nb_slots: null, bonus_slots: 0, matieres_config: [], pause_midi_slots: 0, pause_midi_after: null },
+        { heure_debut: "14:00", heure_fin: "18:00", pause_minutes: 0, nb_slots: null, bonus_slots: 0, matieres_config: [], pause_midi_slots: 0, pause_midi_after: null },
+      ],
+    };
+  };
+
+  const [p, setP] = useState<WizardParams>(initParams);
   const [matrix, setMatrix] = useState<MatrixRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -2784,7 +3274,7 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
     setP((prev) => ({ ...prev, blocs: prev.blocs.map((b, i) => i === idx ? { ...b, [k]: v } : b) }));
   const addBloc = () => setP((prev) => ({
     ...prev,
-    blocs: [...prev.blocs, { ...DEFAULT_BLOC, heure_debut: "14:00", heure_fin: "18:00" }],
+    blocs: [...prev.blocs, { ...DEFAULT_BLOC, heure_debut: "14:00", heure_fin: "18:00", bonus_slots: 0 }],
   }));
   const removeBloc = (idx: number) => setP((prev) => ({ ...prev, blocs: prev.blocs.filter((_, i) => i !== idx) }));
 
@@ -2798,6 +3288,36 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
     setStep(2);
   };
 
+  const saveBlocsToJt = async (jtId: number) => {
+    let ordre = 1;
+    for (let idx = 0; idx < p.blocs.length; idx++) {
+      const bloc = p.blocs[idx];
+      if (!bloc.matieres_config.length) continue;
+      const blocRows = matrix.filter(r => r.bloc_idx === idx);
+      if (!blocRows.length) continue;
+      const bMaxDuree = Math.max(...bloc.matieres_config.map(c => c.duree_minutes));
+      const bMaxPrep = Math.max(...bloc.matieres_config.map(c => c.preparation_minutes));
+      const blocPayload = {
+        type_bloc: "GENERATION",
+        matieres: bloc.matieres_config.map(c => c.nom),
+        matieres_config: bloc.matieres_config,
+        duree_minutes: bMaxDuree,
+        pause_minutes: bloc.pause_minutes,
+        preparation_minutes: bMaxPrep,
+        salles_par_matiere: p.salles_par_matiere,
+        bonus_slots: bloc.bonus_slots ?? 0,
+      };
+      if (p.mode === "journee-complete" && (bloc.pause_midi_slots ?? 0) > 0) {
+        const oralBefore = blocRows.filter(r => !r.isPause).slice(0, bloc.pause_midi_after ?? Math.ceil(blocRows.filter(r => !r.isPause).length / 2));
+        const oralAfter = blocRows.filter(r => !r.isPause).slice(oralBefore.length);
+        if (oralBefore.length) await post(`journee-types/${jtId}/blocs`, { ...blocPayload, ordre: ordre++, heure_debut: oralBefore[0].deb_prepa + ":00", heure_fin: oralBefore[oralBefore.length - 1].fin_exam + ":00", nb_slots: oralBefore.length });
+        if (oralAfter.length) await post(`journee-types/${jtId}/blocs`, { ...blocPayload, ordre: ordre++, heure_debut: oralAfter[0].deb_prepa + ":00", heure_fin: oralAfter[oralAfter.length - 1].fin_exam + ":00", nb_slots: oralAfter.length });
+      } else {
+        await post(`journee-types/${jtId}/blocs`, { ...blocPayload, ordre: ordre++, heure_debut: bloc.heure_debut + ":00", heure_fin: blocRows[blocRows.length - 1].fin_exam + ":00", nb_slots: bloc.nb_slots ?? null });
+      }
+    }
+  };
+
   const handleSave = async () => {
     setLoading(true);
     setError("");
@@ -2805,44 +3325,24 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
       const allConfigs = p.blocs.flatMap(b => b.matieres_config);
       const maxDuree = allConfigs.length ? Math.max(...allConfigs.map(c => c.duree_minutes)) : 30;
       const maxPrep = allConfigs.length ? Math.max(...allConfigs.map(c => c.preparation_minutes)) : 30;
-      const jt = await post<{ id: number }>("journee-types/", {
-        nom: p.nom,
-        duree_defaut_minutes: maxDuree,
-        pause_defaut_minutes: p.blocs[0].pause_minutes,
-        preparation_defaut_minutes: maxPrep,
-        statut_initial: p.statut_initial,
-      });
-      let ordre = 1;
-      for (let idx = 0; idx < p.blocs.length; idx++) {
-        const bloc = p.blocs[idx];
-        if (!bloc.matieres_config.length) continue;
-        const blocRows = matrix.filter(r => r.bloc_idx === idx);
-        if (!blocRows.length) continue;
-        const bMaxDuree = Math.max(...bloc.matieres_config.map(c => c.duree_minutes));
-        const bMaxPrep = Math.max(...bloc.matieres_config.map(c => c.preparation_minutes));
-        const blocPayload = {
-          type_bloc: "GENERATION",
-          matieres: bloc.matieres_config.map(c => c.nom),
-          matieres_config: bloc.matieres_config,
-          duree_minutes: bMaxDuree,
-          pause_minutes: bloc.pause_minutes,
-          preparation_minutes: bMaxPrep,
-          salles_par_matiere: p.salles_par_matiere,
-        };
 
-        if (p.mode === "journee-complete" && (bloc.pause_midi_slots ?? 0) > 0) {
-          // Journée complète : split en 2 blocs (Matin + Après-midi) autour de la pause
-          const oralBefore = blocRows.filter(r => !r.isPause).slice(0, bloc.pause_midi_after ?? Math.ceil(blocRows.filter(r => !r.isPause).length / 2));
-          const oralAfter = blocRows.filter(r => !r.isPause).slice(oralBefore.length);
-          if (oralBefore.length) {
-            await post(`journee-types/${jt.id}/blocs`, { ...blocPayload, ordre: ordre++, heure_debut: oralBefore[0].deb_prepa + ":00", heure_fin: oralBefore[oralBefore.length - 1].fin_exam + ":00", nb_slots: oralBefore.length });
-          }
-          if (oralAfter.length) {
-            await post(`journee-types/${jt.id}/blocs`, { ...blocPayload, ordre: ordre++, heure_debut: oralAfter[0].deb_prepa + ":00", heure_fin: oralAfter[oralAfter.length - 1].fin_exam + ":00", nb_slots: oralAfter.length });
-          }
-        } else {
-          await post(`journee-types/${jt.id}/blocs`, { ...blocPayload, ordre: ordre++, heure_debut: bloc.heure_debut + ":00", heure_fin: blocRows[blocRows.length - 1].fin_exam + ":00", nb_slots: bloc.nb_slots ?? null });
+      if (isEdit && editJt) {
+        // Mode édition : mettre à jour la JT + supprimer/recréer les blocs
+        await put(`journee-types/${editJt.jt.id}`, { nom: p.nom });
+        for (const b of editJt.blocs) {
+          await del(`journee-types/blocs/${b.id}`);
         }
+        await saveBlocsToJt(editJt.jt.id);
+      } else {
+        // Mode création
+        const jt = await post<{ id: number }>("journee-types/", {
+          nom: p.nom,
+          duree_defaut_minutes: maxDuree,
+          pause_defaut_minutes: p.blocs[0].pause_minutes,
+          preparation_defaut_minutes: maxPrep,
+          statut_initial: p.statut_initial,
+        });
+        await saveBlocsToJt(jt.id);
       }
       onSuccess();
     } catch (e: any) {
@@ -2897,7 +3397,7 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
           mode: m,
           blocs: [
             { ...prev.blocs[0], pause_midi_slots: 0, pause_midi_after: null },
-            { heure_debut: "14:00", heure_fin: "18:00", pause_minutes: prev.blocs[0].pause_minutes, nb_slots: null, matieres_config: [], pause_midi_slots: 0, pause_midi_after: null },
+            { heure_debut: "14:00", heure_fin: "18:00", pause_minutes: prev.blocs[0].pause_minutes, nb_slots: null, bonus_slots: 0, matieres_config: [], pause_midi_slots: 0, pause_midi_after: null },
           ],
         }));
       }
@@ -3069,7 +3569,7 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
 
                   return (
                     <div className="space-y-2">
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-4 gap-3">
                         <Field label="Début du bloc">
                           <Input type="time" value={bloc.heure_debut} onChange={(e) => setBloc(idx, "heure_debut", e.target.value)} />
                         </Field>
@@ -3083,6 +3583,14 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
                             placeholder={autoTotal > 0 ? String(autoTotal) : "—"}
                             onChange={(e) => updateNbSlots(e.target.value === "" ? null : Math.max(1, Number(e.target.value)))}
                             min={1}
+                          />
+                        </Field>
+                        <Field label="Créneaux bonus" hint="urgences last-minute">
+                          <Input
+                            type="number"
+                            value={bloc.bonus_slots ?? 0}
+                            onChange={(e) => setBloc(idx, "bonus_slots", Math.max(0, Number(e.target.value)))}
+                            min={0} max={50}
                           />
                         </Field>
                       </div>
@@ -3141,7 +3649,8 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
 
   // ── Étape 2 ─────────────────────────────────────────────────────────────────
   const maxBlocN = Math.max(...p.blocs.map(b => b.matieres_config.length), 0);
-  const capacite = matrix.length * p.salles_par_matiere;
+  const totalCandidats = p.blocs.reduce((s, b) => s + blocCapacity(b, b.matieres_config ?? []) + (b.bonus_slots ?? 0), 0);
+  const capacite = totalCandidats * p.salles_par_matiere;
 
   const swapCells = (a: { rowIdx: number; matIdx: number }, b: { rowIdx: number; matIdx: number }) => {
     if (a.rowIdx === b.rowIdx && a.matIdx === b.matIdx) return;
@@ -3167,13 +3676,27 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
         <span>{p.blocs.map((b, i) => b.matieres_config.length ? `Bloc ${i+1}: ${b.matieres_config.map(mc => mc.nom).join(", ")}` : null).filter(Boolean).join(" · ")}</span>
         {p.blocs.map((bloc, idx) => {
           const blocRows = matrix.filter(r => r.bloc_idx === idx);
+          const oralRows = blocRows.filter(r => !r.isPause && !r.isBonus);
+          const bonusRows = blocRows.filter(r => r.isBonus);
+          const lastRow = blocRows.filter(r => !r.isPause).slice(-1)[0];
           return (
             <span key={idx}>
-              Bloc {idx + 1} : {bloc.heure_debut} → {blocRows.length ? blocRows[blocRows.length - 1].fin_exam : "?"} ({blocRows.length} créneaux)
+              Bloc {idx + 1} : {bloc.heure_debut} → {lastRow?.fin_exam ?? "?"} ({oralRows.length} oraux{bonusRows.length > 0 ? ` + ${bonusRows.length} bonus` : ""})
             </span>
           );
         })}
-        <span className="font-medium text-black/70">{matrix.length} créneaux · {capacite} candidat(s)</span>
+        {(() => {
+          const regularTotal = p.blocs.reduce((s, b) => s + blocCapacity(b, b.matieres_config ?? []), 0);
+          const bonusTotal = p.blocs.reduce((s, b) => s + (b.bonus_slots ?? 0), 0);
+          return (
+            <>
+              <span className="font-medium text-black/70">{totalCandidats} créneaux · {capacite} candidat(s)</span>
+              {bonusTotal > 0 && (
+                <span className="text-amber-600 font-medium">({regularTotal} oraux + {bonusTotal} bonus)</span>
+              )}
+            </>
+          );
+        })()}
       </div>
 
       {/* Barre d'outils matrice */}
@@ -3227,7 +3750,7 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
                   {isNewBloc && (
                     <tr>
                       <td colSpan={totalCols} className="px-3 py-1.5 bg-black/[0.04] text-[11px] font-semibold text-black/50 uppercase tracking-wide">
-                        Bloc {row.bloc_idx + 1} — {blocLabel(p.blocs[row.bloc_idx].heure_debut)} · {p.blocs[row.bloc_idx].heure_debut} → {p.blocs[row.bloc_idx].heure_fin}
+                        Bloc {row.bloc_idx + 1} — {blocLabel(p.blocs[row.bloc_idx].heure_debut)} · {p.blocs[row.bloc_idx].heure_debut} → {matrix.filter(r => r.bloc_idx === row.bloc_idx && !r.isPause).slice(-1)[0]?.fin_exam ?? p.blocs[row.bloc_idx].heure_fin}
                       </td>
                     </tr>
                   )}
@@ -3239,10 +3762,10 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
                       </td>
                     </tr>
                   ) : (
-                  <tr className="border-b border-black/5 last:border-0 hover:bg-black/[0.015]">
-                    <td className="px-3 py-1.5 font-mono text-black/40">{row.deb_prepa}</td>
-                    <td className="px-3 py-1.5 font-mono font-medium text-black/80">{row.deb_exam}</td>
-                    <td className="px-3 py-1.5 font-mono text-black/50">{row.fin_exam}</td>
+                  <tr className={`border-b last:border-0 ${row.isBonus ? "border-amber-100 bg-amber-50/50 hover:bg-amber-50" : "border-black/5 hover:bg-black/[0.015]"}`}>
+                    <td className={`px-3 py-1.5 font-mono ${row.isBonus ? "text-amber-400" : "text-black/40"}`}>{row.deb_prepa}</td>
+                    <td className={`px-3 py-1.5 font-mono font-medium ${row.isBonus ? "text-amber-700" : "text-black/80"}`}>{row.deb_exam}</td>
+                    <td className={`px-3 py-1.5 font-mono ${row.isBonus ? "text-amber-400" : "text-black/50"}`}>{row.fin_exam}</td>
                     {allMC.map((mc, globalJ) => {
                       const localJ = blocMatieres.findIndex(c => c.nom === mc.nom);
                       if (localJ === -1) {
@@ -3302,7 +3825,7 @@ function CreateJourneeTypeForm({ onSuccess }: { onSuccess: () => void }) {
       <ErrorMsg msg={error} />
       <div className="flex gap-2">
         <Btn label="← Retour" onClick={() => setStep(1)} variant="ghost" />
-        <Btn label={loading ? "Enregistrement…" : "Enregistrer la journée type"} onClick={handleSave} disabled={loading} />
+        <Btn label={loading ? "Enregistrement…" : isEdit ? "Mettre à jour" : "Enregistrer la journée type"} onClick={handleSave} disabled={loading} />
       </div>
     </div>
   );
