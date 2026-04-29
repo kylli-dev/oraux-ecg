@@ -177,6 +177,8 @@ def _run_migrations():
         "ALTER TABLE surveillant DROP CONSTRAINT IF EXISTS surveillant_planning_id_fkey",
         "ALTER TABLE surveillant ALTER COLUMN planning_id DROP NOT NULL",
         "ALTER TABLE surveillant DROP COLUMN IF EXISTS planning_id",
+        # Planches : stockage des bytes PDF en base (plus de fichiers locaux)
+        "ALTER TABLE planche ADD COLUMN fichier_data BYTEA",
     ]
     with engine.connect() as conn:
         for sql in migrations:

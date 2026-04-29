@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Integer, LargeBinary, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -13,6 +13,7 @@ class Planche(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     nom: Mapped[str] = mapped_column(String(200), nullable=False)
     fichier_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    fichier_data: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
 
     matiere_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("matiere.id", ondelete="SET NULL"), nullable=True

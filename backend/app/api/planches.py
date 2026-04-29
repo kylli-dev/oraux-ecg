@@ -1,19 +1,17 @@
 """
 Gestion des planches (sujets PDF) et assignation aux épreuves.
+Les fichiers PDF sont stockés directement en base (colonne BYTEA)
+pour éviter la perte des fichiers sur les redémarrages Render.
 """
 from __future__ import annotations
 
 import io
-import os
-import shutil
-import uuid
 import zipfile
 from datetime import datetime
-from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -29,11 +27,6 @@ router = APIRouter(
     tags=["planches"],
     dependencies=[Depends(require_admin)],
 )
-
-# ── Répertoire de stockage ───────────────────────────────────────────────────
-
-UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "uploads" / "planches"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
@@ -68,9 +61,7 @@ class AssignerPlancheIn(BaseModel):
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _is_assigned(planche_id: int, db: Session) -> bool:
-    return (
-        db.query(Epreuve).filter(Epreuve.planche_id == planche_id).first() is not None
-    )
+    return db.query(Epreuve).filter(Epreuve.planche_id == planche_id).first() is not None
 
 
 def _planche_out(p: Planche, db: Session) -> PlancheOut:
@@ -83,7 +74,7 @@ def _planche_out(p: Planche, db: Session) -> PlancheOut:
     if p.examinateur_id:
         ex = db.get(Examinateur, p.examinateur_id)
         if ex:
-            examinateur_nom = f"{ex.prenom} {ex.nom}" if ex.prenom else ex.nom
+            examinateur_nom = f"{ex.prenom} {ex.nom}".strip() if ex.prenom else ex.nom
 
     return PlancheOut(
         id=p.id,
@@ -97,6 +88,13 @@ def _planche_out(p: Planche, db: Session) -> PlancheOut:
         assignee=_is_assigned(p.id, db),
         created_at=p.created_at,
     )
+
+
+def _get_pdf_bytes(p: Planche) -> bytes:
+    """Retourne les bytes du PDF depuis la colonne BYTEA."""
+    if not p.fichier_data:
+        raise HTTPException(status_code=404, detail="Fichier introuvable (non stocké en base)")
+    return p.fichier_data
 
 
 # ── Routes ───────────────────────────────────────────────────────────────────
@@ -123,24 +121,19 @@ async def upload_planches(
     examinateur_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
 ):
-    """Upload d'un ou plusieurs PDFs — crée une Planche par fichier."""
+    """Upload d'un ou plusieurs PDFs — stocke les bytes directement en base."""
     result = []
     for upload in files:
         if not upload.filename or not upload.filename.lower().endswith(".pdf"):
-            raise HTTPException(
-                status_code=400, detail=f"'{upload.filename}' n'est pas un PDF."
-            )
-        # Nom sans extension → nom de la planche
-        stem = Path(upload.filename).stem
-        unique_name = f"{uuid.uuid4().hex}_{upload.filename}"
-        dest_path = UPLOAD_DIR / unique_name
+            raise HTTPException(status_code=400, detail=f"'{upload.filename}' n'est pas un PDF.")
 
-        with open(dest_path, "wb") as f:
-            shutil.copyfileobj(upload.file, f)
+        stem = Path(upload.filename).stem
+        data = await upload.read()
 
         planche = Planche(
             nom=stem,
-            fichier_path=unique_name,
+            fichier_path=upload.filename,  # conservé pour référence nom d'origine
+            fichier_data=data,
             matiere_id=matiere_id,
             examinateur_id=examinateur_id,
             statut="ACTIF",
@@ -155,9 +148,7 @@ async def upload_planches(
 
 
 @router.patch("/{planche_id}", response_model=PlancheOut)
-def update_planche(
-    planche_id: int, body: PlancheUpdate, db: Session = Depends(get_db)
-):
+def update_planche(planche_id: int, body: PlancheUpdate, db: Session = Depends(get_db)):
     p = db.get(Planche, planche_id)
     if not p:
         raise HTTPException(status_code=404, detail="Planche introuvable")
@@ -184,37 +175,28 @@ def delete_planche(planche_id: int, db: Session = Depends(get_db)):
             status_code=409,
             detail="Cette planche est assignée à une épreuve et ne peut pas être supprimée.",
         )
-    # Supprimer le fichier physique
-    file_path = UPLOAD_DIR / p.fichier_path
-    if file_path.exists():
-        file_path.unlink()
     db.delete(p)
     db.commit()
 
 
 @router.get("/{planche_id}/download")
 def download_planche(planche_id: int, db: Session = Depends(get_db)):
-    """Télécharge le PDF original de la planche."""
+    """Télécharge le PDF original de la planche depuis la base."""
     p = db.get(Planche, planche_id)
     if not p:
         raise HTTPException(status_code=404, detail="Planche introuvable")
-    file_path = UPLOAD_DIR / p.fichier_path
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Fichier introuvable sur le serveur")
-    return FileResponse(
-        path=str(file_path),
+    data = _get_pdf_bytes(p)
+    return StreamingResponse(
+        io.BytesIO(data),
         media_type="application/pdf",
-        filename=f"{p.nom}.pdf",
+        headers={"Content-Disposition": f'attachment; filename="{p.nom}.pdf"'},
     )
 
 
 # ── Assignation planche → épreuve ────────────────────────────────────────────
 
 @router.post("/epreuves/{epreuve_id}/assigner", response_model=dict)
-def assigner_planche(
-    epreuve_id: int, body: AssignerPlancheIn, db: Session = Depends(get_db)
-):
-    """Assigne une planche à une épreuve."""
+def assigner_planche(epreuve_id: int, body: AssignerPlancheIn, db: Session = Depends(get_db)):
     ep = db.get(Epreuve, epreuve_id)
     if not ep:
         raise HTTPException(status_code=404, detail="Épreuve introuvable")
@@ -228,7 +210,6 @@ def assigner_planche(
 
 @router.delete("/epreuves/{epreuve_id}/assigner", status_code=204)
 def desassigner_planche(epreuve_id: int, db: Session = Depends(get_db)):
-    """Retire la planche assignée à une épreuve."""
     ep = db.get(Epreuve, epreuve_id)
     if not ep:
         raise HTTPException(status_code=404, detail="Épreuve introuvable")
@@ -238,12 +219,9 @@ def desassigner_planche(epreuve_id: int, db: Session = Depends(get_db)):
 
 @router.get("/epreuves/{epreuve_id}/cartouche")
 def download_cartouche(epreuve_id: int, db: Session = Depends(get_db)):
-    """
-    Télécharge le PDF de la planche avec le cartouche candidat en overlay.
-    Nécessite que l'épreuve ait un candidat et une planche assignés.
-    """
-    import io
+    """Télécharge le PDF avec cartouche candidat en overlay."""
     from app.models.candidat import Candidat
+    from app.models.demi_journee import DemiJournee
     from app.services.pdf_cartouche import generate_planche_with_cartouche
 
     ep = db.get(Epreuve, epreuve_id)
@@ -256,18 +234,12 @@ def download_cartouche(epreuve_id: int, db: Session = Depends(get_db)):
 
     planche = db.get(Planche, ep.planche_id)
     candidat = db.get(Candidat, ep.candidat_id)
-
-    file_path = UPLOAD_DIR / planche.fichier_path
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Fichier PDF introuvable sur le serveur")
-
-    # Récupérer la date depuis la demi-journée
-    from app.models.demi_journee import DemiJournee
     dj = db.get(DemiJournee, ep.demi_journee_id)
     if not dj:
         raise HTTPException(status_code=400, detail="Demi-journée introuvable")
 
-    # Examinateur (depuis l'épreuve ou la planche)
+    original_bytes = _get_pdf_bytes(planche)
+
     examinateur_nom = "—"
     exam_id = ep.examinateur_id or planche.examinateur_id
     if exam_id:
@@ -275,21 +247,17 @@ def download_cartouche(epreuve_id: int, db: Session = Depends(get_db)):
         if ex:
             examinateur_nom = f"{ex.prenom} {ex.nom}".strip() if ex.prenom else ex.nom
 
-    # Matière
     matiere_label = ep.matiere
     if not matiere_label and planche.matiere_id:
         m = db.get(Matiere, planche.matiere_id)
         if m:
             matiere_label = m.intitule
 
-    # Heure de préparation
     heure_prep = None
     if ep.preparation_minutes:
         from datetime import datetime as _dt, timedelta
         prep_dt = _dt.combine(_dt.today(), ep.heure_debut) - timedelta(minutes=ep.preparation_minutes)
         heure_prep = prep_dt.time()
-
-    original_bytes = file_path.read_bytes()
 
     pdf_bytes = generate_planche_with_cartouche(
         original_pdf_bytes=original_bytes,
@@ -305,11 +273,7 @@ def download_cartouche(epreuve_id: int, db: Session = Depends(get_db)):
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
-        headers={
-            "Content-Disposition": (
-                f'attachment; filename="{planche.nom}_{candidat.nom}.pdf"'
-            )
-        },
+        headers={"Content-Disposition": f'attachment; filename="{planche.nom}_{candidat.nom}.pdf"'},
     )
 
 
@@ -321,10 +285,7 @@ class BatchCartoucheIn(BaseModel):
 
 @router.post("/batch-cartouche")
 def batch_cartouche(body: BatchCartoucheIn, db: Session = Depends(get_db)):
-    """
-    Génère un ZIP contenant les PDFs avec cartouche pour une liste d'épreuves.
-    Chaque épreuve doit avoir un candidat et une planche assignés.
-    """
+    """Génère un ZIP avec les PDFs cartouchés pour une liste d'épreuves."""
     from datetime import datetime as _dt, timedelta
     from app.models.candidat import Candidat
     from app.models.demi_journee import DemiJournee
@@ -352,9 +313,8 @@ def batch_cartouche(body: BatchCartoucheIn, db: Session = Depends(get_db)):
                 errors.append(f"Épreuve {epreuve_id}: données incomplètes, ignorée")
                 continue
 
-            file_path = UPLOAD_DIR / planche.fichier_path
-            if not file_path.exists():
-                errors.append(f"Épreuve {epreuve_id}: fichier PDF introuvable, ignorée")
+            if not planche.fichier_data:
+                errors.append(f"Épreuve {epreuve_id}: fichier PDF non disponible, ignorée")
                 continue
 
             examinateur_nom = "—"
@@ -377,7 +337,7 @@ def batch_cartouche(body: BatchCartoucheIn, db: Session = Depends(get_db)):
 
             try:
                 pdf_bytes = generate_planche_with_cartouche(
-                    original_pdf_bytes=file_path.read_bytes(),
+                    original_pdf_bytes=planche.fichier_data,
                     candidat_nom=candidat.nom,
                     candidat_prenom=candidat.prenom or "",
                     matiere=matiere_label or "—",
@@ -386,7 +346,6 @@ def batch_cartouche(body: BatchCartoucheIn, db: Session = Depends(get_db)):
                     heure_preparation=heure_prep,
                     heure_passage=ep.heure_debut,
                 )
-                # Nom de fichier : HH-MM_NOM_Prenom_Matiere.pdf
                 safe_nom = candidat.nom.replace(" ", "_")
                 safe_prenom = (candidat.prenom or "").replace(" ", "_")
                 heure_str = str(ep.heure_debut)[:5].replace(":", "-")
@@ -406,3 +365,7 @@ def batch_cartouche(body: BatchCartoucheIn, db: Session = Depends(get_db)):
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="planches_{ts}.zip"'},
     )
+
+
+# Import tardif (évite la circularité)
+from pathlib import Path  # noqa: E402
