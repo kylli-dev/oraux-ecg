@@ -2,6 +2,9 @@
 Portail candidat (routes publiques ou protégées par JWT candidat — pas de clé admin).
 """
 from datetime import date as Date, datetime, timezone, time, timedelta
+from zoneinfo import ZoneInfo
+
+_PARIS = ZoneInfo("Europe/Paris")
 
 
 def _now_utc() -> datetime:
@@ -348,12 +351,14 @@ def _cutoff_date(planning: Planning) -> Date:
     Avant heure_previs : J+1 accessible (le candidat peut encore s'inscrire pour demain).
     Après heure_previs : J+2 minimum (trop tard pour demain, au plus tôt après-demain).
     Objectif : éviter les inscriptions de dernière minute la veille au soir.
+    Calcul en heure de Paris (Europe/Paris) pour éviter le décalage UTC du serveur Render.
     """
-    now = datetime.now()
+    now_paris = datetime.now(tz=_PARIS)
+    today_paris = now_paris.date()
     previs = planning.heure_previs or time(16, 0)
-    if now.time() >= previs:
-        return Date.today() + timedelta(days=2)   # après préavis : J+2 minimum
-    return Date.today() + timedelta(days=1)        # avant préavis : J+1 minimum
+    if now_paris.time() >= previs:
+        return today_paris + timedelta(days=2)   # après préavis : J+2 minimum
+    return today_paris + timedelta(days=1)        # avant préavis : J+1 minimum
 
 
 @router.get("/me/triplets", response_model=List[TripletOut])
