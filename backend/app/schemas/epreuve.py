@@ -7,6 +7,7 @@ ALLOWED_STATUT = {
     "LIBRE",
     "PRERESERVEE",
     "ATTRIBUEE",
+    "ABSENT",
     "EN_EVALUATION",
     "FINALISEE",
     "ANNULEE",

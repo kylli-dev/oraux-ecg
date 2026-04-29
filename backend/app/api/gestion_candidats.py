@@ -47,6 +47,7 @@ class TripletEpreuveOut(BaseModel):
     matiere: str
     heure_debut: str
     heure_fin: str
+    statut: str = "ATTRIBUEE"
 
 
 class TripletOut(BaseModel):
@@ -336,7 +337,7 @@ def get_inscrits_journee(
         db.query(Epreuve)
         .filter(
             Epreuve.demi_journee_id.in_(dj_ids),
-            Epreuve.statut == "ATTRIBUEE",
+            Epreuve.statut.in_(["ATTRIBUEE", "ABSENT"]),
             Epreuve.candidat_id.isnot(None),
         )
         .order_by(Epreuve.heure_debut, Epreuve.matiere)
@@ -359,6 +360,7 @@ def get_inscrits_journee(
                 matiere=e.matiere,
                 heure_debut=str(e.heure_debut)[:5],
                 heure_fin=str(e.heure_fin)[:5],
+                statut=e.statut,
             )
             for e in eps
         ], key=lambda x: x.heure_debut)
@@ -594,7 +596,7 @@ def admin_inscrire_direct(
         dj = db.get(DemiJournee, ep.demi_journee_id)
         if dj.planning_id != c.planning_id:
             raise HTTPException(status_code=403, detail=f"Épreuve {ep_id} n'appartient pas au planning du candidat")
-        if ep.statut not in ("LIBRE", "PRERESERVEE"):
+        if ep.statut not in ("LIBRE", "PRERESERVEE", "ABSENT"):
             raise HTTPException(status_code=409, detail=f"Épreuve {ep_id} ({ep.matiere} {str(ep.heure_debut)[:5]}) n'est pas disponible (statut: {ep.statut})")
         epreuves_a_attribuer.append(ep)
 
@@ -632,3 +634,39 @@ def admin_casser_triplet(candidat_id: int, db: Session = Depends(get_db)):
     c.statut = "IMPORTE"
     db.commit()
     return {"candidat_id": candidat_id, "statut": "ANNULEE", "epreuves_statut": "LIBRE"}
+
+
+@router.post("/candidat/{candidat_id}/epreuve/{epreuve_id}/marquer-absent")
+def admin_marquer_absent(candidat_id: int, epreuve_id: int, db: Session = Depends(get_db)):
+    """
+    Marque une épreuve individuelle comme ABSENT.
+    L'inscription reste active, les autres épreuves du triplet restent ATTRIBUEE.
+    La salle libérée devient réaffectable via inscrire-direct.
+    """
+    ep = db.get(Epreuve, epreuve_id)
+    if not ep:
+        raise HTTPException(status_code=404, detail="Épreuve introuvable")
+    if ep.candidat_id != candidat_id:
+        raise HTTPException(status_code=403, detail="Cette épreuve n'appartient pas à ce candidat")
+    if ep.statut != "ATTRIBUEE":
+        raise HTTPException(status_code=400, detail=f"Statut actuel {ep.statut!r} — seule une épreuve ATTRIBUEE peut être marquée absente")
+    ep.statut = "ABSENT"
+    db.commit()
+    return {"epreuve_id": epreuve_id, "statut": "ABSENT"}
+
+
+@router.delete("/candidat/{candidat_id}/epreuve/{epreuve_id}/marquer-absent")
+def admin_annuler_absent(candidat_id: int, epreuve_id: int, db: Session = Depends(get_db)):
+    """
+    Annule le marquage d'absence : remet l'épreuve en ATTRIBUEE (candidat présent finalement).
+    """
+    ep = db.get(Epreuve, epreuve_id)
+    if not ep:
+        raise HTTPException(status_code=404, detail="Épreuve introuvable")
+    if ep.candidat_id != candidat_id:
+        raise HTTPException(status_code=403, detail="Cette épreuve n'appartient pas à ce candidat")
+    if ep.statut != "ABSENT":
+        raise HTTPException(status_code=400, detail=f"L'épreuve n'est pas en statut ABSENT (statut: {ep.statut!r})")
+    ep.statut = "ATTRIBUEE"
+    db.commit()
+    return {"epreuve_id": epreuve_id, "statut": "ATTRIBUEE"}

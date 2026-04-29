@@ -245,6 +245,7 @@ type TripletEpreuveGestion = {
   matiere: string;
   heure_debut: string;
   heure_fin: string;
+  statut?: string;
 };
 
 type TripletDisponible = {
@@ -4899,6 +4900,24 @@ function CompactageTab({
   const [triplets, setTriplets] = useState<TripletDisponible[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerCandidatId, setDrawerCandidatId] = useState<number | null>(null);
+  const [markingAbsent, setMarkingAbsent] = useState<Set<number>>(new Set());
+
+  const toggleAbsent = async (candidatId: number, ep: TripletEpreuveGestion) => {
+    setMarkingAbsent(s => new Set(s).add(ep.id));
+    try {
+      const isAbsent = ep.statut === "ABSENT";
+      if (isAbsent) {
+        await del(`gestion-candidats/candidat/${candidatId}/epreuve/${ep.id}/marquer-absent`);
+      } else {
+        await post(`gestion-candidats/candidat/${candidatId}/epreuve/${ep.id}/marquer-absent`, {});
+      }
+      loadDay();
+    } catch {
+      toast.error("Erreur lors du marquage d'absence");
+    } finally {
+      setMarkingAbsent(s => { const n = new Set(s); n.delete(ep.id); return n; });
+    }
+  };
 
   const loadDay = useCallback(() => {
     if (!selectedDate) return;
@@ -4998,27 +5017,67 @@ function CompactageTab({
                       const slotByMatiere: Record<string, TripletEpreuveGestion> = {};
                       for (const e of c.epreuves) slotByMatiere[e.matiere] = e;
 
-                      // Check if any of this candidate's slots overlap with free slots
+                      const hasAbsence = c.epreuves.some(ep => ep.statut === "ABSENT");
+                      // Conflit = un créneau actif (non absent) chevauche un triplet libre
                       const hasConflict = c.epreuves.some(ep =>
+                        ep.statut !== "ABSENT" &&
                         freeTriplets.some(t => t.epreuves.some(te => te.heure_debut === ep.heure_debut && te.matiere === ep.matiere))
                       );
 
                       return (
                         <tr
                           key={c.candidat_id}
-                          className={`border-t border-black/5 ${i % 2 === 0 ? "" : "bg-black/[0.01]"}`}
+                          className={`border-t border-black/5 group ${
+                            hasAbsence ? "bg-red-50/40" : i % 2 === 0 ? "" : "bg-black/[0.01]"
+                          }`}
                         >
                           <td className="px-4 py-3">
-                            <div className="font-medium">{c.candidat_nom} {c.candidat_prenom}</div>
+                            <div className="font-medium flex items-center gap-2">
+                              {c.candidat_nom} {c.candidat_prenom}
+                              {hasAbsence && (
+                                <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded font-semibold">
+                                  ABSENT PARTIEL
+                                </span>
+                              )}
+                            </div>
                             {c.candidat_code && (
                               <div className="text-xs font-mono text-black/30">{c.candidat_code}</div>
                             )}
                           </td>
                           {allMatieres.map(m => {
                             const ep = slotByMatiere[m];
+                            const isAbsent = ep?.statut === "ABSENT";
+                            const isBusy = markingAbsent.has(ep?.id ?? -1);
                             return (
-                              <td key={m} className="px-4 py-3 font-mono text-xs text-black/60">
-                                {ep ? ep.heure_debut : <span className="text-black/20">—</span>}
+                              <td key={m} className="px-4 py-3 text-xs">
+                                {ep ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className={`font-mono ${isAbsent ? "line-through text-red-300" : "text-black/60"}`}>
+                                      {ep.heure_debut}
+                                    </span>
+                                    {isAbsent ? (
+                                      <button
+                                        onClick={() => toggleAbsent(c.candidat_id, ep)}
+                                        disabled={isBusy}
+                                        title="Annuler l'absence"
+                                        className="text-[10px] px-1.5 py-0.5 rounded border border-red-300 bg-red-100 text-red-600 hover:bg-red-200 transition disabled:opacity-40"
+                                      >
+                                        {isBusy ? "…" : "✕ absent"}
+                                      </button>
+                                    ) : (
+                                      <button
+                                        onClick={() => toggleAbsent(c.candidat_id, ep)}
+                                        disabled={isBusy}
+                                        title="Marquer absent sur cette épreuve"
+                                        className="text-[10px] px-1.5 py-0.5 rounded border border-black/15 text-black/30 hover:border-red-300 hover:text-red-500 hover:bg-red-50 transition opacity-0 group-hover:opacity-100 disabled:opacity-40"
+                                      >
+                                        {isBusy ? "…" : "absent"}
+                                      </button>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-black/20">—</span>
+                                )}
                               </td>
                             );
                           })}
