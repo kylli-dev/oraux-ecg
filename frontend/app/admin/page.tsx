@@ -4896,14 +4896,19 @@ function CompactageTab({
 }) {
   const toast = useToast();
   const storageKey = `compactage_date_${planningId}`;
-  const [selectedDate, setSelectedDate] = useState(
-    () => localStorage.getItem(storageKey) ?? planning?.date_debut ?? ""
-  );
-  const handleDateChange = (date: string) => {
-    setSelectedDate(date);
-    localStorage.setItem(storageKey, date);
-  };
+  const [selectedDate, setSelectedDate] = useState(planning?.date_debut ?? "");
   const [inscrits, setInscrits] = useState<JourneeInscritItem[]>([]);
+
+  // Restaure la dernière date choisie depuis localStorage après le montage
+  useEffect(() => {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) setSelectedDate(saved);
+  }, [storageKey]);
+
+  // Sauvegarde dès que la date change
+  useEffect(() => {
+    if (selectedDate) localStorage.setItem(storageKey, selectedDate);
+  }, [storageKey, selectedDate]);
   const [triplets, setTriplets] = useState<TripletDisponible[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerCandidatId, setDrawerCandidatId] = useState<number | null>(null);
@@ -4964,7 +4969,7 @@ function CompactageTab({
           <input
             type="date"
             value={selectedDate}
-            onChange={e => handleDateChange(e.target.value)}
+            onChange={e => setSelectedDate(e.target.value)}
             min={planning?.date_debut}
             max={planning?.date_fin}
             className="border border-black/15 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300"
