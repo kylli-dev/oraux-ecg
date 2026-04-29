@@ -1342,15 +1342,15 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
       </div>
 
       {/* Tableau croisé */}
-      <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
-        <table className="w-full text-sm border-collapse min-w-max">
-          <thead>
+      <div className="overflow-x-auto rounded-xl border bg-white shadow-sm max-h-[72vh] overflow-y-auto">
+        <table className="text-sm border-collapse min-w-max">
+          <thead className="sticky top-0 z-20">
             {/* Ligne 1 : en-têtes matières */}
-            <tr className="bg-black/[0.04] border-b">
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap">Statut</th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap">Dép. prépa</th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap">Dép. exam</th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap">Fin exam</th>
+            <tr className="bg-gray-100 border-b">
+              <th className="sticky left-0 z-30 bg-gray-100 px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap border-r border-black/10">Statut</th>
+              <th className="sticky left-[88px] z-30 bg-gray-100 px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap">Dép. prépa</th>
+              <th className="sticky left-[172px] z-30 bg-gray-100 px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap">Dép. exam</th>
+              <th className="sticky left-[256px] z-30 bg-gray-100 px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap border-r border-black/10">Fin exam</th>
               {matieres.map((m) => (
                 <th
                   key={m}
@@ -1362,8 +1362,11 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
               ))}
             </tr>
             {/* Ligne 2 : sous-colonnes par matière */}
-            <tr className="bg-black/[0.02] border-b text-[11px] text-black/40">
-              <th colSpan={4} />
+            <tr className="bg-gray-50 border-b text-[11px] text-black/40">
+              <th className="sticky left-0 z-30 bg-gray-50 border-r border-black/10" colSpan={1} />
+              <th className="sticky left-[88px] z-30 bg-gray-50" />
+              <th className="sticky left-[172px] z-30 bg-gray-50" />
+              <th className="sticky left-[256px] z-30 bg-gray-50 border-r border-black/10" />
               {matieres.map((m) => (
                 <React.Fragment key={m}>
                   <th className="px-3 py-1.5 text-left font-normal border-l border-black/10">Candidat</th>
@@ -1380,7 +1383,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                 <tr>
                   <td
                     colSpan={4 + matieres.length * 3}
-                    className="px-4 py-2 bg-black/[0.05] font-semibold text-black/60 text-xs uppercase tracking-widest sticky left-0"
+                    className="px-4 py-2 bg-black/[0.05] font-semibold text-black/60 text-xs uppercase tracking-widest sticky left-0 z-10"
                   >
                     {formatDate(date)}
                   </td>
@@ -1388,6 +1391,11 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                 {dateRows.map((row) => {
                   const key = `${row.date}|${row.heure_debut}`;
                   const rs = rowStatut(row.byMat);
+                  const stickyBg =
+                    rs === "LIBRE" ? "bg-green-50"
+                    : rs === "PRERESERVEE" ? "bg-amber-50"
+                    : rs === "ATTRIBUEE" ? "bg-blue-50"
+                    : "bg-white";
                   const rowBg =
                     rs === "LIBRE" ? "bg-green-50/50"
                     : rs === "PRERESERVEE" ? "bg-amber-50/50"
@@ -1396,16 +1404,22 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
 
                   return (
                     <tr key={key} className={`border-b border-black/[0.06] hover:bg-black/[0.02] transition ${rowBg}`}>
-                      {/* Statut */}
-                      <td className="px-3 py-2 whitespace-nowrap">{statutBadgeCell(rs)}</td>
-                      {/* Dép. prépa */}
-                      <td className="px-3 py-2 text-black/40 font-mono text-xs whitespace-nowrap">
+                      {/* Statut — sticky */}
+                      <td className={`sticky left-0 z-10 px-3 py-2 whitespace-nowrap border-r border-black/[0.06] ${stickyBg}`}>
+                        {statutBadgeCell(rs)}
+                      </td>
+                      {/* Dép. prépa — sticky */}
+                      <td className={`sticky left-[88px] z-10 px-3 py-2 text-black/40 font-mono text-xs whitespace-nowrap ${stickyBg}`}>
                         {debPrepaMap.get(key) ?? "—"}
                       </td>
-                      {/* Dép. exam */}
-                      <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">{row.heure_debut}</td>
-                      {/* Fin exam */}
-                      <td className="px-3 py-2 text-black/40 font-mono text-xs whitespace-nowrap">{row.heure_fin}</td>
+                      {/* Dép. exam — sticky */}
+                      <td className={`sticky left-[172px] z-10 px-3 py-2 font-mono text-xs whitespace-nowrap ${stickyBg}`}>
+                        {row.heure_debut}
+                      </td>
+                      {/* Fin exam — sticky */}
+                      <td className={`sticky left-[256px] z-10 px-3 py-2 text-black/40 font-mono text-xs whitespace-nowrap border-r border-black/[0.06] ${stickyBg}`}>
+                        {row.heure_fin}
+                      </td>
                       {/* Par matière */}
                       {matieres.map((m) => {
                         const eps = row.byMat[m] ?? [];
