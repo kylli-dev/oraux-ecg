@@ -696,7 +696,7 @@ def s_inscrire_triplet(
             )
         )
 
-    candidat.statut = "INSCRIT"
+    c.statut = "INSCRIT"
     db.commit()
     if planning.envoyer_convocations:
         pass  # TODO: envoyer Message-type Convocation par email
