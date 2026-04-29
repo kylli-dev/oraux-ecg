@@ -8,6 +8,7 @@ from app.core.admin_guard import require_admin
 from app.core.auth import hash_password
 from app.db.deps import get_db
 from app.models.surveillant import Surveillant
+from app.models.surveillant_planning import SurveillantPlanning
 from app.schemas.surveillant import (
     SurveillantCreate,
     SurveillantCreatedOut,
@@ -31,22 +32,35 @@ def _gen_password() -> str:
 
 @router.get("/", response_model=List[SurveillantOut])
 def list_surveillants(planning_id: Optional[int] = None, db: Session = Depends(get_db)):
-    q = db.query(Surveillant)
-    if planning_id:
-        q = q.filter_by(planning_id=planning_id)
-    return q.order_by(Surveillant.nom, Surveillant.prenom).all()
+    """
+    Retourne tous les surveillants du pool global.
+    Si planning_id est fourni, enrichit chaque surveillant avec son statut
+    actif_planning pour ce planning (None = non associé).
+    """
+    surveillants = db.query(Surveillant).order_by(Surveillant.nom, Surveillant.prenom).all()
+    if not planning_id:
+        return surveillants
+    liens = {
+        sp.surveillant_id: sp.actif
+        for sp in db.query(SurveillantPlanning).filter_by(planning_id=planning_id).all()
+    }
+    result = []
+    for s in surveillants:
+        out = SurveillantOut.model_validate(s)
+        out.actif_planning = liens.get(s.id)  # None si non associé
+        result.append(out)
+    return result
 
 
 @router.post("/", response_model=SurveillantCreatedOut, status_code=201)
 def create_surveillant(body: SurveillantCreate, db: Session = Depends(get_db)):
     """
-    Crée un surveillant, génère ses identifiants (login = email, mdp aléatoire)
-    et envoie la notification par email si le SMTP est configuré.
+    Crée un surveillant dans le pool global (sans planning).
+    Génère ses identifiants et envoie la notification email si SMTP configuré.
     Retourne le mot de passe en clair pour affichage admin.
     """
     plain_pwd = _gen_password()
     s = Surveillant(
-        planning_id=body.planning_id,
         nom=body.nom.strip().upper(),
         prenom=body.prenom.strip(),
         email=body.email.strip(),
@@ -68,7 +82,6 @@ def create_surveillant(body: SurveillantCreate, db: Session = Depends(get_db)):
 
     return SurveillantCreatedOut(
         id=s.id,
-        planning_id=s.planning_id,
         nom=s.nom,
         prenom=s.prenom,
         email=s.email,
@@ -106,6 +119,28 @@ def update_surveillant(surveillant_id: int, body: SurveillantUpdate, db: Session
     return s
 
 
+@router.patch("/{surveillant_id}/plannings/{planning_id}", response_model=SurveillantOut)
+def set_actif_planning(surveillant_id: int, planning_id: int, body: dict, db: Session = Depends(get_db)):
+    """Crée ou met à jour l'association surveillant ↔ planning avec le flag actif."""
+    s = db.get(Surveillant, surveillant_id)
+    if not s:
+        raise HTTPException(status_code=404, detail="Surveillant introuvable")
+    actif = bool(body.get("actif", True))
+    lien = db.query(SurveillantPlanning).filter_by(
+        surveillant_id=surveillant_id, planning_id=planning_id
+    ).first()
+    if lien:
+        lien.actif = actif
+    else:
+        lien = SurveillantPlanning(surveillant_id=surveillant_id, planning_id=planning_id, actif=actif)
+        db.add(lien)
+    db.commit()
+    db.refresh(s)
+    out = SurveillantOut.model_validate(s)
+    out.actif_planning = actif
+    return out
+
+
 @router.patch("/{surveillant_id}/actif", response_model=SurveillantOut)
 def toggle_actif(surveillant_id: int, body: dict, db: Session = Depends(get_db)):
     s = db.get(Surveillant, surveillant_id)
@@ -130,10 +165,7 @@ def delete_surveillant(surveillant_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{surveillant_id}/envoyer-identifiants", response_model=SurveillantCreatedOut)
 def envoyer_identifiants(surveillant_id: int, db: Session = Depends(get_db)):
-    """
-    Génère un nouveau mot de passe pour le surveillant et envoie la notification.
-    Retourne le mot de passe en clair pour affichage admin.
-    """
+    """Génère un nouveau mot de passe et envoie la notification."""
     s = db.get(Surveillant, surveillant_id)
     if not s:
         raise HTTPException(status_code=404, detail="Surveillant introuvable")
@@ -154,7 +186,6 @@ def envoyer_identifiants(surveillant_id: int, db: Session = Depends(get_db)):
 
     return SurveillantCreatedOut(
         id=s.id,
-        planning_id=s.planning_id,
         nom=s.nom,
         prenom=s.prenom,
         email=s.email,

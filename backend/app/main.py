@@ -29,6 +29,7 @@ from app.models import (  # noqa: F401
     ExaminateurIndisponibilite,
     ExaminateurPlanning,  # noqa: F401
     Surveillant,  # noqa: F401
+    SurveillantPlanning,  # noqa: F401
     Planche,  # noqa: F401
 )
 
@@ -170,6 +171,12 @@ def _run_migrations():
         "ALTER TABLE examinateur DROP CONSTRAINT IF EXISTS examinateur_planning_id_fkey",
         "ALTER TABLE examinateur ALTER COLUMN planning_id DROP NOT NULL",
         "ALTER TABLE examinateur DROP COLUMN IF EXISTS planning_id",
+        # Surveillants globaux : table de liaison surveillant ↔ planning
+        "CREATE TABLE IF NOT EXISTS surveillant_planning (id SERIAL PRIMARY KEY, surveillant_id INTEGER NOT NULL REFERENCES surveillant(id) ON DELETE CASCADE, planning_id INTEGER NOT NULL REFERENCES planning(id) ON DELETE CASCADE, actif BOOLEAN NOT NULL DEFAULT TRUE, CONSTRAINT uq_surv_planning UNIQUE (surveillant_id, planning_id))",
+        "INSERT INTO surveillant_planning (surveillant_id, planning_id, actif) SELECT id, planning_id, COALESCE(actif, TRUE) FROM surveillant WHERE planning_id IS NOT NULL ON CONFLICT (surveillant_id, planning_id) DO NOTHING",
+        "ALTER TABLE surveillant DROP CONSTRAINT IF EXISTS surveillant_planning_id_fkey",
+        "ALTER TABLE surveillant ALTER COLUMN planning_id DROP NOT NULL",
+        "ALTER TABLE surveillant DROP COLUMN IF EXISTS planning_id",
     ]
     with engine.connect() as conn:
         for sql in migrations:

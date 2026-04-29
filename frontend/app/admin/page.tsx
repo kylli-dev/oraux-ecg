@@ -213,12 +213,12 @@ type SectionKey = "plannings" | "journeeTypes" | "candidats" | "examinateurs" | 
 
 type Surveillant = {
   id: number;
-  planning_id: number;
   nom: string;
   prenom: string;
   email: string;
   actif: boolean;
   code_acces: string;
+  actif_planning?: boolean | null; // null = non associé, true/false = actif/inactif pour ce planning
 };
 
 type Salle = {
@@ -8277,10 +8277,12 @@ function SurveillantsSection() {
   }, []);
 
   const load = useCallback(async () => {
-    if (!selectedPlanningId) return;
     setLoading(true);
     try {
-      setSurvaillants(await get<Surveillant[]>(`surveillants/?planning_id=${selectedPlanningId}`));
+      const url = selectedPlanningId
+        ? `surveillants/?planning_id=${selectedPlanningId}`
+        : `surveillants/`;
+      setSurvaillants(await get<Surveillant[]>(url));
     } finally {
       setLoading(false);
     }
@@ -8306,7 +8308,20 @@ function SurveillantsSection() {
     try {
       const updated = await patch<Surveillant>(`surveillants/${s.id}/actif`, { actif: !s.actif });
       toast.success(updated.actif ? "Surveillant activé" : "Surveillant désactivé");
-      setSurvaillants((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+      setSurvaillants((prev) => prev.map((x) => (x.id === updated.id ? { ...x, actif: updated.actif } : x)));
+    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : String(e)); }
+  };
+
+  const handleTogglePlanning = async (s: Surveillant) => {
+    if (!selectedPlanningId) return;
+    const newActif = s.actif_planning === true ? false : true;
+    try {
+      const updated = await patch<Surveillant>(
+        `surveillants/${s.id}/plannings/${selectedPlanningId}`,
+        { actif: newActif }
+      );
+      toast.success(newActif ? "Associé au planning" : "Dissocié du planning");
+      setSurvaillants((prev) => prev.map((x) => (x.id === s.id ? { ...x, actif_planning: updated.actif_planning } : x)));
     } catch (e: unknown) { toast.error(e instanceof Error ? e.message : String(e)); }
   };
 
@@ -8379,10 +8394,10 @@ function SurveillantsSection() {
             value={selectedPlanningId ?? ""}
             onChange={(e) => setSelectedPlanningId(e.target.value ? Number(e.target.value) : null)}
           >
-            <option value="">— Planning —</option>
+            <option value="">Tous les plannings</option>
             {plannings.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
           </select>
-          {selectedPlanningId && view === "annuaire" && (
+          {view === "annuaire" && (
             <Btn label="Nouveau surveillant" icon={Plus} onClick={() => setShowCreate(true)} />
           )}
         </div>
@@ -8427,18 +8442,20 @@ function SurveillantsSection() {
 
           {loading ? (
             <div className="p-8 text-center"><Spinner /></div>
-          ) : !selectedPlanningId ? (
-            <Empty message="Sélectionnez un planning" />
           ) : filtered.length === 0 ? (
-            <Empty message="Aucun surveillant" sub="Créez le premier surveillant pour ce planning." />
+            <Empty message="Aucun surveillant" sub="Créez le premier surveillant dans le pool global." />
           ) : (
             <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-[#F5F5F5] border-b">
-                    {["Nom", "Email", "Statut", ""].map((h) => (
-                      <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-black/50 tracking-wide">{h}</th>
-                    ))}
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-black/50 tracking-wide">Nom</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-black/50 tracking-wide">Email</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-black/50 tracking-wide">Statut global</th>
+                    {selectedPlanningId && (
+                      <th className="text-left px-5 py-3 text-xs font-semibold text-black/50 tracking-wide">Ce planning</th>
+                    )}
+                    <th className="px-5 py-3" />
                   </tr>
                 </thead>
                 <tbody>
@@ -8458,6 +8475,30 @@ function SurveillantsSection() {
                           {s.actif ? "Actif" : "Inactif"}
                         </button>
                       </td>
+                      {selectedPlanningId && (
+                        <td className="px-5 py-3">
+                          <button
+                            onClick={() => handleTogglePlanning(s)}
+                            title={
+                              s.actif_planning === true ? "Actif pour ce planning — cliquer pour désactiver"
+                              : s.actif_planning === false ? "Inactif pour ce planning — cliquer pour activer"
+                              : "Non associé — cliquer pour associer"
+                            }
+                            className="flex items-center gap-1.5 text-xs hover:opacity-80 transition"
+                          >
+                            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                              s.actif_planning === true ? "bg-green-500"
+                              : s.actif_planning === false ? "bg-amber-400"
+                              : "bg-gray-300"
+                            }`} />
+                            <span className="text-black/40">
+                              {s.actif_planning === true ? "Actif"
+                              : s.actif_planning === false ? "Inactif"
+                              : "Non associé"}
+                            </span>
+                          </button>
+                        </td>
+                      )}
                       <td className="px-5 py-3">
                         <div className="flex items-center justify-end gap-1">
                           <Btn label="Identifiants" icon={Key} onClick={() => handleSendCredentials(s)} small variant="ghost" />
@@ -8602,7 +8643,7 @@ function CreateSurveillantForm({
   planningId,
   onSuccess,
 }: {
-  planningId: number;
+  planningId: number | null;
   onSuccess: (res: Surveillant & { plain_password: string; email_sent: boolean }) => void;
 }) {
   const [form, setForm] = useState({ nom: "", prenom: "", email: "" });
@@ -8620,8 +8661,12 @@ function CreateSurveillantForm({
     try {
       const res = await post<Surveillant & { plain_password: string; email_sent: boolean }>(
         "surveillants/",
-        { planning_id: planningId, ...form }
+        { ...form }
       );
+      // Si un planning est sélectionné, on l'associe automatiquement
+      if (planningId) {
+        await patch(`surveillants/${res.id}/plannings/${planningId}`, { actif: true });
+      }
       onSuccess(res);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));

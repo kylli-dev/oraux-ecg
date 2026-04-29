@@ -3,7 +3,6 @@ from pydantic import BaseModel, Field
 
 
 class SurveillantCreate(BaseModel):
-    planning_id: int
     nom: str = Field(min_length=1, max_length=100)
     prenom: str = Field(min_length=1, max_length=100)
     email: str = Field(min_length=1, max_length=255)
@@ -19,12 +18,12 @@ class SurveillantUpdate(BaseModel):
 
 class SurveillantOut(BaseModel):
     id: int
-    planning_id: int
     nom: str
     prenom: str
     email: str
     actif: bool
     code_acces: str
+    actif_planning: Optional[bool] = None  # None = non associé au planning
 
     class Config:
         from_attributes = True

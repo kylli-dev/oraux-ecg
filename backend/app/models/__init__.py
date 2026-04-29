@@ -14,6 +14,7 @@ from app.models.salle import Salle
 from app.models.examinateur_indisponibilite import ExaminateurIndisponibilite
 from app.models.examinateur_planning import ExaminateurPlanning
 from app.models.surveillant import Surveillant
+from app.models.surveillant_planning import SurveillantPlanning
 from app.models.planche import Planche
 from app.models.planning_salle_defaut import PlanningMatiereSalleDefaut
 
@@ -35,6 +36,7 @@ __all__ = [
     "ExaminateurIndisponibilite",
     "ExaminateurPlanning",
     "Surveillant",
+    "SurveillantPlanning",
     "Planche",
     "PlanningMatiereSalleDefaut",
 ]
