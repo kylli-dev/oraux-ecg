@@ -345,14 +345,15 @@ def _profil_effectif(c) -> str:
 
 def _cutoff_date(planning: Planning) -> Date:
     """
-    Avant heure_previs : le jour courant est accessible (cutoff = aujourd'hui).
-    Après heure_previs  : J+1 minimum (cutoff = demain).
+    Avant heure_previs : J+1 accessible (le candidat peut encore s'inscrire pour demain).
+    Après heure_previs : J+2 minimum (trop tard pour demain, au plus tôt après-demain).
+    Objectif : éviter les inscriptions de dernière minute la veille au soir.
     """
     now = datetime.now()
     previs = planning.heure_previs or time(16, 0)
     if now.time() >= previs:
-        return Date.today() + timedelta(days=1)   # après préavis : J+1 minimum
-    return Date.today()                             # avant préavis : jour courant accessible
+        return Date.today() + timedelta(days=2)   # après préavis : J+2 minimum
+    return Date.today() + timedelta(days=1)        # avant préavis : J+1 minimum
 
 
 @router.get("/me/triplets", response_model=List[TripletOut])
