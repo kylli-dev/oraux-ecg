@@ -8860,6 +8860,7 @@ function PlanchesSection() {
   const [examinateurs, setExaminateurs] = useState<Examinateur[]>([]);
 
   const [loadingCartouche, setLoadingCartouche] = useState<Set<number>>(new Set());
+  const [doneCartouche, setDoneCartouche] = useState<Set<number>>(new Set());
 
   async function doCartouche(epreuveId: number, nomFichier: string) {
     setLoadingCartouche((s) => new Set(s).add(epreuveId));
@@ -8876,6 +8877,7 @@ function PlanchesSection() {
       a.download = `${nomFichier}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
+      setDoneCartouche((s) => new Set(s).add(epreuveId));
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -9365,18 +9367,21 @@ function PlanchesSection() {
                             <>
                               {ep.candidat_id && (() => {
                                 const busy = loadingCartouche.has(ep.id);
+                                const done = doneCartouche.has(ep.id);
                                 return (
                                   <button
                                     onClick={() => doCartouche(ep.id, `${ep.planche_nom}_${ep.matiere}`)}
                                     disabled={busy}
                                     className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded transition font-medium ${
-                                      busy
-                                        ? "bg-amber-100 text-amber-700 cursor-wait"
-                                        : "text-green-700 bg-green-50 hover:bg-green-100"
+                                      busy ? "bg-amber-100 text-amber-700 cursor-wait"
+                                      : done ? "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                                      : "bg-green-50 text-green-700 hover:bg-green-100"
                                     }`}
                                   >
                                     {busy
                                       ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Génération…</>
+                                      : done
+                                      ? <><CheckCircle2 className="h-3.5 w-3.5" />Téléchargé</>
                                       : <><Download className="h-3.5 w-3.5" />Cartouche</>
                                     }
                                   </button>
