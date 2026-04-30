@@ -8859,6 +8859,30 @@ function PlanchesSection() {
   // Examinateurs list
   const [examinateurs, setExaminateurs] = useState<Examinateur[]>([]);
 
+  const [loadingCartouche, setLoadingCartouche] = useState<Set<number>>(new Set());
+
+  async function doCartouche(epreuveId: number, nomFichier: string) {
+    setLoadingCartouche((s) => new Set(s).add(epreuveId));
+    try {
+      const res = await fetch(`/api/backend/planches/epreuves/${epreuveId}/cartouche`);
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.detail ?? "Erreur lors de la génération");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${nomFichier}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoadingCartouche((s) => { const n = new Set(s); n.delete(epreuveId); return n; });
+    }
+  }
+
   // ── Onglet Impression ────────────────────────────────────────────────────────
   const [impPlanningId, setImpPlanningId] = useState<number | "">("");
   const [impDate, setImpDate] = useState("");
@@ -9339,17 +9363,25 @@ function PlanchesSection() {
                           />
                           {ep.planche_nom && (
                             <>
-                              {ep.candidat_id && (
-                                <a
-                                  href={`/api/backend/planches/epreuves/${ep.id}/cartouche`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 hover:bg-green-100 px-2 py-1 rounded transition font-medium"
-                                >
-                                  <Download className="h-3.5 w-3.5" />
-                                  Cartouche
-                                </a>
-                              )}
+                              {ep.candidat_id && (() => {
+                                const busy = loadingCartouche.has(ep.id);
+                                return (
+                                  <button
+                                    onClick={() => doCartouche(ep.id, `${ep.planche_nom}_${ep.matiere}`)}
+                                    disabled={busy}
+                                    className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded transition font-medium ${
+                                      busy
+                                        ? "bg-amber-100 text-amber-700 cursor-wait"
+                                        : "text-green-700 bg-green-50 hover:bg-green-100"
+                                    }`}
+                                  >
+                                    {busy
+                                      ? <><Loader2 className="h-3.5 w-3.5 animate-spin" />Génération…</>
+                                      : <><Download className="h-3.5 w-3.5" />Cartouche</>
+                                    }
+                                  </button>
+                                );
+                              })()}
                               <button
                                 onClick={() => doDesassign(ep.id)}
                                 className="inline-flex items-center gap-1 text-xs text-red-500 px-2 py-1 rounded hover:bg-red-50 transition"
