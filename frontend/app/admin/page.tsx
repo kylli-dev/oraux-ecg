@@ -9253,9 +9253,8 @@ function PlanchesSection() {
                               <Btn label="Modifier" small variant="ghost" icon={Edit2} onClick={() => startEdit(p)} />
                               <button
                                 onClick={() => doDelete(p.id)}
-                                disabled={p.assignee}
-                                title={p.assignee ? "Assignée à une épreuve — non supprimable" : "Supprimer"}
-                                className="inline-flex items-center gap-1 text-xs text-red-500 px-2 py-1 rounded hover:bg-red-50 transition disabled:opacity-30 disabled:cursor-not-allowed"
+                                title={p.assignee ? "Supprimer (désassigne automatiquement les épreuves liées)" : "Supprimer"}
+                                className="inline-flex items-center gap-1 text-xs text-red-500 px-2 py-1 rounded hover:bg-red-50 transition"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </button>

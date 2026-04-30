@@ -170,11 +170,8 @@ def delete_planche(planche_id: int, db: Session = Depends(get_db)):
     p = db.get(Planche, planche_id)
     if not p:
         raise HTTPException(status_code=404, detail="Planche introuvable")
-    if _is_assigned(planche_id, db):
-        raise HTTPException(
-            status_code=409,
-            detail="Cette planche est assignée à une épreuve et ne peut pas être supprimée.",
-        )
+    # Désassigner de toutes les épreuves avant suppression
+    db.query(Epreuve).filter(Epreuve.planche_id == planche_id).update({"planche_id": None})
     db.delete(p)
     db.commit()
 
