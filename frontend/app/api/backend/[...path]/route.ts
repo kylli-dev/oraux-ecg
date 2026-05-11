@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 10;
 
 async function proxy(req: NextRequest, pathSegments: string[]) {
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
+  const baseUrl = process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL!;
   const adminKey = process.env.ADMIN_API_KEY!;
 
   if (!adminKey) {

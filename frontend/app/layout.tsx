@@ -29,6 +29,24 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         {children}
+        {process.env.NEXT_PUBLIC_ENV === "dev" && (
+          <div style={{
+            position: "fixed",
+            bottom: "12px",
+            right: "12px",
+            background: "#f97316",
+            color: "#fff",
+            fontWeight: 700,
+            fontSize: "11px",
+            letterSpacing: "0.1em",
+            padding: "3px 8px",
+            borderRadius: "4px",
+            zIndex: 9999,
+            pointerEvents: "none",
+          }}>
+            DEV
+          </div>
+        )}
       </body>
     </html>
   );
