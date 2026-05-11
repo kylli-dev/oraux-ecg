@@ -176,30 +176,49 @@ def _build_inscription_out(insc: Inscription, db: Session) -> InscriptionOut:
 
 @router.get("/{planning_id}/candidats", response_model=List[CandidatListeItem])
 def list_candidats_gestion(planning_id: int, db: Session = Depends(get_db)):
-    """Liste tous les candidats d'un planning avec leur statut d'inscription."""
+    """Liste tous les candidats d'un planning avec leur statut d'inscription (batch, sans N+1)."""
     candidats = (
         db.query(Candidat)
         .filter_by(planning_id=planning_id)
         .order_by(Candidat.nom, Candidat.prenom)
         .all()
     )
-    result = []
-    for c in candidats:
-        insc = db.query(Inscription).filter_by(candidat_id=c.id, statut="ACTIVE").first()
-        la = db.query(ListeAttente).filter_by(candidat_id=c.id).first()
-        result.append(CandidatListeItem(
+    if not candidats:
+        return []
+
+    cids = [c.id for c in candidats]
+
+    # Batch : une seule requête pour les inscriptions actives
+    inscriptions = {
+        insc.candidat_id: insc
+        for insc in db.query(Inscription)
+        .filter(Inscription.candidat_id.in_(cids), Inscription.statut == "ACTIVE")
+        .all()
+    }
+
+    # Batch : une seule requête pour la liste d'attente
+    listes_attente = {
+        la.candidat_id
+        for la in db.query(ListeAttente)
+        .filter(ListeAttente.candidat_id.in_(cids))
+        .all()
+    }
+
+    return [
+        CandidatListeItem(
             id=c.id,
             nom=c.nom,
             prenom=c.prenom,
             email=c.email,
             code_candidat=c.code_candidat,
             civilite=c.civilite,
-            is_inscrit=insc is not None,
-            inscription_id=insc.id if insc else None,
-            is_liste_attente=la is not None,
+            is_inscrit=c.id in inscriptions,
+            inscription_id=inscriptions[c.id].id if c.id in inscriptions else None,
+            is_liste_attente=c.id in listes_attente,
             statut=c.statut,
-        ))
-    return result
+        )
+        for c in candidats
+    ]
 
 
 @router.get("/candidat/{candidat_id}/fiche", response_model=FicheOut)
