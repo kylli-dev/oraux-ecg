@@ -32,7 +32,7 @@ def _build_cartouche_pdf(
     c = canvas.Canvas(buf, pagesize=(page_width, page_height))
 
     # Dimensions du cartouche
-    margin = 0 * mm
+    margin = 8 * mm
     box_height = 28 * mm
     box_top = page_height - margin
     box_bottom = box_top - box_height
