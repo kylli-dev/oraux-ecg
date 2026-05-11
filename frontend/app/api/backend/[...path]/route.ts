@@ -33,8 +33,6 @@ async function proxy(req: NextRequest, pathSegments: string[]) {
           method: req.method,
           headers: { ...headers, "Content-Type": contentType },
           body: buf,
-          // @ts-expect-error — Node.js fetch nécessite duplex pour les streams
-          duplex: "half",
           cache: "no-store",
         });
       } else {
