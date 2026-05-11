@@ -81,7 +81,13 @@ async function handle(req: NextRequest, ctx: Ctx): Promise<NextResponse> {
   }
 }
 
-export function GET(req: NextRequest, ctx: Ctx) { return handle(req, ctx); }
+export function GET(req: NextRequest, ctx: Ctx) {
+  // diagnostic temporaire
+  if (req.nextUrl.pathname.includes("__diag__")) {
+    return NextResponse.json({ deployed: true, env_base: !!process.env.API_BASE_URL, env_pub: !!process.env.NEXT_PUBLIC_API_BASE_URL, env_key: !!process.env.ADMIN_API_KEY });
+  }
+  return handle(req, ctx);
+}
 export function POST(req: NextRequest, ctx: Ctx) { return handle(req, ctx); }
 export function PUT(req: NextRequest, ctx: Ctx) { return handle(req, ctx); }
 export function PATCH(req: NextRequest, ctx: Ctx) { return handle(req, ctx); }
