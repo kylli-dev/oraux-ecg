@@ -16,7 +16,8 @@ async function proxy(req: NextRequest, pathSegments: string[]) {
 
   const path = pathSegments.join("/");
   const search = req.nextUrl.searchParams.toString();
-  const upstream = `${baseUrl}/admin/${path}${search ? "?" + search : ""}`;
+  // Ajoute un slash final pour éviter le 307 de FastAPI (trailing slash redirect)
+  const upstream = `${baseUrl}/admin/${path}${path.endsWith("/") ? "" : "/"}${search ? "?" + search : ""}`;
 
   const headers: Record<string, string> = { "X-Admin-Api-Key": adminKey };
 
