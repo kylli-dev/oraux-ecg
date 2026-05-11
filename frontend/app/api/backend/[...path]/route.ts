@@ -37,7 +37,8 @@ async function mut(req: NextRequest, { params }: { params: Promise<{ path: strin
   const { path } = await params;
   const joined   = path.join("/");
   const search   = req.nextUrl.searchParams.toString();
-  const url      = `${BASE}/admin/${joined}/${search ? "?" + search : ""}`;
+  // Pas de trailing slash pour les mutations : le body multipart serait perdu sur le 307 redirect
+  const url      = `${BASE}/admin/${joined}${search ? "?" + search : ""}`;
 
   if (!KEY)  return NextResponse.json({ detail: "ADMIN_API_KEY manquant" },  { status: 500 });
   if (!BASE) return NextResponse.json({ detail: "API_BASE_URL manquant" }, { status: 500 });
