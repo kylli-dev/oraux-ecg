@@ -821,7 +821,9 @@ def import_etablissements(db: Session, file_bytes: bytes) -> dict:
         v = row[idx]
         return str(v).strip() if v is not None else None
 
-    created = updated = 0
+    from sqlalchemy import text as _text
+
+    rows = []
     errors = []
 
     for i, row in enumerate(ws.iter_rows(min_row=header_row + 1, values_only=True), start=header_row + 1):
@@ -835,24 +837,31 @@ def import_etablissements(db: Session, file_bytes: bytes) -> dict:
         if not nom:
             errors.append(f"Ligne {i} ({code}) : NOM manquant")
             continue
+        rows.append({
+            "code_uai": code.strip().upper(),
+            "nom": nom.strip(),
+            "ville": get(row, "VILLE"),
+            "departement": get(row, "DEPARTEMENT"),
+            "academie": get(row, "ACADEMIE"),
+        })
 
-        code = code.upper()
-        existing = db.query(Etablissement).filter_by(code_uai=code).first()
-        if existing:
-            existing.nom = nom
-            existing.ville = get(row, "VILLE")
-            existing.departement = get(row, "DEPARTEMENT")
-            existing.academie = get(row, "ACADEMIE")
-            updated += 1
-        else:
-            db.add(Etablissement(
-                code_uai=code,
-                nom=nom,
-                ville=get(row, "VILLE"),
-                departement=get(row, "DEPARTEMENT"),
-                academie=get(row, "ACADEMIE"),
-            ))
+    created = updated = 0
+    for item in rows:
+        result = db.execute(_text("""
+            INSERT INTO etablissement (code_uai, nom, ville, departement, academie)
+            VALUES (:code_uai, :nom, :ville, :departement, :academie)
+            ON CONFLICT (code_uai) DO UPDATE SET
+                nom        = EXCLUDED.nom,
+                ville      = EXCLUDED.ville,
+                departement = EXCLUDED.departement,
+                academie   = EXCLUDED.academie
+            RETURNING (xmax = 0) AS was_inserted
+        """), item)
+        was_inserted = result.fetchone()[0]
+        if was_inserted:
             created += 1
+        else:
+            updated += 1
 
     db.commit()
     return {"created": created, "updated": updated, "errors": errors}
