@@ -31,6 +31,7 @@ from app.models import (  # noqa: F401
     Surveillant,  # noqa: F401
     SurveillantPlanning,  # noqa: F401
     Planche,  # noqa: F401
+    Etablissement,  # noqa: F401
 )
 
 from app.api.plannings import router as plannings_router
@@ -179,6 +180,8 @@ def _run_migrations():
         "ALTER TABLE surveillant DROP COLUMN IF EXISTS planning_id",
         # Planches : stockage des bytes PDF en base (plus de fichiers locaux)
         "ALTER TABLE planche ADD COLUMN fichier_data BYTEA",
+        # Table des établissements (code UAI + nom)
+        "CREATE TABLE IF NOT EXISTS etablissement (id SERIAL PRIMARY KEY, code_uai VARCHAR(20) NOT NULL, nom VARCHAR(200) NOT NULL, ville VARCHAR(100), departement VARCHAR(100), academie VARCHAR(100), CONSTRAINT uq_etablissement_code_uai UNIQUE (code_uai))",
     ]
     with engine.connect() as conn:
         for sql in migrations:

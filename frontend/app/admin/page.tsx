@@ -185,6 +185,14 @@ type Examinateur = {
   actif_planning: boolean | null;
 };
 
+type EtablissementItem = {
+  id: number;
+  code_uai: string;
+  nom: string;
+  ville: string | null;
+  departement: string | null;
+};
+
 type Indisponibilite = {
   id: number;
   examinateur_id: number;
@@ -6464,12 +6472,20 @@ function ExaminateurFiche({
   const [err, setErr] = useState("");
   const [showIdentifiants, setShowIdentifiants] = useState(false);
   const [indisponibilites, setIndisponibilites] = useState<Indisponibilite[]>([]);
+  const [etablissements, setEtablissements] = useState<EtablissementItem[]>([]);
+  const [searchEtab, setSearchEtab] = useState(ex.etablissement ? `${ex.etablissement}${ex.code_uai ? ` (${ex.code_uai})` : ""}` : "");
+  const [showEtabList, setShowEtabList] = useState(false);
+
+  useEffect(() => {
+    get<EtablissementItem[]>("parametrages/etablissements/").then(setEtablissements).catch(() => {});
+  }, []);
 
   useEffect(() => {
     setNom(ex.nom); setPrenom(ex.prenom); setEmail(ex.email);
     setTelephone(ex.telephone ?? ""); setEtablissement(ex.etablissement ?? "");
     setCodeUai(ex.code_uai ?? ""); setCommentaire(ex.commentaire ?? "");
     setSelectedMatieres(ex.matieres); setErr("");
+    setSearchEtab(ex.etablissement ? `${ex.etablissement}${ex.code_uai ? ` (${ex.code_uai})` : ""}` : "");
   }, [ex.id]);
 
   async function save() {
@@ -6556,10 +6572,48 @@ function ExaminateurFiche({
           <Field label="Email"><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
           <Field label="Téléphone"><Input value={telephone} onChange={(e) => setTelephone(e.target.value)} placeholder="06 12 34 56 78" /></Field>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Établissement"><Input value={etablissement} onChange={(e) => setEtablissement(e.target.value)} placeholder="Lycée Henri IV" /></Field>
-          <Field label="Code UAI"><Input value={codeUai} onChange={(e) => setCodeUai(e.target.value)} placeholder="0750001A" /></Field>
-        </div>
+        <Field label="Établissement">
+          <div className="relative">
+            <Input
+              value={searchEtab}
+              onChange={(e) => {
+                setSearchEtab(e.target.value);
+                setShowEtabList(true);
+                if (!e.target.value) { setEtablissement(""); setCodeUai(""); }
+              }}
+              onFocus={() => setShowEtabList(true)}
+              onBlur={() => setTimeout(() => setShowEtabList(false), 150)}
+              placeholder={etablissements.length === 0 ? "Saisir manuellement…" : "Rechercher un établissement…"}
+            />
+            {showEtabList && etablissements.filter((e) => {
+              const q = searchEtab.toLowerCase();
+              return e.nom.toLowerCase().includes(q) || e.code_uai.toLowerCase().includes(q) || (e.ville ?? "").toLowerCase().includes(q);
+            }).slice(0, 50).length > 0 && (
+              <div className="absolute z-50 mt-1 w-full bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                {etablissements.filter((e) => {
+                  const q = searchEtab.toLowerCase();
+                  return e.nom.toLowerCase().includes(q) || e.code_uai.toLowerCase().includes(q) || (e.ville ?? "").toLowerCase().includes(q);
+                }).slice(0, 50).map((e) => (
+                  <button
+                    key={e.id}
+                    type="button"
+                    onMouseDown={() => {
+                      setEtablissement(e.nom);
+                      setCodeUai(e.code_uai);
+                      setSearchEtab(`${e.nom} (${e.code_uai})${e.ville ? ` — ${e.ville}` : ""}`);
+                      setShowEtabList(false);
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b last:border-0"
+                  >
+                    <span className="font-medium">{e.nom}</span>
+                    <span className="text-black/50 ml-2 text-xs">{e.code_uai}{e.ville ? ` — ${e.ville}` : ""}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </Field>
+        <Field label="Code UAI"><Input value={codeUai} onChange={(e) => setCodeUai(e.target.value)} placeholder="0750001A" /></Field>
         <Field label="Matière(s)">
           <MatieresCheckboxes selected={selectedMatieres} onChange={setSelectedMatieres} matieres={matieres} />
         </Field>
@@ -6632,6 +6686,25 @@ function CreateExaminateurForm({
   const [etablissement, setEtablissement] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [etablissements, setEtablissements] = useState<EtablissementItem[]>([]);
+  const [searchEtab, setSearchEtab] = useState("");
+  const [showEtabList, setShowEtabList] = useState(false);
+
+  useEffect(() => {
+    get<EtablissementItem[]>("parametrages/etablissements/").then(setEtablissements).catch(() => {});
+  }, []);
+
+  const filteredEtabs = etablissements.filter((e) => {
+    const q = searchEtab.toLowerCase();
+    return e.nom.toLowerCase().includes(q) || e.code_uai.toLowerCase().includes(q) || (e.ville ?? "").toLowerCase().includes(q);
+  });
+
+  function selectEtab(e: EtablissementItem) {
+    setEtablissement(e.nom);
+    setCodeUai(e.code_uai);
+    setSearchEtab(`${e.nom} (${e.code_uai})${e.ville ? ` — ${e.ville}` : ""}`);
+    setShowEtabList(false);
+  }
 
   async function submit() {
     setLoading(true); setError("");
@@ -6643,7 +6716,6 @@ function CreateExaminateurForm({
         code_uai: codeUai.trim() || null,
         etablissement: etablissement.trim() || null,
       });
-      // Associer automatiquement au planning courant
       await patch(`examinateurs/${created.id}/plannings/${planningId}`, { actif: true });
       onCreated();
     } catch (e: unknown) { setError(e instanceof Error ? e.message : "Erreur"); }
@@ -6665,10 +6737,36 @@ function CreateExaminateurForm({
           <Field label="Email *"><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="s.martin@…" /></Field>
           <Field label="Téléphone"><Input value={telephone} onChange={(e) => setTelephone(e.target.value)} placeholder="06 12 34 56 78" /></Field>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Établissement"><Input value={etablissement} onChange={(e) => setEtablissement(e.target.value)} placeholder="Lycée Henri IV" /></Field>
-          <Field label="Code UAI"><Input value={codeUai} onChange={(e) => setCodeUai(e.target.value)} placeholder="0750001A" /></Field>
-        </div>
+        <Field label="Établissement">
+          <div className="relative">
+            <Input
+              value={searchEtab}
+              onChange={(e) => { setSearchEtab(e.target.value); setShowEtabList(true); if (!e.target.value) { setEtablissement(""); setCodeUai(""); } }}
+              onFocus={() => setShowEtabList(true)}
+              onBlur={() => setTimeout(() => setShowEtabList(false), 150)}
+              placeholder={etablissements.length === 0 ? "Aucun établissement — saisir manuellement" : "Rechercher un établissement…"}
+            />
+            {showEtabList && filteredEtabs.length > 0 && (
+              <div className="absolute z-50 mt-1 w-full bg-white border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                {filteredEtabs.slice(0, 50).map((e) => (
+                  <button
+                    key={e.id}
+                    type="button"
+                    onMouseDown={() => selectEtab(e)}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b last:border-0"
+                  >
+                    <span className="font-medium">{e.nom}</span>
+                    <span className="text-black/50 ml-2 text-xs">{e.code_uai}{e.ville ? ` — ${e.ville}` : ""}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {etablissements.length === 0 && (
+            <p className="text-xs text-amber-600 mt-1">Aucun établissement enregistré. Importez une liste UAI dans Paramétrages.</p>
+          )}
+        </Field>
+        <Field label="Code UAI"><Input value={codeUai} onChange={(e) => setCodeUai(e.target.value)} placeholder="0750001A" /></Field>
         <Field label="Matière(s) *">
           <MatieresCheckboxes selected={selectedMatieres} onChange={setSelectedMatieres} matieres={matieres} />
         </Field>
@@ -7855,8 +7953,119 @@ function ReferentielSection({
   );
 }
 
+function EtablissementsSection() {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const [etablissements, setEtablissements] = useState<EtablissementItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [importing, setImporting] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { setEtablissements(await get<EtablissementItem[]>("parametrages/etablissements/")); }
+    catch { /* ignore */ }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = etablissements.filter((e) => {
+    const q = search.toLowerCase();
+    return e.nom.toLowerCase().includes(q) || e.code_uai.toLowerCase().includes(q) || (e.ville ?? "").toLowerCase().includes(q);
+  });
+
+  async function handleImport(file: File) {
+    setImporting(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await fetch("/api/backend/excel/etablissements/import", { method: "POST", body: fd, cache: "no-store" });
+      const text = await r.text();
+      let data: { created: number; updated: number; errors: string[] };
+      try { data = JSON.parse(text); } catch { throw new Error(text || `Erreur ${r.status}`); }
+      if (!r.ok) throw new Error((data as any).detail ?? `Erreur ${r.status}`);
+      toast.success(`Import OK : ${data.created} créés, ${data.updated} mis à jour${data.errors.length ? ` — ${data.errors.length} erreur(s)` : ""}`);
+      await load();
+    } catch (e: unknown) { toast.error(e instanceof Error ? e.message : "Erreur import"); }
+    finally { setImporting(false); if (fileRef.current) fileRef.current.value = ""; }
+  }
+
+  async function handleDelete(id: number, nom: string) {
+    if (!await confirm(`Supprimer "${nom}" ?`, { confirmLabel: "Supprimer", danger: true })) return;
+    try { await del(`parametrages/etablissements/${id}`); toast.success("Établissement supprimé"); await load(); }
+    catch (e: unknown) { toast.error(e instanceof Error ? e.message : "Erreur"); }
+  }
+
+  return (
+    <div className="max-w-3xl space-y-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex gap-2">
+          <a
+            href="/api/backend/excel/etablissements/template"
+            className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-black/10 hover:bg-black/5 transition"
+          >
+            <Download className="h-3.5 w-3.5" /> Modèle Excel
+          </a>
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={importing}
+            className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50 transition disabled:opacity-50"
+          >
+            <Upload className="h-3.5 w-3.5" /> {importing ? "Import…" : "Importer Excel"}
+          </button>
+          <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImport(f); }} />
+        </div>
+        <input
+          className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-black/10 w-56"
+          placeholder="Rechercher…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
+      <div className="bg-white rounded-2xl border border-black/5 shadow-sm overflow-hidden">
+        <div className="px-4 py-2.5 border-b bg-gray-50 grid grid-cols-12 gap-2 text-xs font-semibold text-black/40 uppercase tracking-wide">
+          <span className="col-span-2">Code UAI</span>
+          <span className="col-span-5">Établissement</span>
+          <span className="col-span-2">Ville</span>
+          <span className="col-span-2">Dép.</span>
+          <span className="col-span-1" />
+        </div>
+        {loading ? (
+          <div className="p-6 flex justify-center"><Spinner /></div>
+        ) : filtered.length === 0 ? (
+          <p className="p-6 text-sm text-black/40 text-center">
+            {etablissements.length === 0 ? "Aucun établissement. Importez un fichier Excel." : "Aucun résultat."}
+          </p>
+        ) : (
+          <div className="divide-y max-h-[60vh] overflow-y-auto">
+            {filtered.map((e) => (
+              <div key={e.id} className="grid grid-cols-12 gap-2 px-4 py-2.5 text-sm items-center hover:bg-gray-50">
+                <span className="col-span-2 font-mono text-xs text-black/60">{e.code_uai}</span>
+                <span className="col-span-5 font-medium">{e.nom}</span>
+                <span className="col-span-2 text-black/50 text-xs">{e.ville ?? "—"}</span>
+                <span className="col-span-2 text-black/50 text-xs">{e.departement ?? "—"}</span>
+                <button
+                  onClick={() => handleDelete(e.id, e.nom)}
+                  className="col-span-1 text-black/20 hover:text-red-500 transition flex justify-end"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <p className="text-xs text-black/40">{etablissements.length} établissement(s) enregistré(s)</p>
+    </div>
+  );
+}
+
 function ParametragesSection() {
-  const [tab, setTab] = useState<"matieres" | "salles" | "messages" | "mdp">("matieres");
+  const [tab, setTab] = useState<"matieres" | "salles" | "etablissements" | "messages" | "mdp">("matieres");
   const [messages, setMessages] = useState<MessageType[]>([]);
   const [selected, setSelected] = useState<MessageType | null>(null);
   const [sujet, setSujet] = useState("");
@@ -7931,6 +8140,7 @@ function ParametragesSection() {
   const tabs = [
     { key: "matieres" as const, label: "Matières" },
     { key: "salles" as const, label: "Salles" },
+    { key: "etablissements" as const, label: "Établissements" },
     { key: "messages" as const, label: "Messages-type" },
     { key: "mdp" as const, label: "Mots de passe" },
   ];
@@ -7960,6 +8170,9 @@ function ParametragesSection() {
 
       {/* ── Salles ── */}
       {tab === "salles" && <ReferentielSection entite="salles" label="Salle" labelPlural="salles" />}
+
+      {/* ── Établissements ── */}
+      {tab === "etablissements" && <EtablissementsSection />}
 
       {/* ── Messages-type ── */}
       {tab === "messages" && (

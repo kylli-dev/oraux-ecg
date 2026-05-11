@@ -17,6 +17,7 @@ from app.models.surveillant import Surveillant
 from app.models.surveillant_planning import SurveillantPlanning
 from app.models.planche import Planche
 from app.models.planning_salle_defaut import PlanningMatiereSalleDefaut
+from app.models.etablissement import Etablissement
 
 __all__ = [
     "Planning",
@@ -39,4 +40,5 @@ __all__ = [
     "SurveillantPlanning",
     "Planche",
     "PlanningMatiereSalleDefaut",
+    "Etablissement",
 ]

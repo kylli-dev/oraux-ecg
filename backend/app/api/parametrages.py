@@ -16,6 +16,7 @@ from app.models.examinateur import Examinateur
 from app.models.message_type import MessageType
 from app.models.matiere import Matiere
 from app.models.salle import Salle
+from app.models.etablissement import Etablissement
 
 router = APIRouter(
     prefix="/admin/parametrages",
@@ -329,4 +330,58 @@ def delete_salle(salle_id: int, db: Session = Depends(get_db)):
     if not s:
         raise HTTPException(status_code=404, detail="Salle introuvable")
     db.delete(s)
+    db.commit()
+
+
+# ── Établissements (code UAI) ────────────────────────────────────────────────────
+
+class EtablissementOut(BaseModel):
+    id: int
+    code_uai: str
+    nom: str
+    ville: str | None = None
+    departement: str | None = None
+    academie: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class EtablissementCreate(BaseModel):
+    code_uai: str
+    nom: str
+    ville: str | None = None
+    departement: str | None = None
+    academie: str | None = None
+
+
+@router.get("/etablissements/", response_model=List[EtablissementOut])
+def list_etablissements(db: Session = Depends(get_db)):
+    return db.query(Etablissement).order_by(Etablissement.nom).all()
+
+
+@router.post("/etablissements/", response_model=EtablissementOut, status_code=201)
+def create_etablissement(body: EtablissementCreate, db: Session = Depends(get_db)):
+    existing = db.query(Etablissement).filter_by(code_uai=body.code_uai.strip().upper()).first()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Le code UAI {body.code_uai} existe déjà.")
+    e = Etablissement(
+        code_uai=body.code_uai.strip().upper(),
+        nom=body.nom.strip(),
+        ville=body.ville.strip() if body.ville else None,
+        departement=body.departement.strip() if body.departement else None,
+        academie=body.academie.strip() if body.academie else None,
+    )
+    db.add(e)
+    db.commit()
+    db.refresh(e)
+    return e
+
+
+@router.delete("/etablissements/{etablissement_id}", status_code=204)
+def delete_etablissement(etablissement_id: int, db: Session = Depends(get_db)):
+    e = db.get(Etablissement, etablissement_id)
+    if not e:
+        raise HTTPException(status_code=404, detail="Établissement introuvable")
+    db.delete(e)
     db.commit()

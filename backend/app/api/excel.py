@@ -12,6 +12,7 @@ from app.services.excel import (
     import_candidats, export_template_candidats,
     import_candidats_complet, export_template_candidats_complet,
     import_examinateurs, export_template_examinateurs,
+    import_etablissements, export_template_etablissements,
 )
 
 router = APIRouter(
@@ -126,6 +127,30 @@ def template_examinateurs():
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=template_examinateurs.xlsx"},
     )
+
+
+@router.get("/etablissements/template")
+def template_etablissements():
+    """Télécharge le modèle d'import des établissements (code UAI + nom + ville…)."""
+    data = export_template_etablissements()
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=modele_etablissements.xlsx"},
+    )
+
+
+@router.post("/etablissements/import")
+def import_etablissements_excel(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Importe une liste d'établissements (code UAI + nom + ville…) depuis Excel."""
+    if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
+        raise HTTPException(status_code=400, detail="Fichier Excel (.xlsx) requis")
+    content = file.file.read()
+    try:
+        result = import_etablissements(db, content)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result
 
 
 @router.post("/plannings/{planning_id}/examinateurs/import")

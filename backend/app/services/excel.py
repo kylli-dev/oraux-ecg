@@ -24,6 +24,7 @@ from app.models.epreuve import Epreuve
 from app.models.examinateur import Examinateur
 from app.models.examinateur_planning import ExaminateurPlanning
 from app.models.planning import Planning
+from app.models.etablissement import Etablissement
 
 RED_HEX = "C62828"
 GREY_HEX = "F5F5F5"
@@ -757,3 +758,101 @@ def _parse_time(val) -> time_type:
     s = str(val).strip()[:5]
     parts = s.split(":")
     return time_type(int(parts[0]), int(parts[1]))
+
+
+# ── Établissements ────────────────────────────────────────────────────────────────
+
+def export_template_etablissements() -> bytes:
+    """Retourne un fichier Excel modèle pour l'import des établissements."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Établissements"
+    headers = ["CODE_UAI", "NOM", "VILLE", "DEPARTEMENT", "ACADEMIE"]
+    _header_row(ws, headers)
+    # Ligne d'exemple
+    ws.append(["0750001A", "Lycée Henri IV", "Paris", "75", "Paris"])
+    _autosize(ws)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def import_etablissements(db: Session, file_bytes: bytes) -> dict:
+    """
+    Importe une liste d'établissements depuis Excel.
+    Colonnes attendues : CODE_UAI (obligatoire), NOM (obligatoire),
+    VILLE, DEPARTEMENT, ACADEMIE (optionnels).
+    Si le code UAI existe déjà, la ligne est mise à jour.
+    """
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    ws = wb.active
+
+    # Détection des colonnes (insensible à la casse)
+    header_row = None
+    col_idx: dict[str, int] = {}
+    ALIASES = {
+        "CODE_UAI": ["CODE_UAI", "CODE UAI", "UAI", "NUMERO_UAI", "RNE", "NUMERO_RNE", "CODE_RNE"],
+        "NOM": ["NOM", "NOM_ETABLISSEMENT", "ETABLISSEMENT", "LIBELLE", "NOM DE L'ETABLISSEMENT"],
+        "VILLE": ["VILLE", "COMMUNE", "LOCALITE"],
+        "DEPARTEMENT": ["DEPARTEMENT", "DEP", "CODE_DEP"],
+        "ACADEMIE": ["ACADEMIE", "ACADEMIE_", "LIBELLE_ACADEMIE"],
+    }
+
+    for i, row in enumerate(ws.iter_rows(min_row=1, max_row=5, values_only=True), start=1):
+        normalized = [str(c).strip().upper().replace(" ", "_") if c else "" for c in row]
+        found = {}
+        for canon, alts in ALIASES.items():
+            for j, cell in enumerate(normalized):
+                if cell in alts:
+                    found[canon] = j
+                    break
+        if "CODE_UAI" in found and "NOM" in found:
+            header_row = i
+            col_idx = found
+            break
+
+    if not header_row:
+        return {"created": 0, "updated": 0, "errors": ["En-têtes non trouvées. Colonnes attendues : CODE_UAI, NOM (+ VILLE, DEPARTEMENT, ACADEMIE optionnels)."]}
+
+    def get(row, key):
+        idx = col_idx.get(key)
+        if idx is None or idx >= len(row):
+            return None
+        v = row[idx]
+        return str(v).strip() if v is not None else None
+
+    created = updated = 0
+    errors = []
+
+    for i, row in enumerate(ws.iter_rows(min_row=header_row + 1, values_only=True), start=header_row + 1):
+        if not any(row):
+            continue
+        code = get(row, "CODE_UAI")
+        nom = get(row, "NOM")
+        if not code:
+            errors.append(f"Ligne {i} : CODE_UAI manquant")
+            continue
+        if not nom:
+            errors.append(f"Ligne {i} ({code}) : NOM manquant")
+            continue
+
+        code = code.upper()
+        existing = db.query(Etablissement).filter_by(code_uai=code).first()
+        if existing:
+            existing.nom = nom
+            existing.ville = get(row, "VILLE")
+            existing.departement = get(row, "DEPARTEMENT")
+            existing.academie = get(row, "ACADEMIE")
+            updated += 1
+        else:
+            db.add(Etablissement(
+                code_uai=code,
+                nom=nom,
+                ville=get(row, "VILLE"),
+                departement=get(row, "DEPARTEMENT"),
+                academie=get(row, "ACADEMIE"),
+            ))
+            created += 1
+
+    db.commit()
+    return {"created": created, "updated": updated, "errors": errors}
