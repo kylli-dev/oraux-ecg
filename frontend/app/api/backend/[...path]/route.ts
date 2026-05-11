@@ -68,20 +68,21 @@ async function proxy(req: NextRequest, pathSegments: string[]) {
   }
 }
 
-type Ctx = { params: Promise<{ path: string[] }> };
+type Ctx = { params: Promise<{ path: string[] }> } | { params: { path: string[] } };
 
-export async function GET(req: NextRequest, { params }: Ctx) {
-  return proxy(req, (await params).path);
+async function handle(req: NextRequest, ctx: Ctx): Promise<NextResponse> {
+  try {
+    const p = await ctx.params;
+    const path = Array.isArray(p.path) ? p.path : [String(p.path)];
+    return proxy(req, path);
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ detail: `Proxy error: ${msg}` }, { status: 500 });
+  }
 }
-export async function POST(req: NextRequest, { params }: Ctx) {
-  return proxy(req, (await params).path);
-}
-export async function PUT(req: NextRequest, { params }: Ctx) {
-  return proxy(req, (await params).path);
-}
-export async function PATCH(req: NextRequest, { params }: Ctx) {
-  return proxy(req, (await params).path);
-}
-export async function DELETE(req: NextRequest, { params }: Ctx) {
-  return proxy(req, (await params).path);
-}
+
+export function GET(req: NextRequest, ctx: Ctx) { return handle(req, ctx); }
+export function POST(req: NextRequest, ctx: Ctx) { return handle(req, ctx); }
+export function PUT(req: NextRequest, ctx: Ctx) { return handle(req, ctx); }
+export function PATCH(req: NextRequest, ctx: Ctx) { return handle(req, ctx); }
+export function DELETE(req: NextRequest, ctx: Ctx) { return handle(req, ctx); }
