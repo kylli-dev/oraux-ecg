@@ -4168,6 +4168,7 @@ function CandidatsSection() {
   const [loading, setLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [gestionKey, setGestionKey] = useState(0);
   const [tab, setTab] = useState<"liste" | "affectation" | "gestion" | "liste_attente" | "compactage">("liste");
   const [error, setError] = useState("");
   const [searchCand, setSearchCand] = useState("");
@@ -4359,7 +4360,7 @@ function CandidatsSection() {
           )}
 
           {tab === "gestion" && (
-            <GestionCandidatsTab planningId={planningId as number} />
+            <GestionCandidatsTab key={gestionKey} planningId={planningId as number} />
           )}
 
           {tab === "liste_attente" && (
@@ -4385,7 +4386,7 @@ function CandidatsSection() {
         title="Importer des candidats"
         templateUrl={`/api/backend/excel/candidats/template-complet`}
         uploadUrl={`/api/backend/excel/plannings/${planningId}/candidats/import-complet`}
-        onSuccess={loadCandidats}
+        onSuccess={() => { loadCandidats(); setGestionKey(k => k + 1); }}
         resultRenderer={(r) => r.candidats?.length > 0 && (
           <div className="mt-3 max-h-40 overflow-y-auto">
             <p className="text-xs font-medium text-green-700 mb-1">Candidats importés ({r.candidats.length}) — mots de passe provisoires :</p>
