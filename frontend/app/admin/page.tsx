@@ -10386,7 +10386,10 @@ function SallesSection() {
 
 // ── Main ───────────────────────────────────────────────────────────────────────
 export default function AdminPage() {
-  const [section, setSection] = useState<SectionKey>("plannings");
+  const [section, setSection] = useState<SectionKey>(() => {
+    if (typeof window === "undefined") return "plannings";
+    return (localStorage.getItem("admin_section") as SectionKey) ?? "plannings";
+  });
   const [selectedPlanning, setSelectedPlanning] = useState<Planning | null>(null);
   const [journeeTypes, setJourneeTypes] = useState<JourneeType[]>([]);
   const [mobileSidebar, setMobileSidebar] = useState(false);
@@ -10405,6 +10408,7 @@ export default function AdminPage() {
 
   const switchSection = (k: SectionKey) => {
     setSection(k);
+    localStorage.setItem("admin_section", k);
     setSelectedPlanning(null);
     setMobileSidebar(false);
   };
