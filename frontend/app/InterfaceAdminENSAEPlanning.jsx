@@ -1083,8 +1083,13 @@ export default function InterfaceAdminENSAEPlanning() {
   const blocGeneration = blocs.filter((b) => b.type_bloc === "GENERATION");
   const selPlanning = plannings.find((p) => p.id === Number(selPlanningId)) ?? null;
   const N = blocGeneration[0]?.matieres?.length ?? 0;
-  // Nsq total = somme des N² de chaque bloc (chaque bloc a ses propres triplets)
+  // Nsq théorique = somme des N² (utilisé pour l'indexation des triplets)
   const Nsq = blocGeneration.reduce((s, b) => s + b.matieres.length ** 2, 0) || N * N;
+  // Créneaux réels = ce que buildMatrix génère en respectant heure_fin
+  const actualCreneaux = selectedJT
+    ? blocGeneration.reduce((s, b) => s + buildMatrix(b, selectedJT).length, 0)
+    : 0;
+  const debordements = Nsq - actualCreneaux;
 
   return (
     <div className="min-h-screen bg-[#F5F5F5] text-black">
@@ -1268,7 +1273,10 @@ export default function InterfaceAdminENSAEPlanning() {
                       </div>
                       <div className="flex justify-between">
                         <span>Créneaux / session</span>
-                        <span className="font-medium text-black/70">{Nsq}</span>
+                        <span className={`font-medium ${debordements > 0 ? "text-amber-600" : "text-black/70"}`}>
+                          {actualCreneaux}
+                          {debordements > 0 && <span className="ml-1 text-[10px]">({debordements} hors fenêtre)</span>}
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span>Salles / matière</span>
@@ -1276,11 +1284,11 @@ export default function InterfaceAdminENSAEPlanning() {
                       </div>
                       <div className="flex justify-between">
                         <span>Capacité / session</span>
-                        <span className="font-medium text-black/70">{Nsq * (blocGeneration[0]?.salles_par_matiere ?? 1)} candidats</span>
+                        <span className="font-medium text-black/70">{actualCreneaux * (blocGeneration[0]?.salles_par_matiere ?? 1)} candidats</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Triplets libres</span>
-                        <span className="font-medium text-emerald-600">{Nsq - Object.keys(tripletStatuts).length}</span>
+                        <span className="font-medium text-emerald-600">{actualCreneaux - Object.keys(tripletStatuts).length}</span>
                       </div>
                       {Object.keys(tripletStatuts).length > 0 && (
                         <div className="flex justify-between">
