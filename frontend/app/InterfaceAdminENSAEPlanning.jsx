@@ -44,11 +44,13 @@ function hmToMinutes(t) {
   return h * 60 + m;
 }
 
-function buildMatrix(bloc, jtDefaults = {}, tripletOffset = 0) {
+function buildMatrix(bloc, jtDefaults = {}, tripletOffset = 0, candidatsParBloc = null) {
   const { matieres, duree_minutes, preparation_minutes, pause_minutes, heure_debut, heure_fin } = bloc;
   const N = matieres.length;
   if (N === 0) return [];
-  const Nsq = N * N;
+  // Rotation flexible : totalVirtuel = plus petit multiple de N ≥ C
+  const C = (candidatsParBloc != null && candidatsParBloc > 0) ? candidatsParBloc : N * N;
+  const totalVirtuel = Math.ceil(C / N) * N;
   const duree = duree_minutes ?? jtDefaults.duree_defaut_minutes ?? 20;
   const prep = preparation_minutes ?? jtDefaults.preparation_defaut_minutes ?? 0;
   const pause = pause_minutes ?? jtDefaults.pause_defaut_minutes ?? 0;
@@ -56,7 +58,7 @@ function buildMatrix(bloc, jtDefaults = {}, tripletOffset = 0) {
   const end = heure_fin ? hmToMinutes(heure_fin) : Infinity;
 
   const rows = [];
-  for (let i = 0; i < Nsq; i++) {
+  for (let i = 0; i < totalVirtuel; i++) {
     const dPrepa = start + i * (duree + pause);
     if (dPrepa >= end) break;
     const dExam = dPrepa + prep;
@@ -67,8 +69,8 @@ function buildMatrix(bloc, jtDefaults = {}, tripletOffset = 0) {
       deb_exam: minutesToHM(dExam),
       fin_exam: minutesToHM(fExam),
       overflow: fExam > end,
-      // offset décale les indices pour que chaque bloc ait ses propres triplets
-      candidates: matieres.map((_, j) => tripletOffset + ((i - j * N) % Nsq + Nsq) % Nsq),
+      candidates: matieres.map((_, j) => tripletOffset + ((i - j * N) % totalVirtuel + totalVirtuel) % totalVirtuel),
+      idleMask: matieres.map((_, j) => ((i - j * N) % totalVirtuel + totalVirtuel) % totalVirtuel >= C),
     });
   }
   return rows;
@@ -197,8 +199,9 @@ function DraggableTripletCell({ k, statut, onClick, blocId, rowIdx, matIdx }) {
 }
 
 // ── Matrice journée type ───────────────────────────────────────────────────────
-function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletOffset = 0, onReload }) {
-  const matrix = buildMatrix(bloc, jt, tripletOffset);
+function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletOffset = 0, onReload, candidatsParBloc = null }) {
+  const C = (candidatsParBloc != null && candidatsParBloc > 0) ? candidatsParBloc : bloc.matieres.length ** 2;
+  const matrix = buildMatrix(bloc, jt, tripletOffset, candidatsParBloc);
   const N = bloc.matieres.length;
   const Nsq = N * N;
   const isMatin = hmToMinutes(bloc.heure_debut) < 12 * 60;
@@ -370,7 +373,8 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
           </span>
           {!hasNoMatieres && matrix.length > 0 && (
             <span className="text-[10px] text-black/30 ml-2">
-              {N} mat. · {Nsq} créneaux · {Nsq * (bloc.salles_par_matiere ?? 1)} candidats/session
+              {N} mat. · {matrix.length} créneaux · {C} candidat(s)
+              {C !== Nsq && <span className="ml-1 text-amber-500">(N²={Nsq})</span>}
             </span>
           )}
         </div>
@@ -500,18 +504,27 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
                       </span>
                     </td>
                     {/* Cellules triplet — draggables */}
-                    {(cellMatrix[row.index] ?? row.candidates).map((k, matIdx) => (
-                      <td key={matIdx} className="px-2 py-1.5 border-b border-black/5 text-center">
-                        <DraggableTripletCell
-                          k={k}
-                          statut={tripletStatuts[k] ?? "LIBRE"}
-                          onClick={onTripletClick}
-                          blocId={bloc.id}
-                          rowIdx={row.index}
-                          matIdx={matIdx}
-                        />
-                      </td>
-                    ))}
+                    {(cellMatrix[row.index] ?? row.candidates).map((k, matIdx) => {
+                      const isIdle = (k - tripletOffset) >= C;
+                      return (
+                        <td key={matIdx} className="px-2 py-1.5 border-b border-black/5 text-center">
+                          {isIdle ? (
+                            <span className="inline-flex items-center justify-center rounded-lg text-[11px] text-black/20 bg-black/[0.03] border border-dashed border-black/10" style={{ minWidth: 48, height: 28 }}>
+                              —
+                            </span>
+                          ) : (
+                            <DraggableTripletCell
+                              k={k}
+                              statut={tripletStatuts[k] ?? "LIBRE"}
+                              onClick={onTripletClick}
+                              blocId={bloc.id}
+                              rowIdx={row.index}
+                              matIdx={matIdx}
+                            />
+                          )}
+                        </td>
+                      );
+                    })}
                   </DragDropRow>
                 ))}
               </tbody>
@@ -1018,6 +1031,7 @@ export default function InterfaceAdminENSAEPlanning() {
   const [loading, setLoading] = useState(false);
 
   const [tripletStatuts, setTripletStatuts] = useState({});
+  const [candidatsParBloc, setCandidatsParBloc] = useState(null);
   const [selPlanningId, setSelPlanningId] = useState("");
   const [applyDate, setApplyDate] = useState("");
   const [applying, setApplying] = useState(false);
@@ -1085,11 +1099,12 @@ export default function InterfaceAdminENSAEPlanning() {
   const N = blocGeneration[0]?.matieres?.length ?? 0;
   // Nsq théorique = somme des N² (utilisé pour l'indexation des triplets)
   const Nsq = blocGeneration.reduce((s, b) => s + b.matieres.length ** 2, 0) || N * N;
+  const totalCandidats = candidatsParBloc ? candidatsParBloc * blocGeneration.length : Nsq;
   // Créneaux réels = ce que buildMatrix génère en respectant heure_fin
   const actualCreneaux = selectedJT
-    ? blocGeneration.reduce((s, b) => s + buildMatrix(b, selectedJT).length, 0)
+    ? blocGeneration.reduce((s, b) => s + buildMatrix(b, selectedJT, 0, candidatsParBloc).length, 0)
     : 0;
-  const debordements = Nsq - actualCreneaux;
+  const debordements = totalCandidats - actualCreneaux * N;
 
   return (
     <div className="min-h-screen bg-[#F5F5F5] text-black">
@@ -1175,14 +1190,15 @@ export default function InterfaceAdminENSAEPlanning() {
                               onTripletClick={handleTripletClick}
                               tripletOffset={offset}
                               onReload={(silent) => loadBlocs(selectedJT, silent)}
+                              candidatsParBloc={candidatsParBloc}
                             />
                           );
                           acc.offset += Nb * Nb;
                           return acc;
                         }, { els: [], offset: 0 }).els}
-                        {Nsq > 0 && (
+                        {totalCandidats > 0 && (
                           <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-5">
-                            <LegendeStatuts tripletStatuts={tripletStatuts} onTripletClick={handleTripletClick} totalNsq={Nsq} />
+                            <LegendeStatuts tripletStatuts={tripletStatuts} onTripletClick={handleTripletClick} totalNsq={totalCandidats} />
                           </div>
                         )}
                       </>
@@ -1267,6 +1283,22 @@ export default function InterfaceAdminENSAEPlanning() {
                   <div className="pt-4 border-t border-black/5 space-y-1.5">
                     <p className="text-[10px] text-black/30 font-semibold uppercase tracking-wide">Résumé</p>
                     <div className="text-xs text-black/50 space-y-1">
+                      <div className="flex justify-between items-center">
+                        <span>Candidats / session</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={99}
+                          value={candidatsParBloc ?? ""}
+                          placeholder={String(N * N)}
+                          onChange={(e) => {
+                            const v = parseInt(e.target.value);
+                            setCandidatsParBloc(isNaN(v) || v <= 0 ? null : v);
+                          }}
+                          className="w-16 border rounded px-2 py-0.5 text-xs font-mono text-right focus:outline-none focus:ring-1 focus:ring-black/20"
+                          title="Nombre de candidats attendus par session (par défaut N²)"
+                        />
+                      </div>
                       <div className="flex justify-between">
                         <span>Matières</span>
                         <span className="font-medium text-black/70">{N}</span>
@@ -1284,11 +1316,11 @@ export default function InterfaceAdminENSAEPlanning() {
                       </div>
                       <div className="flex justify-between">
                         <span>Capacité / session</span>
-                        <span className="font-medium text-black/70">{actualCreneaux * (blocGeneration[0]?.salles_par_matiere ?? 1)} candidats</span>
+                        <span className="font-medium text-black/70">{(candidatsParBloc ?? N * N) * (blocGeneration[0]?.salles_par_matiere ?? 1)} candidats</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Triplets libres</span>
-                        <span className="font-medium text-emerald-600">{actualCreneaux - Object.keys(tripletStatuts).length}</span>
+                        <span className="font-medium text-emerald-600">{totalCandidats - Object.keys(tripletStatuts).length}</span>
                       </div>
                       {Object.keys(tripletStatuts).length > 0 && (
                         <div className="flex justify-between">
