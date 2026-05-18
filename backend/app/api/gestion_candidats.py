@@ -337,19 +337,17 @@ def get_triplets_admin(planning_id: int, db: Session = Depends(get_db)):
 @router.get("/{planning_id}/journee", response_model=List[JourneeInscritItem])
 def get_inscrits_journee(
     planning_id: int,
-    date: Date = Query(...),
+    date: Optional[Date] = Query(default=None),
     db: Session = Depends(get_db),
 ):
     """
-    Retourne tous les candidats inscrits (statut ATTRIBUEE) pour une journée donnée,
-    avec leurs créneaux. Utile pour le compactage du planning.
+    Retourne les candidats inscrits pour une journée donnée.
+    Sans date : retourne tous les candidats inscrits du planning (toutes dates).
     """
-    djs = (
-        db.query(DemiJournee)
-        .filter_by(planning_id=planning_id)
-        .filter(DemiJournee.date == date)
-        .all()
-    )
+    q = db.query(DemiJournee).filter_by(planning_id=planning_id)
+    if date:
+        q = q.filter(DemiJournee.date == date)
+    djs = q.all()
     dj_ids = [dj.id for dj in djs]
     if not dj_ids:
         return []

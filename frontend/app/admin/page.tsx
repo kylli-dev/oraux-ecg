@@ -4974,7 +4974,6 @@ function CompactageTab({
   const [loading, setLoading] = useState(false);
   const [drawerCandidatId, setDrawerCandidatId] = useState<number | null>(null);
   const [markingAbsent, setMarkingAbsent] = useState<Set<number>>(new Set());
-  const [filterProfilCompactage, setFilterProfilCompactage] = useState<"" | "HGG" | "ESH">("");
 
   const toggleAbsent = async (candidatId: number, ep: TripletEpreuveGestion) => {
     setMarkingAbsent(s => new Set(s).add(ep.id));
@@ -4994,10 +4993,10 @@ function CompactageTab({
   };
 
   const loadDay = useCallback(() => {
-    if (!selectedDate) return;
     setLoading(true);
+    const dateParam = selectedDate ? `?date=${selectedDate}` : "";
     Promise.all([
-      get<JourneeInscritItem[]>(`gestion-candidats/${planningId}/journee?date=${selectedDate}`),
+      get<JourneeInscritItem[]>(`gestion-candidats/${planningId}/journee${dateParam}`),
       get<TripletDisponible[]>(`gestion-candidats/${planningId}/triplets`),
     ])
       .then(([i, t]) => { setInscrits(i); setTriplets(t); })
@@ -5031,7 +5030,7 @@ function CompactageTab({
           <input
             type="date"
             value={selectedDate}
-            onChange={e => { setSelectedDate(e.target.value); setFilterProfilCompactage(""); }}
+            onChange={e => setSelectedDate(e.target.value)}
             min={planning?.date_debut}
             max={planning?.date_fin}
             className="border border-black/15 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300"
@@ -5039,28 +5038,8 @@ function CompactageTab({
         </div>
       </div>
 
-      {selectedDate && (
-        <div className="flex gap-1">
-          {(["", "HGG", "ESH"] as const).map((p) => (
-            <button
-              key={p}
-              onClick={() => setFilterProfilCompactage(p)}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${
-                filterProfilCompactage === p
-                  ? p === "HGG" ? "bg-purple-100 text-purple-700 border-purple-300"
-                    : p === "ESH" ? "bg-emerald-100 text-emerald-700 border-emerald-300"
-                    : "bg-black/10 text-black/70 border-black/20"
-                  : "bg-white text-black/40 border-black/10 hover:bg-black/[0.03]"
-              }`}
-            >
-              {p === "" ? "Tous" : p}
-            </button>
-          ))}
-        </div>
-      )}
-
       {!selectedDate ? (
-        <Empty message="Choisissez une journée" sub="Sélectionnez une date pour voir les candidats inscrits." />
+        <Empty message="Choisissez une journée" sub="Laissez la date vide pour voir tous les candidats inscrits." />
       ) : loading ? (
         <div className="flex justify-center py-16"><Spinner /></div>
       ) : (
@@ -5107,13 +5086,7 @@ function CompactageTab({
                     </tr>
                   </thead>
                   <tbody>
-                    {inscrits.filter((c) => {
-                      if (!filterProfilCompactage) return true;
-                      const p = (c.candidat_profil || "").toUpperCase() ||
-                        ((c.candidat_classe || "").toUpperCase().includes("ESH") ? "ESH" :
-                         (c.candidat_classe || "").toUpperCase().includes("HGG") ? "HGG" : "");
-                      return p === filterProfilCompactage;
-                    }).map((c, i) => {
+                    {inscrits.map((c, i) => {
                       const slotByMatiere: Record<string, TripletEpreuveGestion> = {};
                       for (const e of c.epreuves) slotByMatiere[e.matiere] = e;
 
