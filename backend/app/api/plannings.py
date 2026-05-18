@@ -488,6 +488,7 @@ def dashboard(planning_id: int, db: Session = Depends(get_db)):
     from sqlalchemy import func as sqlfunc
     from app.models.candidat import Candidat
     from app.models.examinateur import Examinateur
+    from app.models.examinateur_planning import ExaminateurPlanning
 
     p = db.get(Planning, planning_id)
     if not p:
@@ -540,8 +541,8 @@ def dashboard(planning_id: int, db: Session = Depends(get_db)):
         .scalar()
     ) or 0
 
-    # Examinateurs
-    total_examinateurs = db.query(Examinateur).filter_by(planning_id=planning_id).count()
+    # Examinateurs (via table de liaison ExaminateurPlanning)
+    total_examinateurs = db.query(ExaminateurPlanning).filter_by(planning_id=planning_id).count()
     examinateurs_avec_epreuve = (
         db.query(sqlfunc.count(sqlfunc.distinct(Epreuve.examinateur_id)))
         .join(DemiJournee, Epreuve.demi_journee_id == DemiJournee.id)
