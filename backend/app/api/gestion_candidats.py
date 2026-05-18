@@ -113,6 +113,8 @@ class JourneeInscritItem(BaseModel):
     candidat_nom: str
     candidat_prenom: str
     candidat_code: Optional[str] = None
+    candidat_profil: Optional[str] = None
+    candidat_classe: Optional[str] = None
     inscription_id: int
     epreuves: List[TripletEpreuveOut]
 
@@ -388,6 +390,8 @@ def get_inscrits_journee(
             candidat_nom=c.nom,
             candidat_prenom=c.prenom,
             candidat_code=c.code_candidat,
+            candidat_profil=c.profil,
+            candidat_classe=getattr(c, "classe", None),
             inscription_id=insc.id if insc else 0,
             epreuves=eps_out,
         ))
