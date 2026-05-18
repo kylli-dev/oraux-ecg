@@ -4180,6 +4180,7 @@ function CandidatsSection() {
   const [tab, setTab] = useState<"liste" | "affectation" | "gestion" | "liste_attente" | "compactage">("liste");
   const [error, setError] = useState("");
   const [searchCand, setSearchCand] = useState("");
+  const [filterProfil, setFilterProfil] = useState<"" | "HGG" | "ESH">("");
   const [selectedCandId, setSelectedCandId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -4301,7 +4302,7 @@ function CandidatsSection() {
 
           {tab === "liste" && (
             <>
-              <div className="mb-3">
+              <div className="mb-3 flex items-center gap-2 flex-wrap">
                 <input
                   type="text"
                   placeholder="Rechercher par nom ou prénom…"
@@ -4309,6 +4310,23 @@ function CandidatsSection() {
                   onChange={(e) => setSearchCand(e.target.value)}
                   className="w-full max-w-sm border border-black/15 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300"
                 />
+                <div className="flex gap-1">
+                  {(["", "HGG", "ESH"] as const).map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => setFilterProfil(p)}
+                      className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${
+                        filterProfil === p
+                          ? p === "HGG" ? "bg-purple-100 text-purple-700 border-purple-300"
+                            : p === "ESH" ? "bg-emerald-100 text-emerald-700 border-emerald-300"
+                            : "bg-black/10 text-black/70 border-black/20"
+                          : "bg-white text-black/40 border-black/10 hover:bg-black/[0.03]"
+                      }`}
+                    >
+                      {p === "" ? "Tous" : p}
+                    </button>
+                  ))}
+                </div>
               </div>
               {loading ? (
                 <div className="flex justify-center py-16 text-black/30"><Spinner /></div>
@@ -4328,9 +4346,15 @@ function CandidatsSection() {
                     </thead>
                     <tbody>
                       {candidats.filter((c) => {
-                        if (!searchCand.trim()) return true;
                         const q = searchCand.trim().toLowerCase();
-                        return c.nom.toLowerCase().includes(q) || c.prenom.toLowerCase().includes(q);
+                        if (q && !c.nom.toLowerCase().includes(q) && !c.prenom.toLowerCase().includes(q)) return false;
+                        if (filterProfil) {
+                          const p = c.profil?.toUpperCase() ||
+                            ((c.classe || "").toUpperCase().includes("ESH") ? "ESH" :
+                             (c.classe || "").toUpperCase().includes("HGG") ? "HGG" : "");
+                          if (p !== filterProfil) return false;
+                        }
+                        return true;
                       }).map((c) => (
                         <tr
                           key={c.id}
