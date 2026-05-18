@@ -20,14 +20,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
       headers: { "X-Admin-Api-Key": KEY },
       cache: "no-store",
     });
-    const text = await r.text();
-    const resHeaders: Record<string, string> = {
-      "Content-Type": r.headers.get("content-type") ?? "application/json",
-      "Cache-Control": "no-store",
-    };
+    const ct = r.headers.get("content-type") ?? "application/json";
+    const isBinary = ct.includes("application/pdf") || ct.includes("application/zip") ||
+      ct.includes("application/vnd.openxmlformats") || ct.includes("application/octet-stream");
+    const body = isBinary ? await r.arrayBuffer() : await r.text();
+    const resHeaders: Record<string, string> = { "Content-Type": ct, "Cache-Control": "no-store" };
     const cd = r.headers.get("content-disposition");
     if (cd) resHeaders["Content-Disposition"] = cd;
-    return new NextResponse(text, { status: r.status, headers: resHeaders });
+    return new NextResponse(body, { status: r.status, headers: resHeaders });
   } catch (e) {
     return NextResponse.json({ detail: String(e) }, { status: 502 });
   }
@@ -57,14 +57,14 @@ async function mut(req: NextRequest, { params }: { params: Promise<{ path: strin
     });
 
     if (r.status === 204) return new NextResponse(null, { status: 204 });
-    const text = await r.text();
-    const resHeaders: Record<string, string> = {
-      "Content-Type": r.headers.get("content-type") ?? "application/json",
-      "Cache-Control": "no-store",
-    };
+    const ct = r.headers.get("content-type") ?? "application/json";
+    const isBinary = ct.includes("application/pdf") || ct.includes("application/zip") ||
+      ct.includes("application/vnd.openxmlformats") || ct.includes("application/octet-stream");
+    const body = isBinary ? await r.arrayBuffer() : await r.text();
+    const resHeaders: Record<string, string> = { "Content-Type": ct, "Cache-Control": "no-store" };
     const cd = r.headers.get("content-disposition");
     if (cd) resHeaders["Content-Disposition"] = cd;
-    return new NextResponse(text, { status: r.status, headers: resHeaders });
+    return new NextResponse(body, { status: r.status, headers: resHeaders });
   } catch (e) {
     return NextResponse.json({ detail: String(e) }, { status: 502 });
   }
