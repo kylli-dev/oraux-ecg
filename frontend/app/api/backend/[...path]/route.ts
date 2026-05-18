@@ -57,14 +57,14 @@ async function mut(req: NextRequest, { params }: { params: Promise<{ path: strin
     });
 
     if (r.status === 204) return new NextResponse(null, { status: 204 });
-    const ct = r.headers.get("content-type") ?? "application/json";
-    const isBinary = ct.includes("application/pdf") || ct.includes("application/zip") ||
-      ct.includes("application/vnd.openxmlformats") || ct.includes("application/octet-stream");
-    const body = isBinary ? await r.arrayBuffer() : await r.text();
-    const resHeaders: Record<string, string> = { "Content-Type": ct, "Cache-Control": "no-store" };
+    const resCt = r.headers.get("content-type") ?? "application/json";
+    const isBinary = resCt.includes("application/pdf") || resCt.includes("application/zip") ||
+      resCt.includes("application/vnd.openxmlformats") || resCt.includes("application/octet-stream");
+    const resBody = isBinary ? await r.arrayBuffer() : await r.text();
+    const resHeaders: Record<string, string> = { "Content-Type": resCt, "Cache-Control": "no-store" };
     const cd = r.headers.get("content-disposition");
     if (cd) resHeaders["Content-Disposition"] = cd;
-    return new NextResponse(body, { status: r.status, headers: resHeaders });
+    return new NextResponse(resBody, { status: r.status, headers: resHeaders });
   } catch (e) {
     return NextResponse.json({ detail: String(e) }, { status: 502 });
   }
