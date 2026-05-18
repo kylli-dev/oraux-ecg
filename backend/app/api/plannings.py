@@ -152,18 +152,35 @@ def list_epreuves_planning(
     if examinateur_id is not None:
         q = q.filter(Epreuve.examinateur_id == examinateur_id)
     rows = q.order_by(DemiJournee.date, Epreuve.heure_debut).all()
-    result = []
+
+    # Batch fetch — une requête par entité au lieu de N×7 requêtes individuelles
     from app.models.salle import Salle as SalleModel
+    from app.models.planche import Planche as PlancheModel
+    from app.models.surveillant import Surveillant as SurveillantModel
+
+    candidat_ids    = {e.candidat_id for e, _ in rows if e.candidat_id}
+    examinateur_ids = {e.examinateur_id for e, _ in rows if e.examinateur_id} | \
+                      {e.examinateur2_id for e, _ in rows if e.examinateur2_id}
+    salle_ids       = {e.salle_id for e, _ in rows if e.salle_id} | \
+                      {e.salle_preparation_id for e, _ in rows if e.salle_preparation_id}
+    planche_ids     = {e.planche_id for e, _ in rows if e.planche_id}
+    surveillant_ids = {e.surveillant_id for e, _ in rows if e.surveillant_id}
+
+    candidats    = {c.id: c for c in db.query(Candidat).filter(Candidat.id.in_(candidat_ids)).all()} if candidat_ids else {}
+    examinateurs = {e.id: e for e in db.query(ExaminateurModel).filter(ExaminateurModel.id.in_(examinateur_ids)).all()} if examinateur_ids else {}
+    salles       = {s.id: s for s in db.query(SalleModel).filter(SalleModel.id.in_(salle_ids)).all()} if salle_ids else {}
+    planches     = {p.id: p for p in db.query(PlancheModel).filter(PlancheModel.id.in_(planche_ids)).all()} if planche_ids else {}
+    surveillants = {s.id: s for s in db.query(SurveillantModel).filter(SurveillantModel.id.in_(surveillant_ids)).all()} if surveillant_ids else {}
+
+    result = []
     for epreuve, dj in rows:
-        candidat = db.get(Candidat, epreuve.candidat_id) if epreuve.candidat_id else None
-        examinateur = db.get(ExaminateurModel, epreuve.examinateur_id) if epreuve.examinateur_id else None
-        examinateur2 = db.get(ExaminateurModel, epreuve.examinateur2_id) if epreuve.examinateur2_id else None
-        salle = db.get(SalleModel, epreuve.salle_id) if epreuve.salle_id else None
-        salle_prep = db.get(SalleModel, epreuve.salle_preparation_id) if epreuve.salle_preparation_id else None
-        from app.models.planche import Planche as PlancheModel
-        planche = db.get(PlancheModel, epreuve.planche_id) if epreuve.planche_id else None
-        from app.models.surveillant import Surveillant as SurveillantModel
-        surveillant = db.get(SurveillantModel, epreuve.surveillant_id) if epreuve.surveillant_id else None
+        candidat     = candidats.get(epreuve.candidat_id)
+        examinateur  = examinateurs.get(epreuve.examinateur_id)
+        examinateur2 = examinateurs.get(epreuve.examinateur2_id)
+        salle        = salles.get(epreuve.salle_id)
+        salle_prep   = salles.get(epreuve.salle_preparation_id)
+        planche      = planches.get(epreuve.planche_id)
+        surveillant  = surveillants.get(epreuve.surveillant_id)
         result.append({
             "id": epreuve.id,
             "date": str(dj.date),
