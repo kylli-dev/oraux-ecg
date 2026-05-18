@@ -117,7 +117,6 @@ def generate_planche_with_cartouche(
     pour libérer de la place en haut, puis y appose le cartouche.
     Le contenu original est réduit proportionnellement — aucune superposition.
     """
-    from pypdf import PageObject
     from pypdf.transformations import Transformation
 
     reader = PdfReader(io.BytesIO(original_pdf_bytes))
@@ -133,11 +132,17 @@ def generate_planche_with_cartouche(
     # Facteur d'échelle uniforme : le contenu tient sous le cartouche
     scale = (page_height - cartouche_height_pt) / page_height
 
-    # Page blanche de même dimension → on y fusionne le contenu compressé
-    new_page = PageObject.create_blank_page(width=page_width, height=page_height)
+    # Page blanche créée via reportlab (évite les aléas de PageObject.create_blank_page)
+    blank_buf = io.BytesIO()
+    from reportlab.pdfgen import canvas as rl_canvas
+    rl = rl_canvas.Canvas(blank_buf, pagesize=(page_width, page_height))
+    rl.save()
+    new_page = PdfReader(io.BytesIO(blank_buf.getvalue())).pages[0]
+
+    # Fusion du contenu compressé sur la page blanche
     new_page.merge_transformed_page(
         first_page,
-        Transformation().scale(scale, scale),
+        Transformation(ctm=(scale, 0, 0, scale, 0, 0)),
     )
 
     # Générer et apposer le cartouche au-dessus
