@@ -30,6 +30,8 @@ class CandidatOut(BaseModel):
     code_acces: str
     statut: str
     created_at: datetime
+    profil: Optional[str] = None
+    classe: Optional[str] = None
 
     class Config:
         from_attributes = True
