@@ -789,25 +789,31 @@ def get_liste_attente(
     planning = db.get(Planning, c.planning_id)
     cutoff = _cutoff_date(planning)
 
-    # Journées disponibles = dates avec au moins 1 épreuve LIBRE à partir de J+1
+    # Journées disponibles = dates avec au moins 1 épreuve LIBRE à partir du cutoff
+    # Si le candidat a un profil (ex: "HGG", "ESH"), on filtre par matière
     from collections import defaultdict
-    djs = (
-        db.query(DemiJournee)
-        .filter(
+    dj_ids_map = {
+        dj.id: dj.date
+        for dj in db.query(DemiJournee).filter(
             DemiJournee.planning_id == c.planning_id,
             DemiJournee.date >= cutoff,
+        ).all()
+    }
+
+    if dj_ids_map:
+        q = db.query(Epreuve).filter(
+            Epreuve.demi_journee_id.in_(dj_ids_map.keys()),
+            Epreuve.statut == "LIBRE",
         )
-        .order_by(DemiJournee.date)
-        .all()
-    )
-    by_date: dict = defaultdict(int)
-    for dj in djs:
-        count = (
-            db.query(Epreuve)
-            .filter(Epreuve.demi_journee_id == dj.id, Epreuve.statut == "LIBRE")
-            .count()
-        )
-        by_date[dj.date] += count
+        if c.profil:
+            q = q.filter(Epreuve.matiere == c.profil)
+
+        by_date: dict = defaultdict(int)
+        for ep in q.all():
+            date = dj_ids_map[ep.demi_journee_id]
+            by_date[date] += 1
+    else:
+        by_date = {}
 
     journees = [
         JourneeDisponibleOut(date=d, nb_epreuves=n)
@@ -850,13 +856,26 @@ def update_liste_attente(
     planning = db.get(Planning, c.planning_id)
     cutoff = _cutoff_date(planning)
 
-    # Valider que toutes les dates sont >= cutoff
+    # Valider que toutes les dates sont >= cutoff et concernent le profil du candidat
     for d in body.dates:
         if d < cutoff:
             raise HTTPException(
                 status_code=400,
                 detail=f"La date {d} n'est pas disponible (préavis dépassé).",
             )
+        if c.profil:
+            djs = db.query(DemiJournee).filter_by(planning_id=c.planning_id).filter(DemiJournee.date == d).all()
+            dj_ids = [dj.id for dj in djs]
+            has_epreuve = dj_ids and db.query(Epreuve).filter(
+                Epreuve.demi_journee_id.in_(dj_ids),
+                Epreuve.statut == "LIBRE",
+                Epreuve.matiere == c.profil,
+            ).first()
+            if not has_epreuve:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"La date {d} ne correspond pas à votre profil ({c.profil}).",
+                )
 
     # Supprimer les anciennes entrées et recréer
     db.query(ListeAttente).filter_by(candidat_id=candidat_id).delete()
