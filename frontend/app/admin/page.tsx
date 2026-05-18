@@ -4345,8 +4345,10 @@ function CandidatsSection() {
                               const p = c.profil?.toUpperCase() ||
                                 ((c.classe || "").toUpperCase().includes("ESH") ? "ESH" :
                                  (c.classe || "").toUpperCase().includes("HGG") ? "HGG" : "");
-                              return p
-                                ? <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-100 text-blue-700">{p}</span>
+                              return p === "HGG"
+                                ? <span className="text-xs font-semibold px-2 py-0.5 rounded bg-purple-100 text-purple-700">HGG</span>
+                                : p === "ESH"
+                                ? <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">ESH</span>
                                 : <span className="text-xs text-black/25">—</span>;
                             })()}
                           </td>
