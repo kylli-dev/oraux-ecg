@@ -56,7 +56,7 @@ def update_candidat(candidat_id: int, body: CandidatUpdate, db: Session = Depend
     c = db.get(Candidat, candidat_id)
     if not c:
         raise HTTPException(status_code=404, detail="Candidat not found")
-    for field, value in body.model_dump(exclude_none=True).items():
+    for field, value in body.model_dump(exclude_unset=True).items():
         setattr(c, field, value)
     db.commit()
     db.refresh(c)

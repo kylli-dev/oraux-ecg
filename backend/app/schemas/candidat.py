@@ -18,6 +18,7 @@ class CandidatUpdate(BaseModel):
     prenom: Optional[str] = Field(default=None, min_length=1, max_length=100)
     email: Optional[str] = Field(default=None, min_length=1, max_length=255)
     statut: Optional[str] = None
+    profil: Optional[str] = Field(default=None, max_length=10)
 
 
 class CandidatOut(BaseModel):

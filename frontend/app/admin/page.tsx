@@ -4321,7 +4321,7 @@ function CandidatsSection() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-[#F5F5F5] text-left">
-                        {["Nom", "Prénom", "Email", "Statut", ""].map((h) => (
+                        {["Nom", "Prénom", "Email", "Profil", "Statut", ""].map((h) => (
                           <th key={h} className="px-5 py-3.5 text-xs font-semibold text-black/50 tracking-wide">{h}</th>
                         ))}
                       </tr>
@@ -4340,6 +4340,23 @@ function CandidatsSection() {
                           <td className="px-5 py-3.5 font-medium">{c.nom}</td>
                           <td className="px-5 py-3.5">{c.prenom}</td>
                           <td className="px-5 py-3.5 text-black/50">{c.email}</td>
+                          <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
+                            <select
+                              value={c.profil || ""}
+                              onChange={async (e) => {
+                                const val = e.target.value || null;
+                                try {
+                                  await put(`candidats/${c.id}`, { profil: val });
+                                  setCandidats((prev) => prev.map((x) => x.id === c.id ? { ...x, profil: val } : x));
+                                } catch { toast.error("Erreur mise à jour profil"); }
+                              }}
+                              className="text-xs border border-black/15 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-black/20 bg-white"
+                            >
+                              <option value="">—</option>
+                              <option value="HGG">HGG</option>
+                              <option value="ESH">ESH</option>
+                            </select>
+                          </td>
                           <td className="px-5 py-3.5"><StatutBadge statut={c.statut} /></td>
                           <td className="px-5 py-3.5 text-right">
                             <div className="flex items-center justify-end gap-2">
