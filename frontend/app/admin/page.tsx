@@ -5038,9 +5038,7 @@ function CompactageTab({
         </div>
       </div>
 
-      {!selectedDate ? (
-        <Empty message="Choisissez une journée" sub="Laissez la date vide pour voir tous les candidats inscrits." />
-      ) : loading ? (
+      {loading ? (
         <div className="flex justify-center py-16"><Spinner /></div>
       ) : (
         <>
