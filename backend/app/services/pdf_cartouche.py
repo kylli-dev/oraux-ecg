@@ -117,6 +117,7 @@ def generate_planche_with_cartouche(
     pour libérer de la place en haut, puis y appose le cartouche.
     Le contenu original est réduit proportionnellement — aucune superposition.
     """
+    from pypdf import PageObject
     from pypdf.transformations import Transformation
 
     reader = PdfReader(io.BytesIO(original_pdf_bytes))
@@ -126,16 +127,20 @@ def generate_planche_with_cartouche(
     page_width  = float(first_page.mediabox.width)
     page_height = float(first_page.mediabox.height)
 
-    # Hauteur réservée au cartouche (margin + boîte)
-    cartouche_height_pt = (8 + 28) * mm   # 36 mm → ~102 pt
+    # Hauteur réservée au cartouche (margin + boîte) en points
+    cartouche_height_pt = (8 + 28) * mm  # 36 mm
 
-    # Facteur d'échelle : le contenu occupe (page_height - cartouche_height) / page_height
+    # Facteur d'échelle uniforme : le contenu tient sous le cartouche
     scale = (page_height - cartouche_height_pt) / page_height
 
-    # Compression du contenu (depuis le coin bas-gauche, pas de translation horizontale)
-    first_page.add_transformation(Transformation(ctm=(scale, 0, 0, scale, 0, 0)))
+    # Page blanche de même dimension → on y fusionne le contenu compressé
+    new_page = PageObject.create_blank_page(width=page_width, height=page_height)
+    new_page.merge_transformed_page(
+        first_page,
+        Transformation().scale(scale, scale),
+    )
 
-    # Générer le cartouche sur la même taille de page (se place en haut)
+    # Générer et apposer le cartouche au-dessus
     cartouche_bytes = _build_cartouche_pdf(
         candidat_nom=candidat_nom,
         candidat_prenom=candidat_prenom,
@@ -147,10 +152,9 @@ def generate_planche_with_cartouche(
         page_width=page_width,
         page_height=page_height,
     )
-
-    cartouche_reader = PdfReader(io.BytesIO(cartouche_bytes))
-    first_page.merge_page(cartouche_reader.pages[0])
-    writer.add_page(first_page)
+    cartouche_page = PdfReader(io.BytesIO(cartouche_bytes)).pages[0]
+    new_page.merge_page(cartouche_page)
+    writer.add_page(new_page)
 
     # Pages suivantes sans modification
     for page in reader.pages[1:]:
