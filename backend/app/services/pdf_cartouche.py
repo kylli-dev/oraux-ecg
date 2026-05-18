@@ -113,16 +113,29 @@ def generate_planche_with_cartouche(
     heure_passage: time,
 ) -> bytes:
     """
-    Fusionne le cartouche en overlay sur la première page du PDF original.
-    Retourne les bytes du PDF résultant.
+    Option B : compresse le contenu de la première page vers le bas
+    pour libérer de la place en haut, puis y appose le cartouche.
+    Le contenu original est réduit proportionnellement — aucune superposition.
     """
+    from pypdf.transformations import Transformation
+
     reader = PdfReader(io.BytesIO(original_pdf_bytes))
     writer = PdfWriter()
 
     first_page = reader.pages[0]
-    page_width = float(first_page.mediabox.width)
+    page_width  = float(first_page.mediabox.width)
     page_height = float(first_page.mediabox.height)
 
+    # Hauteur réservée au cartouche (margin + boîte)
+    cartouche_height_pt = (8 + 28) * mm   # 36 mm → ~102 pt
+
+    # Facteur d'échelle : le contenu occupe (page_height - cartouche_height) / page_height
+    scale = (page_height - cartouche_height_pt) / page_height
+
+    # Compression du contenu (depuis le coin bas-gauche, pas de translation horizontale)
+    first_page.add_transformation(Transformation(ctm=(scale, 0, 0, scale, 0, 0)))
+
+    # Générer le cartouche sur la même taille de page (se place en haut)
     cartouche_bytes = _build_cartouche_pdf(
         candidat_nom=candidat_nom,
         candidat_prenom=candidat_prenom,
@@ -136,13 +149,10 @@ def generate_planche_with_cartouche(
     )
 
     cartouche_reader = PdfReader(io.BytesIO(cartouche_bytes))
-    cartouche_page = cartouche_reader.pages[0]
-
-    # Merge: cartouche en overlay sur la première page
-    first_page.merge_page(cartouche_page)
+    first_page.merge_page(cartouche_reader.pages[0])
     writer.add_page(first_page)
 
-    # Ajouter les pages suivantes sans modification
+    # Pages suivantes sans modification
     for page in reader.pages[1:]:
         writer.add_page(page)
 
