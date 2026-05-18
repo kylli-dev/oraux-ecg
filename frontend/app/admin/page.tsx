@@ -9241,12 +9241,15 @@ function PlanchesSection() {
 
   // ── Logique impression ───────────────────────────────────────────────────────
   useEffect(() => {
-    if (!impPlanningId || !impDate) { setImpEpreuves([]); setImpSelected(new Set()); return; }
+    if (!impPlanningId) { setImpEpreuves([]); setImpSelected(new Set()); return; }
     setImpLoading(true);
     get<EpreuveFlat[]>(`plannings/${impPlanningId}/epreuves`)
       .then((all) => {
         const filtered = all.filter(
-          (e) => e.date === impDate && e.planche_id !== null && (impMatiere === "" || e.matiere === impMatiere)
+          (e) =>
+            e.planche_id !== null &&
+            (impDate === "" || e.date === impDate) &&
+            (impMatiere === "" || e.matiere === impMatiere)
         );
         setImpEpreuves(filtered);
         // Pré-sélectionner toutes les épreuves avec candidat + planche
@@ -9725,8 +9728,8 @@ function PlanchesSection() {
             </div>
           )}
 
-          {!impPlanningId || !impDate ? (
-            <Empty message="Sélectionnez un planning et une date" />
+          {!impPlanningId ? (
+            <Empty message="Sélectionnez un planning" />
           ) : impLoading ? (
             <div className="flex justify-center py-12 text-black/30"><Spinner /></div>
           ) : impEpreuves.length === 0 ? (
