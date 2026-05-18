@@ -789,8 +789,21 @@ def get_liste_attente(
     planning = db.get(Planning, c.planning_id)
     cutoff = _cutoff_date(planning)
 
+    # Profil effectif : champ profil en priorité, sinon dérivé de classe
+    def _profil_effectif(cand) -> str:
+        if cand.profil:
+            return cand.profil.strip().upper()
+        classe = (cand.classe or "").upper()
+        if "ESH" in classe:
+            return "ESH"
+        if "HGG" in classe:
+            return "HGG"
+        return ""
+
+    profil_effectif = _profil_effectif(c)
+
     # Journées disponibles = dates avec au moins 1 épreuve LIBRE à partir du cutoff
-    # Si le candidat a un profil (ex: "HGG", "ESH"), on filtre par matière
+    # Si le candidat a un profil effectif, on filtre par matière
     from collections import defaultdict
     dj_ids_map = {
         dj.id: dj.date
@@ -805,8 +818,8 @@ def get_liste_attente(
             Epreuve.demi_journee_id.in_(dj_ids_map.keys()),
             Epreuve.statut == "LIBRE",
         )
-        if c.profil:
-            q = q.filter(Epreuve.matiere == c.profil)
+        if profil_effectif:
+            q = q.filter(Epreuve.matiere == profil_effectif)
 
         by_date: dict = defaultdict(int)
         for ep in q.all():
@@ -863,18 +876,18 @@ def update_liste_attente(
                 status_code=400,
                 detail=f"La date {d} n'est pas disponible (préavis dépassé).",
             )
-        if c.profil:
-            djs = db.query(DemiJournee).filter_by(planning_id=c.planning_id).filter(DemiJournee.date == d).all()
-            dj_ids = [dj.id for dj in djs]
-            has_epreuve = dj_ids and db.query(Epreuve).filter(
-                Epreuve.demi_journee_id.in_(dj_ids),
+        if profil_effectif:
+            djs_d = db.query(DemiJournee).filter_by(planning_id=c.planning_id).filter(DemiJournee.date == d).all()
+            dj_ids_d = [dj.id for dj in djs_d]
+            has_epreuve = dj_ids_d and db.query(Epreuve).filter(
+                Epreuve.demi_journee_id.in_(dj_ids_d),
                 Epreuve.statut == "LIBRE",
-                Epreuve.matiere == c.profil,
+                Epreuve.matiere == profil_effectif,
             ).first()
             if not has_epreuve:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"La date {d} ne correspond pas à votre profil ({c.profil}).",
+                    detail=f"La date {d} ne correspond pas à votre profil ({profil_effectif}).",
                 )
 
     # Supprimer les anciennes entrées et recréer
