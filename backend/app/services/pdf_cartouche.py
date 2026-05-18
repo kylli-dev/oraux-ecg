@@ -130,10 +130,11 @@ def generate_planche_with_cartouche(
     # Facteur d'échelle uniforme : le contenu tient sous le cartouche
     scale = (page_height - cartouche_height_pt) / page_height
 
-    # Page blanche via reportlab
+    # Page blanche via reportlab — showPage() obligatoire avant save()
     from reportlab.pdfgen import canvas as rl_canvas
     blank_buf = io.BytesIO()
     rl = rl_canvas.Canvas(blank_buf, pagesize=(page_width, page_height))
+    rl.showPage()  # valide la page, sinon le PDF est vide
     rl.save()
     new_page = PdfReader(io.BytesIO(blank_buf.getvalue())).pages[0]
 
