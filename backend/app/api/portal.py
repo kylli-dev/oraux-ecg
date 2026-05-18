@@ -868,6 +868,7 @@ def update_liste_attente(
     c = db.get(Candidat, candidat_id)
     planning = db.get(Planning, c.planning_id)
     cutoff = _cutoff_date(planning)
+    profil_effectif = _profil_effectif(c)
 
     # Valider que toutes les dates sont >= cutoff et concernent le profil du candidat
     for d in body.dates:
