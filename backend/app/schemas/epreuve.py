@@ -46,6 +46,8 @@ class EpreuveUpdate(BaseModel):
     salle_preparation_id: Optional[int] = None
     surveillant_id: Optional[int] = None
     preparation_minutes: Optional[int] = None
+    examinateur_id: Optional[int] = None
+    examinateur2_id: Optional[int] = None
 
 
     @field_validator("statut")
