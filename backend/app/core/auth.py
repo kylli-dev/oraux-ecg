@@ -56,6 +56,21 @@ def decode_examinateur_token(token: str) -> int:
     return int(payload["sub"])
 
 
+# ── JWT Surveillant ─────────────────────────────────────────────────────────
+
+def create_surveillant_token(surveillant_id: int) -> str:
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    payload = {"sub": str(surveillant_id), "exp": expire, "type": "surveillant"}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_surveillant_token(token: str) -> int:
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    if payload.get("type") != "surveillant":
+        raise JWTError("Wrong token type")
+    return int(payload["sub"])
+
+
 # ── Token de réinitialisation ────────────────────────────────────────────────
 
 def generate_reset_token() -> str:

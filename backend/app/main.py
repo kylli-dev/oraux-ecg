@@ -48,6 +48,7 @@ from app.api.notes import router as notes_router
 from app.api.excel import router as excel_router
 from app.api.gestion_candidats import router as gestion_candidats_router
 from app.api.surveillants import router as surveillants_router
+from app.api.surveillant_portal import router as surveillant_portal_router
 from app.api.planches import router as planches_router
 
 app = FastAPI(title="Oraux Platform")
@@ -80,6 +81,7 @@ app.include_router(notes_router)
 app.include_router(excel_router)
 app.include_router(gestion_candidats_router)
 app.include_router(surveillants_router)
+app.include_router(surveillant_portal_router)
 app.include_router(planches_router)
 
 
