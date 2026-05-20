@@ -181,13 +181,16 @@ export default function ExaminateurPlanningPage() {
                             )}
                             {ep.planche_nom && (
                               <button
-                                onClick={() => {
+                                onClick={async () => {
                                   const token = sessionStorage.getItem("examinateur_token") ?? "";
-                                  fetch(`${API}/examinateur/me/epreuves/${ep.id}/planche`, {
-                                    headers: { Authorization: `Bearer ${token}` },
-                                  })
-                                    .then(r => r.blob())
-                                    .then(blob => window.open(URL.createObjectURL(blob), "_blank"));
+                                  try {
+                                    const r = await fetch(`${API}/examinateur/me/epreuves/${ep.id}/planche`, {
+                                      headers: { Authorization: `Bearer ${token}` },
+                                    });
+                                    if (!r.ok) { setError("Sujet non disponible"); return; }
+                                    const blob = await r.blob();
+                                    window.open(URL.createObjectURL(blob), "_blank");
+                                  } catch { setError("Erreur lors de l'ouverture du sujet"); }
                                 }}
                                 className="flex items-center gap-1 text-purple-600 hover:text-purple-800 hover:underline transition"
                               >
