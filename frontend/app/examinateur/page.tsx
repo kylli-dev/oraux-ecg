@@ -86,6 +86,11 @@ export default function ExaminateurLoginPage() {
         <p className="text-center text-xs text-gray-400 mt-4">
           Votre code d&apos;accès vous a été communiqué par le service des admissions.
         </p>
+        <p className="text-center mt-2">
+          <a href="/examinateur/code-perdu" className="text-xs text-purple-500 hover:text-purple-700 hover:underline transition">
+            Code d&apos;accès perdu ?
+          </a>
+        </p>
       </div>
     </div>
   );

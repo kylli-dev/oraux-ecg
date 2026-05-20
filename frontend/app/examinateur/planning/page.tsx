@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, CheckCircle, Clock, FileText } from "lucide-react";
+import { ArrowLeft, Loader2, CheckCircle, Clock, FileText, Download, AlertTriangle } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
 
@@ -21,6 +21,7 @@ type Epreuve = {
   salle_intitule: string | null;
   salle_preparation_intitule: string | null;
   planche_nom: string | null;
+  conflit_etablissement: boolean;
 };
 
 function authHeaders() {
@@ -43,6 +44,7 @@ export default function ExaminateurPlanningPage() {
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState<Record<number, boolean>>({});
   const [saved, setSaved] = useState<Record<number, boolean>>({});
+  const [exporting, setExporting] = useState(false);
 
   const load = useCallback(async () => {
     const token = sessionStorage.getItem("examinateur_token");
@@ -103,6 +105,23 @@ export default function ExaminateurPlanningPage() {
     }
   }
 
+  async function handleExport() {
+    setExporting(true);
+    const token = sessionStorage.getItem("examinateur_token") ?? "";
+    try {
+      const r = await fetch(`${API}/examinateur/me/epreuves/export`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!r.ok) { setError("Erreur export"); return; }
+      const blob = await r.blob();
+      const cd = r.headers.get("content-disposition") ?? "";
+      const match = cd.match(/filename="([^"]+)"/);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = match?.[1] ?? "planning.xlsx";
+      a.click();
+    } catch { setError("Erreur lors de l'export"); }
+    finally { setExporting(false); }
+  }
+
   // Group by date
   const byDate = epreuves.reduce<Record<string, Epreuve[]>>((acc, e) => {
     (acc[e.date] ??= []).push(e);
@@ -116,7 +135,15 @@ export default function ExaminateurPlanningPage() {
           <button onClick={() => router.back()} className="text-gray-400 hover:text-gray-700 transition">
             <ArrowLeft className="h-5 w-5" />
           </button>
-          <h1 className="text-lg font-semibold text-gray-900">Mon planning & notes</h1>
+          <h1 className="text-lg font-semibold text-gray-900 flex-1">Mon planning & notes</h1>
+          <button
+            onClick={handleExport}
+            disabled={exporting || epreuves.length === 0}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-purple-200 text-purple-600 hover:bg-purple-50 transition disabled:opacity-40"
+          >
+            {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            Exporter Excel
+          </button>
         </div>
       </header>
 
@@ -201,11 +228,19 @@ export default function ExaminateurPlanningPage() {
                               </button>
                             )}
                           </div>
-                          {ep.note_statut === "PUBLIE" && (
-                            <span className="inline-block mt-1 text-xs bg-green-100 text-green-700 rounded-full px-2 py-0.5 font-medium">
-                              Note publiée
-                            </span>
-                          )}
+                          <div className="flex flex-wrap gap-2 mt-1">
+                            {ep.conflit_etablissement && (
+                              <span className="flex items-center gap-1 text-xs bg-amber-50 border border-amber-200 text-amber-700 rounded-full px-2 py-0.5 font-medium">
+                                <AlertTriangle className="h-3 w-3 shrink-0" />
+                                Même établissement que le candidat
+                              </span>
+                            )}
+                            {ep.note_statut === "PUBLIE" && (
+                              <span className="text-xs bg-green-100 text-green-700 rounded-full px-2 py-0.5 font-medium">
+                                Note publiée
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         {/* Right: note input */}

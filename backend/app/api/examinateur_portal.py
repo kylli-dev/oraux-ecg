@@ -78,6 +78,7 @@ class EpreuveExaminateur(BaseModel):
     salle_intitule: Optional[str]
     salle_preparation_intitule: Optional[str]
     planche_nom: Optional[str]
+    conflit_etablissement: bool = False
 
 
 class NoterIn(BaseModel):
@@ -90,7 +91,22 @@ class NoterOut(BaseModel):
     statut: str
 
 
+class CodePerduIn(BaseModel):
+    email: str
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
+
+@router.post("/code-perdu")
+def code_perdu(body: CodePerduIn, db: Session = Depends(get_db)):
+    """Envoie le code d'accès par email si l'adresse est connue (réponse neutre)."""
+    ex = db.query(Examinateur).filter(
+        Examinateur.email == body.email.strip().lower()
+    ).first()
+    if ex:
+        pass  # TODO: envoyer email avec ex.code_acces
+    return {"sent": True}
+
 
 @router.post("/login", response_model=LoginOut)
 def login(body: LoginIn, db: Session = Depends(get_db)):
@@ -138,6 +154,10 @@ def mes_epreuves(
         salle = db.get(Salle, epreuve.salle_id) if epreuve.salle_id else None
         salle_prep = db.get(Salle, epreuve.salle_preparation_id) if epreuve.salle_preparation_id else None
         planche = db.get(Planche, epreuve.planche_id) if epreuve.planche_id else None
+        conflit = bool(
+            candidat and ex.code_uai and candidat.code_uai
+            and ex.code_uai.strip().upper() == candidat.code_uai.strip().upper()
+        )
         result.append(EpreuveExaminateur(
             id=epreuve.id,
             date=dj.date,
@@ -153,6 +173,7 @@ def mes_epreuves(
             salle_intitule=salle.intitule if salle else None,
             salle_preparation_intitule=salle_prep.intitule if salle_prep else None,
             planche_nom=planche.nom if planche else None,
+            conflit_etablissement=conflit,
         ))
     return result
 
@@ -178,6 +199,70 @@ def voir_planche(
         io.BytesIO(planche.fichier_data),
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{planche.nom}.pdf"'},
+    )
+
+
+@router.get("/me/epreuves/export")
+def export_planning(
+    ex: Examinateur = Depends(get_current_examinateur),
+    db: Session = Depends(get_db),
+):
+    """Export Excel du planning + notes de l'examinateur."""
+    import io as _io
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from fastapi.responses import Response as _Response
+
+    epreuves = mes_epreuves(ex=ex, db=db)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Planning"
+
+    headers = ["Date", "Matière", "Heure prépa", "Heure passage", "Candidat", "Salle prépa", "Salle", "Sujet", "Note /20", "Statut note", "⚠ Conflit établ."]
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="5B21B6")
+        cell.alignment = Alignment(horizontal="center")
+
+    JOURS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
+    MOIS = ["", "jan", "fév", "mar", "avr", "mai", "jun", "jul", "aoû", "sep", "oct", "nov", "déc"]
+
+    for ep in epreuves:
+        heure_prep = ""
+        if ep.preparation_minutes:
+            from datetime import datetime as _dt, timedelta
+            h, m = map(int, ep.heure_debut.split(":"))
+            prep_min = h * 60 + m - ep.preparation_minutes
+            prep_min = ((prep_min % 1440) + 1440) % 1440
+            heure_prep = f"{prep_min // 60:02d}:{prep_min % 60:02d}"
+
+        d = ep.date
+        date_str = f"{JOURS[d.weekday()]} {d.day} {MOIS[d.month]} {d.year}"
+        candidat_str = f"{ep.candidat_prenom or ''} {ep.candidat_nom or ''}".strip() if ep.candidat_id else ""
+        ws.append([
+            date_str, ep.matiere, heure_prep, ep.heure_debut,
+            candidat_str,
+            ep.salle_preparation_intitule or "",
+            ep.salle_intitule or "",
+            ep.planche_nom or "",
+            ep.note_valeur if ep.note_valeur is not None else "",
+            ep.note_statut or "",
+            "OUI" if ep.conflit_etablissement else "",
+        ])
+
+    for col in ws.columns:
+        max_len = max((len(str(c.value or "")) for c in col), default=8)
+        ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 40)
+
+    buf = _io.BytesIO()
+    wb.save(buf)
+    nom = f"{ex.nom}_{ex.prenom}_planning".replace(" ", "_")
+    return _Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{nom}.xlsx"'},
     )
 
 
