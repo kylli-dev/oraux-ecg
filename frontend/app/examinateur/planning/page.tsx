@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, CheckCircle, Clock } from "lucide-react";
+import { ArrowLeft, Loader2, CheckCircle, Clock, FileText } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
 
@@ -180,7 +180,20 @@ export default function ExaminateurPlanningPage() {
                               <span>🏛 Salle : <span className="font-medium text-gray-700">{ep.salle_intitule}</span></span>
                             )}
                             {ep.planche_nom && (
-                              <span>📄 Sujet : <span className="font-medium text-gray-700">{ep.planche_nom}</span></span>
+                              <button
+                                onClick={() => {
+                                  const token = sessionStorage.getItem("examinateur_token") ?? "";
+                                  fetch(`${API}/examinateur/me/epreuves/${ep.id}/planche`, {
+                                    headers: { Authorization: `Bearer ${token}` },
+                                  })
+                                    .then(r => r.blob())
+                                    .then(blob => window.open(URL.createObjectURL(blob), "_blank"));
+                                }}
+                                className="flex items-center gap-1 text-purple-600 hover:text-purple-800 hover:underline transition"
+                              >
+                                <FileText className="h-3 w-3 shrink-0" />
+                                <span className="font-medium">{ep.planche_nom}</span>
+                              </button>
                             )}
                           </div>
                           {ep.note_statut === "PUBLIE" && (

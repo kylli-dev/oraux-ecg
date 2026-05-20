@@ -157,6 +157,30 @@ def mes_epreuves(
     return result
 
 
+@router.get("/me/epreuves/{epreuve_id}/planche")
+def voir_planche(
+    epreuve_id: int,
+    ex: Examinateur = Depends(get_current_examinateur),
+    db: Session = Depends(get_db),
+):
+    """Retourne le PDF de la planche assignée à une épreuve de l'examinateur."""
+    import io
+    from fastapi.responses import StreamingResponse
+    epreuve = db.get(Epreuve, epreuve_id)
+    if not epreuve or (epreuve.examinateur_id != ex.id and epreuve.examinateur2_id != ex.id):
+        raise HTTPException(status_code=404, detail="Épreuve introuvable")
+    if not epreuve.planche_id:
+        raise HTTPException(status_code=404, detail="Aucun sujet assigné à cette épreuve")
+    planche = db.get(Planche, epreuve.planche_id)
+    if not planche or not planche.fichier_data:
+        raise HTTPException(status_code=404, detail="Fichier introuvable")
+    return StreamingResponse(
+        io.BytesIO(planche.fichier_data),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{planche.nom}.pdf"'},
+    )
+
+
 @router.post("/me/epreuves/{epreuve_id}/noter", response_model=NoterOut)
 def noter(
     epreuve_id: int,
