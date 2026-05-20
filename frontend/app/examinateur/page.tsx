@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -43,11 +43,11 @@ export default function ExaminateurLoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-white px-4">
+    <div className="min-h-screen flex items-center justify-center bg-[#F5F5F5] px-4">
       <div className="w-full max-w-sm">
         {/* Logo / titre */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-purple-600 mb-4 shadow-lg">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-[#C62828] mb-4 shadow-lg">
             <KeyRound className="h-7 w-7 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Espace examinateur</h1>
@@ -65,7 +65,7 @@ export default function ExaminateurLoginPage() {
               onChange={(e) => setCode(e.target.value.toUpperCase())}
               placeholder="ex : A1B2C3D4"
               required
-              className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent uppercase"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-[#C62828] focus:border-transparent uppercase"
             />
           </div>
 
@@ -76,7 +76,7 @@ export default function ExaminateurLoginPage() {
           <button
             type="submit"
             disabled={loading || !code.trim()}
-            className="w-full py-2.5 px-4 bg-purple-600 text-white text-sm font-semibold rounded-xl hover:bg-purple-700 transition disabled:opacity-50 flex items-center justify-center gap-2"
+            className="w-full py-2.5 px-4 bg-[#C62828] text-white text-sm font-semibold rounded-xl hover:bg-[#B71C1C] transition disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {loading && <Loader2 className="h-4 w-4 animate-spin" />}
             Accéder à mon espace
@@ -87,7 +87,7 @@ export default function ExaminateurLoginPage() {
           Votre code d&apos;accès vous a été communiqué par le service des admissions.
         </p>
         <p className="text-center mt-2">
-          <a href="/examinateur/code-perdu" className="text-xs text-purple-500 hover:text-purple-700 hover:underline transition">
+          <a href="/examinateur/code-perdu" className="text-xs text-[#C62828] hover:text-[#B71C1C] hover:underline transition">
             Code d&apos;accès perdu ?
           </a>
         </p>

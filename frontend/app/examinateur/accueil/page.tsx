@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -45,7 +45,7 @@ export default function ExaminateurAccueilPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-purple-500" />
+        <Loader2 className="h-6 w-6 animate-spin text-[#C62828]" />
       </div>
     );
   }
@@ -53,13 +53,13 @@ export default function ExaminateurAccueilPage() {
   if (!me) return null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-white">
+    <div className="min-h-screen bg-[#F5F5F5]">
       {/* Header */}
       <header className="bg-white border-b border-gray-100 shadow-sm">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-purple-100 flex items-center justify-center">
-              <User className="h-5 w-5 text-purple-600" />
+            <div className="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center">
+              <User className="h-5 w-5 text-[#C62828]" />
             </div>
             <div>
               <p className="text-sm font-semibold text-gray-900">{me.prenom} {me.nom}</p>
@@ -86,10 +86,10 @@ export default function ExaminateurAccueilPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <button
             onClick={() => router.push("/examinateur/planning")}
-            className="group bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-left hover:shadow-md hover:border-purple-200 transition"
+            className="group bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-left hover:shadow-md hover:border-red-200 transition"
           >
-            <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center mb-4 group-hover:bg-purple-200 transition">
-              <CalendarDays className="h-5 w-5 text-purple-600" />
+            <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center mb-4 group-hover:bg-red-100 transition">
+              <CalendarDays className="h-5 w-5 text-[#C62828]" />
             </div>
             <p className="font-semibold text-gray-900 mb-1">Mon planning & notes</p>
             <p className="text-sm text-gray-500">Consultez vos créneaux d&apos;oral et saisissez les notes des candidats.</p>

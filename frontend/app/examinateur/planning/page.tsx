@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -159,7 +159,7 @@ export default function ExaminateurPlanningPage() {
   const matieres = Object.keys(stats);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-white">
+    <div className="min-h-screen bg-[#F5F5F5]">
       <header className="bg-white border-b border-gray-100 shadow-sm">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center gap-3">
           <button onClick={() => router.back()} className="text-gray-400 hover:text-gray-700 transition">
@@ -169,7 +169,7 @@ export default function ExaminateurPlanningPage() {
           <button
             onClick={handleExport}
             disabled={exporting || epreuves.length === 0}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-purple-200 text-purple-600 hover:bg-purple-50 transition disabled:opacity-40"
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-red-200 text-[#C62828] hover:bg-red-50 transition disabled:opacity-40"
           >
             {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
             Exporter Excel
@@ -195,7 +195,7 @@ export default function ExaminateurPlanningPage() {
                       { label: "Mes notes", data: s.mes_notes, color: "purple" },
                       { label: "Toutes les notes", data: s.toutes_notes, color: "gray" },
                     ].map(({ label, data, color }) => (
-                      <div key={label} className={`rounded-xl p-3 ${color === "purple" ? "bg-purple-50 border border-purple-100" : "bg-gray-50 border border-gray-100"}`}>
+                      <div key={label} className={`rounded-xl p-3 ${color === "purple" ? "bg-red-50 border border-red-100" : "bg-gray-50 border border-gray-100"}`}>
                         <p className="text-xs font-semibold text-gray-500 mb-2">{label}</p>
                         {data.count === 0 ? (
                           <p className="text-xs text-gray-400 italic">Aucune note</p>
@@ -219,7 +219,7 @@ export default function ExaminateurPlanningPage() {
         {/* ── Liste des créneaux ── */}
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-6 w-6 animate-spin text-purple-400" />
+            <Loader2 className="h-6 w-6 animate-spin text-[#C62828]/60" />
           </div>
         ) : epreuves.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-gray-200 p-16 text-center">
@@ -282,7 +282,7 @@ export default function ExaminateurPlanningPage() {
                                   win.location.href = URL.createObjectURL(await r.blob());
                                 } catch { win.close(); }
                               }}
-                              className="flex items-center gap-1 text-purple-600 hover:text-purple-800 hover:underline transition"
+                              className="flex items-center gap-1 text-[#C62828] hover:text-[#B71C1C] hover:underline transition"
                             >
                               <FileText className="h-3 w-3 shrink-0" />
                               <span className="font-medium">{ep.planche_nom}</span>
@@ -321,7 +321,7 @@ export default function ExaminateurPlanningPage() {
                                   className={`w-20 px-2.5 py-1.5 text-sm text-center rounded-lg border focus:outline-none focus:ring-2 transition disabled:bg-gray-50 disabled:text-gray-400 ${
                                     raw && !valid
                                       ? "border-red-400 bg-red-50 focus:ring-red-300"
-                                      : "border-gray-200 focus:ring-purple-400"
+                                      : "border-gray-200 focus:ring-[#C62828]/40"
                                   }`}
                                 />
                                 <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">/20</span>
@@ -342,7 +342,7 @@ export default function ExaminateurPlanningPage() {
                                 onChange={(e) => setComments((c) => ({ ...c, [ep.id]: e.target.value }))}
                                 placeholder="Commentaire (optionnel)"
                                 rows={2}
-                                className="w-full px-3 py-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-300 resize-none"
+                                className="w-full px-3 py-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#C62828]/30 resize-none"
                               />
                             )}
 
@@ -365,7 +365,7 @@ export default function ExaminateurPlanningPage() {
                                 <button
                                   onClick={() => saveNote(ep, true)}
                                   disabled={!!isSaving || !raw || !valid}
-                                  className="text-xs px-3 py-1.5 rounded-lg bg-purple-600 text-white font-semibold hover:bg-purple-700 transition disabled:opacity-40 flex items-center gap-1"
+                                  className="text-xs px-3 py-1.5 rounded-lg bg-[#C62828] text-white font-semibold hover:bg-[#B71C1C] transition disabled:opacity-40 flex items-center gap-1"
                                 >
                                   {isSaving === "validate" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Lock className="h-3 w-3" />}
                                   Valider la note

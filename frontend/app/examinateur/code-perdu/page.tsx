@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -36,7 +36,7 @@ export default function CodePerduPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-white px-4">
+    <div className="min-h-screen flex items-center justify-center bg-[#F5F5F5] px-4">
       <div className="w-full max-w-sm">
         <button
           onClick={() => router.back()}
@@ -46,8 +46,8 @@ export default function CodePerduPage() {
         </button>
 
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-purple-100 mb-4">
-            <Mail className="h-7 w-7 text-purple-600" />
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-red-50 mb-4">
+            <Mail className="h-7 w-7 text-[#C62828]" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Code d&apos;accès perdu</h1>
           <p className="text-sm text-gray-500 mt-1">
@@ -64,7 +64,7 @@ export default function CodePerduPage() {
             </p>
             <button
               onClick={() => router.push("/examinateur")}
-              className="mt-2 text-sm text-purple-600 hover:underline"
+              className="mt-2 text-sm text-[#C62828] hover:underline"
             >
               Retour à la connexion
             </button>
@@ -81,7 +81,7 @@ export default function CodePerduPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="prenom.nom@etablissement.fr"
                 required
-                className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#C62828] focus:border-transparent"
               />
             </div>
 
@@ -92,7 +92,7 @@ export default function CodePerduPage() {
             <button
               type="submit"
               disabled={loading || !email.trim()}
-              className="w-full py-2.5 px-4 bg-purple-600 text-white text-sm font-semibold rounded-xl hover:bg-purple-700 transition disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full py-2.5 px-4 bg-[#C62828] text-white text-sm font-semibold rounded-xl hover:bg-[#B71C1C] transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               Envoyer mon code
