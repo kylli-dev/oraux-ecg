@@ -114,7 +114,10 @@ def code_perdu(body: CodePerduIn, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=LoginOut)
 def login(body: LoginIn, db: Session = Depends(get_db)):
-    ex = db.query(Examinateur).filter_by(code_acces=body.code_acces.strip().upper()).first()
+    from sqlalchemy import func as _func
+    ex = db.query(Examinateur).filter(
+        _func.upper(Examinateur.code_acces) == body.code_acces.strip().upper()
+    ).first()
     if not ex:
         raise HTTPException(status_code=401, detail="Code d'accès invalide")
     token = create_examinateur_token(ex.id)

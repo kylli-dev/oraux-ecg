@@ -62,7 +62,7 @@ export default function ExaminateurLoginPage() {
             <input
               type="text"
               value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              onChange={(e) => setCode(e.target.value)}
               placeholder="ex : A1B2C3D4"
               required
               className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-[#C62828] focus:border-transparent"

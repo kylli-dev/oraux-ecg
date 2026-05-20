@@ -82,7 +82,10 @@ class EpreuveSurveillant(BaseModel):
 
 @router.post("/login", response_model=LoginOut)
 def login(body: LoginIn, db: Session = Depends(get_db)):
-    s = db.query(Surveillant).filter_by(code_acces=body.code_acces.strip().upper()).first()
+    from sqlalchemy import func as _func
+    s = db.query(Surveillant).filter(
+        _func.upper(Surveillant.code_acces) == body.code_acces.strip().upper()
+    ).first()
     if not s:
         raise HTTPException(status_code=401, detail="Code d'accès invalide")
     return LoginOut(access_token=create_surveillant_token(s.id))
