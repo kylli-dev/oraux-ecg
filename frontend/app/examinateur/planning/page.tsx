@@ -77,6 +77,8 @@ export default function ExaminateurPlanningPage() {
   const [saving, setSaving] = useState<Record<number, "save" | "validate" | null>>({});
   const [saved, setSaved] = useState<Record<number, boolean>>({});
   const [exporting, setExporting] = useState(false);
+  const [filterDate, setFilterDate] = useState("");
+  const [searchCandidat, setSearchCandidat] = useState("");
 
   const load = useCallback(async () => {
     const token = sessionStorage.getItem("examinateur_token");
@@ -151,7 +153,19 @@ export default function ExaminateurPlanningPage() {
     finally { setExporting(false); }
   }
 
-  const byDate = epreuves.reduce<Record<string, Epreuve[]>>((acc, e) => {
+  const dates = [...new Set(epreuves.map((e) => e.date))].sort();
+
+  const filtered = epreuves.filter((e) => {
+    if (filterDate && e.date !== filterDate) return false;
+    if (searchCandidat.trim()) {
+      const q = searchCandidat.trim().toLowerCase();
+      const nom = `${e.candidat_prenom ?? ""} ${e.candidat_nom ?? ""}`.toLowerCase();
+      if (!nom.includes(q)) return false;
+    }
+    return true;
+  });
+
+  const byDate = filtered.reduce<Record<string, Epreuve[]>>((acc, e) => {
     (acc[e.date] ??= []).push(e);
     return acc;
   }, {});
@@ -216,6 +230,39 @@ export default function ExaminateurPlanningPage() {
           </div>
         )}
 
+        {/* ── Filtres ── */}
+        {!loading && epreuves.length > 0 && (
+          <div className="flex gap-2 flex-wrap">
+            <select
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C62828]/30 bg-white"
+            >
+              <option value="">Toutes les dates</option>
+              {dates.map((d) => (
+                <option key={d} value={d}>
+                  {new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}
+                </option>
+              ))}
+            </select>
+            <input
+              type="text"
+              value={searchCandidat}
+              onChange={(e) => setSearchCandidat(e.target.value)}
+              placeholder="Rechercher un candidat…"
+              className="flex-1 min-w-[180px] border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C62828]/30 bg-white"
+            />
+            {(filterDate || searchCandidat) && (
+              <button
+                onClick={() => { setFilterDate(""); setSearchCandidat(""); }}
+                className="text-xs text-gray-400 hover:text-gray-700 px-2 transition"
+              >
+                Effacer
+              </button>
+            )}
+          </div>
+        )}
+
         {/* ── Liste des créneaux ── */}
         {loading ? (
           <div className="flex items-center justify-center py-20">
@@ -225,6 +272,10 @@ export default function ExaminateurPlanningPage() {
           <div className="rounded-2xl border border-dashed border-gray-200 p-16 text-center">
             <Clock className="h-10 w-10 mx-auto mb-3 text-gray-300" />
             <p className="text-base font-medium text-gray-500">Aucune épreuve assignée</p>
+          </div>
+        ) : Object.keys(byDate).length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-gray-200 p-10 text-center">
+            <p className="text-sm font-medium text-gray-500">Aucun résultat pour cette sélection</p>
           </div>
         ) : (
           <div className="space-y-8">
