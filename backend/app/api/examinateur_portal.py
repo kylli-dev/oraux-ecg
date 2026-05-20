@@ -17,6 +17,8 @@ from app.models.epreuve import Epreuve
 from app.models.demi_journee import DemiJournee
 from app.models.candidat import Candidat
 from app.models.note import Note
+from app.models.salle import Salle
+from app.models.planche import Planche
 
 router = APIRouter(prefix="/examinateur", tags=["examinateur-portal"])
 
@@ -67,11 +69,15 @@ class EpreuveExaminateur(BaseModel):
     matiere: str
     heure_debut: str
     heure_fin: str
+    preparation_minutes: Optional[int]
     candidat_id: Optional[int]
     candidat_nom: Optional[str]
     candidat_prenom: Optional[str]
     note_valeur: Optional[float]
     note_statut: Optional[str]
+    salle_intitule: Optional[str]
+    salle_preparation_intitule: Optional[str]
+    planche_nom: Optional[str]
 
 
 class NoterIn(BaseModel):
@@ -129,17 +135,24 @@ def mes_epreuves(
                 .filter_by(candidat_id=candidat.id, matiere=epreuve.matiere)
                 .first()
             )
+        salle = db.get(Salle, epreuve.salle_id) if epreuve.salle_id else None
+        salle_prep = db.get(Salle, epreuve.salle_preparation_id) if epreuve.salle_preparation_id else None
+        planche = db.get(Planche, epreuve.planche_id) if epreuve.planche_id else None
         result.append(EpreuveExaminateur(
             id=epreuve.id,
             date=dj.date,
             matiere=epreuve.matiere,
             heure_debut=str(epreuve.heure_debut)[:5],
             heure_fin=str(epreuve.heure_fin)[:5],
+            preparation_minutes=epreuve.preparation_minutes,
             candidat_id=candidat.id if candidat else None,
             candidat_nom=candidat.nom if candidat else None,
             candidat_prenom=candidat.prenom if candidat else None,
             note_valeur=note.valeur if note else None,
             note_statut=note.statut if note else None,
+            salle_intitule=salle.intitule if salle else None,
+            salle_preparation_intitule=salle_prep.intitule if salle_prep else None,
+            planche_nom=planche.nom if planche else None,
         ))
     return result
 

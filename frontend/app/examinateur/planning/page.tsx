@@ -12,11 +12,15 @@ type Epreuve = {
   matiere: string;
   heure_debut: string;
   heure_fin: string;
+  preparation_minutes: number | null;
   candidat_id: number | null;
   candidat_nom: string | null;
   candidat_prenom: string | null;
   note_valeur: number | null;
   note_statut: string | null;
+  salle_intitule: string | null;
+  salle_preparation_intitule: string | null;
+  planche_nom: string | null;
 };
 
 function authHeaders() {
@@ -146,9 +150,20 @@ export default function ExaminateurPlanningPage() {
                       <div className="flex items-start justify-between gap-4 flex-wrap">
                         {/* Left: info épreuve */}
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <span className="text-sm font-semibold text-gray-900">{ep.matiere}</span>
-                            <span className="text-xs text-gray-400 font-mono">{ep.heure_debut} – {ep.heure_fin}</span>
+                            <span className="text-xs text-gray-400 font-mono">
+                              {ep.preparation_minutes
+                                ? (() => {
+                                    const [h, m] = ep.heure_debut.split(":").map(Number);
+                                    const prepMin = h * 60 + m - ep.preparation_minutes;
+                                    const ph = Math.floor(((prepMin % 1440) + 1440) % 1440 / 60);
+                                    const pm = ((prepMin % 60) + 60) % 60;
+                                    return `Prépa ${String(ph).padStart(2,"0")}:${String(pm).padStart(2,"0")} — `;
+                                  })()
+                                : ""}
+                              Passage {ep.heure_debut} – {ep.heure_fin}
+                            </span>
                           </div>
                           {ep.candidat_id ? (
                             <p className="text-sm text-gray-600">
@@ -157,6 +172,17 @@ export default function ExaminateurPlanningPage() {
                           ) : (
                             <p className="text-sm text-gray-400 italic">Aucun candidat assigné</p>
                           )}
+                          <div className="flex flex-wrap gap-3 mt-1.5 text-xs text-gray-500">
+                            {ep.salle_preparation_intitule && (
+                              <span>🚪 Prépa : <span className="font-medium text-gray-700">{ep.salle_preparation_intitule}</span></span>
+                            )}
+                            {ep.salle_intitule && (
+                              <span>🏛 Salle : <span className="font-medium text-gray-700">{ep.salle_intitule}</span></span>
+                            )}
+                            {ep.planche_nom && (
+                              <span>📄 Sujet : <span className="font-medium text-gray-700">{ep.planche_nom}</span></span>
+                            )}
+                          </div>
                           {ep.note_statut === "PUBLIE" && (
                             <span className="inline-block mt-1 text-xs bg-green-100 text-green-700 rounded-full px-2 py-0.5 font-medium">
                               Note publiée
