@@ -12,7 +12,7 @@ from jose import JWTError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.auth import create_surveillant_token, decode_surveillant_token
+from app.core.auth import create_surveillant_token, decode_surveillant_token, verify_password
 from app.db.deps import get_db
 from app.models.surveillant import Surveillant
 from app.models.epreuve import Epreuve
@@ -46,7 +46,8 @@ def get_current_surveillant(
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
 class LoginIn(BaseModel):
-    code_acces: str
+    email: str
+    password: str
 
 
 class LoginOut(BaseModel):
@@ -82,12 +83,11 @@ class EpreuveSurveillant(BaseModel):
 
 @router.post("/login", response_model=LoginOut)
 def login(body: LoginIn, db: Session = Depends(get_db)):
-    from sqlalchemy import func as _func
     s = db.query(Surveillant).filter(
-        _func.upper(Surveillant.code_acces) == body.code_acces.strip().upper()
+        Surveillant.email == body.email.strip().lower()
     ).first()
-    if not s:
-        raise HTTPException(status_code=401, detail="Code d'accès invalide")
+    if not s or not s.password_hash or not verify_password(body.password, s.password_hash):
+        raise HTTPException(status_code=401, detail="Identifiants invalides")
     return LoginOut(access_token=create_surveillant_token(s.id))
 
 

@@ -8,7 +8,8 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
 
 export default function SurveillantLoginPage() {
   const router = useRouter();
-  const [code, setCode] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -24,7 +25,7 @@ export default function SurveillantLoginPage() {
       const res = await fetch(`${API}/surveillant/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code_acces: code.trim().toUpperCase() }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
@@ -48,25 +49,36 @@ export default function SurveillantLoginPage() {
             <ShieldCheck className="h-7 w-7 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Espace surveillant</h1>
-          <p className="text-sm text-gray-500 mt-1">Entrez votre code d&apos;accès personnel</p>
+          <p className="text-sm text-gray-500 mt-1">Connectez-vous avec vos identifiants</p>
         </div>
 
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Code d&apos;accès</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Adresse email</label>
             <input
-              type="text"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder="ex : A1B2C3D4"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="prenom.nom@etablissement.fr"
               required
-              className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-[#C62828] focus:border-transparent"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#C62828] focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Mot de passe</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Mot de passe reçu par email"
+              required
+              className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#C62828] focus:border-transparent"
             />
           </div>
           {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
           <button
             type="submit"
-            disabled={loading || !code.trim()}
+            disabled={loading || !email.trim() || !password}
             className="w-full py-2.5 px-4 bg-[#C62828] text-white text-sm font-semibold rounded-xl hover:bg-[#B71C1C] transition disabled:opacity-50 flex items-center justify-center gap-2"
           >
             {loading && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -74,7 +86,7 @@ export default function SurveillantLoginPage() {
           </button>
         </form>
         <p className="text-center text-xs text-gray-400 mt-4">
-          Votre code d&apos;accès vous a été communiqué par le service des admissions.
+          Vos identifiants vous ont été communiqués par le service des admissions.
         </p>
       </div>
     </div>
