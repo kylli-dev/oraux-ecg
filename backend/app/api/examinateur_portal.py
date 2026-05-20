@@ -79,16 +79,20 @@ class EpreuveExaminateur(BaseModel):
     salle_preparation_intitule: Optional[str]
     planche_nom: Optional[str]
     conflit_etablissement: bool = False
+    note_commentaire: Optional[str] = None
 
 
 class NoterIn(BaseModel):
     valeur: float
+    commentaire: Optional[str] = None
+    valider: bool = False   # True = passe en VALIDE + copie vers note_harmonisee
 
 
 class NoterOut(BaseModel):
     note_id: int
     valeur: float
     statut: str
+    commentaire: Optional[str] = None
 
 
 class CodePerduIn(BaseModel):
@@ -174,6 +178,7 @@ def mes_epreuves(
             salle_preparation_intitule=salle_prep.intitule if salle_prep else None,
             planche_nom=planche.nom if planche else None,
             conflit_etablissement=conflit,
+            note_commentaire=note.commentaire if note else None,
         ))
     return result
 
@@ -266,6 +271,41 @@ def export_planning(
     )
 
 
+@router.get("/me/stats")
+def mes_stats(
+    ex: Examinateur = Depends(get_current_examinateur),
+    db: Session = Depends(get_db),
+):
+    """Stats de notation : mes notes vs toutes les notes pour mes matières."""
+    import math
+
+    def _stats(values):
+        if not values:
+            return {"count": 0, "moyenne": None, "ecart_type": None, "min": None, "max": None}
+        n = len(values)
+        moy = sum(values) / n
+        et = math.sqrt(sum((v - moy) ** 2 for v in values) / n) if n > 1 else 0.0
+        return {"count": n, "moyenne": round(moy, 2), "ecart_type": round(et, 2), "min": min(values), "max": max(values)}
+
+    result = {}
+    for matiere in ex.matieres:
+        # Mes notes
+        mes_rows = (
+            db.query(Note)
+            .join(Epreuve, (Epreuve.candidat_id == Note.candidat_id) & (Epreuve.matiere == Note.matiere))
+            .filter(Epreuve.examinateur_id == ex.id, Note.matiere == matiere, Note.valeur.isnot(None))
+            .all()
+        )
+        # Toutes les notes pour cette matière
+        toutes_rows = db.query(Note).filter(Note.matiere == matiere, Note.valeur.isnot(None)).all()
+
+        result[matiere] = {
+            "mes_notes": _stats([n.valeur for n in mes_rows]),
+            "toutes_notes": _stats([n.valeur for n in toutes_rows]),
+        }
+    return result
+
+
 @router.post("/me/epreuves/{epreuve_id}/noter", response_model=NoterOut)
 def noter(
     epreuve_id: int,
@@ -286,16 +326,28 @@ def noter(
         .filter_by(candidat_id=epreuve.candidat_id, matiere=epreuve.matiere)
         .first()
     )
+    # Bloquer la modification si note déjà harmonisée ou publiée
+    if note and note.statut in ("HARMONISE", "PUBLIE"):
+        raise HTTPException(status_code=403, detail="Cette note est verrouillée (harmonisée ou publiée)")
+
     if note:
         note.valeur = body.valeur
+        if body.commentaire is not None:
+            note.commentaire = body.commentaire
     else:
         note = Note(
             candidat_id=epreuve.candidat_id,
             matiere=epreuve.matiere,
             valeur=body.valeur,
             statut="BROUILLON",
+            commentaire=body.commentaire,
         )
         db.add(note)
+
+    if body.valider:
+        note.statut = "VALIDE"
+        note.note_harmonisee = body.valeur  # copie automatique vers harmonisée
+
     db.commit()
     db.refresh(note)
-    return NoterOut(note_id=note.id, valeur=note.valeur, statut=note.statut)
+    return NoterOut(note_id=note.id, valeur=note.valeur, statut=note.statut, commentaire=note.commentaire)
