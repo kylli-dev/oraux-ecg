@@ -256,11 +256,72 @@ def get_fiche(candidat_id: int, db: Session = Depends(get_db)):
     )
 
 
+_PROFIL_EXCLUSION_ADMIN: dict = {"HGG": "ESH", "ESH": "HGG"}
+
+
+def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set) -> list:
+    """Calcule les triplets N² pour un groupe d'épreuves (un profil ou la journée entière)."""
+    if not all_epreuves:
+        return []
+
+    all_slots = sorted(set(e.heure_debut for e in all_epreuves))
+    matieres_sorted = sorted(set(e.matiere for e in all_epreuves))
+    N_rooms = len(matieres_sorted)
+    total_slots = len(all_slots)
+    offset = total_slots // N_rooms if N_rooms else 1
+
+    disponibles: dict = defaultdict(list)
+    for e in all_epreuves:
+        if e.statut in ("LIBRE", "PRERESERVEE"):
+            disponibles[(e.matiere, e.heure_debut)].append(e)
+
+    result = []
+    for k in range(total_slots):
+        assigned = []
+        valid = True
+        for i, matiere in enumerate(matieres_sorted):
+            slot_idx = (k + i * offset) % total_slots
+            ep_list = disponibles.get((matiere, all_slots[slot_idx]), [])
+            if not ep_list:
+                valid = False
+                break
+            assigned.append(ep_list[0])
+
+        if not valid or not assigned:
+            continue
+
+        key = frozenset(e.id for e in assigned)
+        if key in seen_global:
+            continue
+        seen_global.add(key)
+
+        type_slot = "PRERESERVEE" if any(e.statut == "PRERESERVEE" for e in assigned) else "LIBRE"
+        epreuves_out = sorted([
+            TripletEpreuveOut(
+                id=e.id,
+                matiere=e.matiere,
+                heure_debut=str(e.heure_debut)[:5],
+                heure_fin=str(e.heure_fin)[:5],
+            )
+            for e in assigned
+        ], key=lambda x: x.heure_debut)
+
+        result.append(TripletOut(
+            date=date,
+            heure_debut=str(all_slots[k])[:5],
+            epreuves=epreuves_out,
+            type_slot=type_slot,
+        ))
+    return result
+
+
 @router.get("/{planning_id}/triplets", response_model=List[TripletOut])
 def get_triplets_admin(planning_id: int, db: Session = Depends(get_db)):
     """
     Retourne tous les triplets disponibles (admin : sans cutoff de date).
     Inclut les créneaux LIBRE et PRERESERVEE.
+    Si la journée contient ESH et HGG, génère des triplets séparés par profil
+    (sans combiner les deux) pour correspondre à ce que voit chaque candidat.
     """
     djs = (
         db.query(DemiJournee)
@@ -278,58 +339,28 @@ def get_triplets_admin(planning_id: int, db: Session = Depends(get_db)):
         djs_of_day = djs_by_date[date]
         dj_ids = [dj.id for dj in djs_of_day]
 
-        all_epreuves = (
+        all_epreuves_raw = (
             db.query(Epreuve)
             .filter(Epreuve.demi_journee_id.in_(dj_ids))
             .order_by(Epreuve.heure_debut, Epreuve.matiere)
             .all()
         )
-        if not all_epreuves:
+        if not all_epreuves_raw:
             continue
 
-        all_slots = sorted(set(e.heure_debut for e in all_epreuves))
-        matieres_sorted = sorted(set(e.matiere for e in all_epreuves))
-        N_rooms = len(matieres_sorted)
-        total_slots = len(all_slots)
-        offset = total_slots // N_rooms if N_rooms else 1
+        matieres_upper = {e.matiere.upper() for e in all_epreuves_raw}
+        has_esh = "ESH" in matieres_upper
+        has_hgg = "HGG" in matieres_upper
 
-        disponibles = {
-            (e.matiere, e.heure_debut): e
-            for e in all_epreuves
-            if e.statut in ("LIBRE", "PRERESERVEE")
-        }
+        seen_global: set = set()
 
-        for k in range(total_slots):
-            assigned = []
-            valid = True
-            for i, matiere in enumerate(matieres_sorted):
-                slot_idx = (k + i * offset) % total_slots
-                epreuve = disponibles.get((matiere, all_slots[slot_idx]))
-                if epreuve is None:
-                    valid = False
-                    break
-                assigned.append(epreuve)
-
-            if not valid or not assigned:
-                continue
-
-            type_slot = "PRERESERVEE" if any(e.statut == "PRERESERVEE" for e in assigned) else "LIBRE"
-            epreuves_out = sorted([
-                TripletEpreuveOut(
-                    id=e.id,
-                    matiere=e.matiere,
-                    heure_debut=str(e.heure_debut)[:5],
-                    heure_fin=str(e.heure_fin)[:5],
-                )
-                for e in assigned
-            ], key=lambda x: x.heure_debut)
-
-            result.append(TripletOut(
-                date=date,
-                heure_debut=str(all_slots[k])[:5],
-                epreuves=epreuves_out,
-                type_slot=type_slot,
-            ))
+        if has_esh and has_hgg:
+            # Générer deux groupes séparés : un pour les candidats ESH, un pour HGG
+            for exclu in ("HGG", "ESH"):
+                groupe = [e for e in all_epreuves_raw if e.matiere.upper() != exclu]
+                result.extend(_triplets_pour_groupe(groupe, date, seen_global))
+        else:
+            result.extend(_triplets_pour_groupe(all_epreuves_raw, date, seen_global))
 
     return result
 

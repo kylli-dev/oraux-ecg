@@ -5220,10 +5220,16 @@ function ListeAttenteTab({ planningId }: { planningId: number }) {
 
   const selected = liste.find(c => c.id === selectedId) ?? null;
 
-  // Triplets filtered to the candidate's available dates
+  // Triplets filtered to the candidate's available dates and profile
+  const _LA_PROFIL_EXCL: Record<string, string> = { HGG: "ESH", ESH: "HGG" };
+  const _laProfilUp = (selected?.profil || "").toUpperCase();
+  const _laMatiereExclue = _LA_PROFIL_EXCL[_laProfilUp];
   const candidatDates = new Set(selected?.dates.map(d => d.date) ?? []);
   const tripletsFiltered = selected
-    ? triplets.filter(t => candidatDates.has(t.date))
+    ? triplets.filter(t =>
+        candidatDates.has(t.date) &&
+        (!_laMatiereExclue || !t.epreuves.some(e => e.matiere.toUpperCase() === _laMatiereExclue))
+      )
     : [];
   const tripletsByDate: Record<string, TripletDisponible[]> = {};
   for (const t of tripletsFiltered) {
@@ -5490,9 +5496,17 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
     return !q || `${c.nom} ${c.prenom} ${c.email} ${c.code_candidat ?? ""}`.toLowerCase().includes(q);
   });
 
+  // Filtre par profil candidat (ESH n'inscrit pas en HGG et vice-versa)
+  const _PROFIL_EXCL: Record<string, string> = { HGG: "ESH", ESH: "HGG" };
+  const _classeUp = (fiche?.classe || "").toUpperCase();
+  const _profilUp = (fiche?.profil || "").toUpperCase() ||
+    (_classeUp.includes("ESH") ? "ESH" : _classeUp.includes("HGG") ? "HGG" : "");
+  const _matiereExclue = _PROFIL_EXCL[_profilUp];
+
   // Group triplets by date
   const tripletsByDate: Record<string, TripletDisponible[]> = {};
   for (const t of triplets) {
+    if (_matiereExclue && t.epreuves.some(e => e.matiere.toUpperCase() === _matiereExclue)) continue;
     if (!tripletsByDate[t.date]) tripletsByDate[t.date] = [];
     tripletsByDate[t.date].push(t);
   }
