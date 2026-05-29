@@ -4840,7 +4840,7 @@ function CandidatGestionDrawer({
                 ) : (
                   <div className="space-y-4">
                     {Object.entries(tripletsByDate).map(([date, trips]) => {
-                      const allMatieres = trips[0]?.epreuves.map(e => e.matiere) ?? [];
+                      const allMatieres = [...new Set(trips.flatMap(t => t.epreuves.map(e => e.matiere)))].sort();
                       return (
                         <div key={date}>
                           <p className="text-xs font-semibold text-black/50 mb-2 capitalize">{fmt_date(date)}</p>
@@ -4862,9 +4862,10 @@ function CandidatGestionDrawer({
                                     className={`border-t border-black/5 ${t.type_slot === "PRERESERVEE" ? "bg-amber-50/60" : ""}`}
                                   >
                                     <td className="px-3 py-2 font-medium">{t.heure_debut}</td>
-                                    {t.epreuves.map(e => (
-                                      <td key={e.id} className="px-3 py-2">{e.heure_debut}</td>
-                                    ))}
+                                    {allMatieres.map(mat => {
+                                      const ep = t.epreuves.find(e => e.matiere === mat);
+                                      return <td key={mat} className="px-3 py-2">{ep?.heure_debut ?? '–'}</td>;
+                                    })}
                                     <td className="px-3 py-2 text-right whitespace-nowrap">
                                       {t.type_slot === "PRERESERVEE" && (
                                         <span className="mr-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
@@ -5375,7 +5376,7 @@ function ListeAttenteTab({ planningId }: { planningId: number }) {
                 Créneaux disponibles sur les journées de disponibilité
               </p>
               {Object.entries(tripletsByDate).map(([date, trips]) => {
-                const allMatieres = trips[0]?.epreuves.map(e => e.matiere) ?? [];
+                const allMatieres = [...new Set(trips.flatMap(t => t.epreuves.map(e => e.matiere)))].sort();
                 return (
                   <div key={date} className="rounded-xl border bg-white shadow-sm overflow-hidden">
                     <div className="px-4 py-2.5 border-b bg-gray-50">
@@ -5398,9 +5399,10 @@ function ListeAttenteTab({ planningId }: { planningId: number }) {
                             className={`border-t border-black/5 ${t.type_slot === "PRERESERVEE" ? "bg-amber-50/50" : ""}`}
                           >
                             <td className="px-4 py-2.5 font-medium">{t.heure_debut}</td>
-                            {t.epreuves.map(e => (
-                              <td key={e.id} className="px-4 py-2.5">{e.heure_debut}</td>
-                            ))}
+                            {allMatieres.map(mat => {
+                              const ep = t.epreuves.find(e => e.matiere === mat);
+                              return <td key={mat} className="px-4 py-2.5">{ep?.heure_debut ?? '–'}</td>;
+                            })}
                             <td className="px-4 py-2.5 text-right whitespace-nowrap">
                               {t.type_slot === "PRERESERVEE" && (
                                 <span className="mr-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
@@ -5673,7 +5675,7 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
               ) : (
                 <div className="space-y-5">
                   {Object.entries(tripletsByDate).map(([date, trips]) => {
-                    const allMatieres = trips[0]?.epreuves.map(e => e.matiere) ?? matieres;
+                    const allMatieres = [...new Set(trips.flatMap(t => t.epreuves.map(e => e.matiere)))].sort();
                     return (
                       <div key={date}>
                         <p className="text-xs font-semibold text-black/50 mb-2 capitalize">{fmt_date(date)}</p>
@@ -5695,9 +5697,10 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
                                   className={`border-t border-black/5 ${t.type_slot === "PRERESERVEE" ? "bg-amber-50/60" : ""}`}
                                 >
                                   <td className="px-3 py-2 font-medium">{t.heure_debut}</td>
-                                  {t.epreuves.map(e => (
-                                    <td key={e.id} className="px-3 py-2">{e.heure_debut}</td>
-                                  ))}
+                                  {allMatieres.map(mat => {
+                                    const ep = t.epreuves.find(e => e.matiere === mat);
+                                    return <td key={mat} className="px-3 py-2">{ep?.heure_debut ?? '–'}</td>;
+                                  })}
                                   <td className="px-3 py-2 text-right whitespace-nowrap">
                                     {t.type_slot === "PRERESERVEE" && (
                                       <span className="mr-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">

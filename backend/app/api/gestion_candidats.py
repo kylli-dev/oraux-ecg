@@ -497,11 +497,27 @@ def admin_inscrire(
     if not dj_ids:
         raise HTTPException(status_code=404, detail="Aucune épreuve pour cette date")
 
-    all_epreuves_day = (
+    all_epreuves_raw = (
         db.query(Epreuve)
         .filter(Epreuve.demi_journee_id.in_(dj_ids))
         .order_by(Epreuve.heure_debut, Epreuve.matiere)
         .all()
+    )
+
+    # Appliquer le même filtrage profil que get_triplets_admin
+    profil_upper = ""
+    if c.profil:
+        profil_upper = c.profil.strip().upper()
+    elif c.classe:
+        cl = c.classe.upper()
+        if "ESH" in cl:
+            profil_upper = "ESH"
+        elif "HGG" in cl:
+            profil_upper = "HGG"
+    matiere_exclue = _PROFIL_EXCLUSION_ADMIN.get(profil_upper)
+    all_epreuves_day = (
+        [e for e in all_epreuves_raw if e.matiere.upper() != matiere_exclue]
+        if matiere_exclue else all_epreuves_raw
     )
 
     all_slots = sorted(set(e.heure_debut for e in all_epreuves_day))
