@@ -4748,7 +4748,7 @@ function CandidatGestionDrawer({
                             <p className="text-xs font-mono font-medium truncate max-w-[100px]">{val}</p>
                           </div>
                           <button
-                            onClick={() => navigator.clipboard.writeText(val)}
+                            onClick={() => { const el = document.createElement('textarea'); el.value = val; document.body.appendChild(el); el.select(); document.execCommand('copy'); document.body.removeChild(el); }}
                             className="text-black/30 hover:text-[#C62828] transition shrink-0"
                           >
                             <Copy className="h-3 w-3" />
@@ -8447,10 +8447,14 @@ function CredentialsModal({
 }) {
   const [copied, setCopied] = useState<string | null>(null);
   const copy = (text: string, key: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(key);
-      setTimeout(() => setCopied(null), 1500);
-    });
+    const el = document.createElement('textarea');
+    el.value = text;
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+    setCopied(key);
+    setTimeout(() => setCopied(null), 1500);
   };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
