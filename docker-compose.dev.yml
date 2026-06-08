@@ -28,7 +28,12 @@ services:
     ports:
       - "3000:3000"
     environment:
+      NEXT_PUBLIC_ENV: dev
+      NEXT_PUBLIC_PORTAL_API_URL: http://localhost:8000
       NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
       NEXT_PUBLIC_API_URL: http://localhost:8000
+      API_BASE_URL: http://backend:8000
       NEXT_PUBLIC_ADMIN_API_KEY: change-me-dev
       ADMIN_API_KEY: change-me-dev
+      ADMIN_PASSWORD: dev-password
+      JWT_SECRET: dev-jwt-secret-not-for-production
