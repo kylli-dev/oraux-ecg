@@ -44,7 +44,10 @@ services:
     restart: unless-stopped
     environment:
       ADMIN_API_KEY: ${ADMIN_API_KEY}
-      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://backend:8000}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
+      API_BASE_URL: http://backend:8000
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-}
     depends_on:
       - backend
     expose:
