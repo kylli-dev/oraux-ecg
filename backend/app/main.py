@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.db.base import Base
-from app.db.session import engine
+from app.db.session import engine, SessionLocal
 
 # Force l'import de tous les modèles avant create_all
 from app.models import (  # noqa: F401
@@ -32,6 +32,7 @@ from app.models import (  # noqa: F401
     SurveillantPlanning,  # noqa: F401
     Planche,  # noqa: F401
     Etablissement,  # noqa: F401
+    Admin,  # noqa: F401
 )
 
 from app.api.plannings import router as plannings_router
@@ -50,6 +51,8 @@ from app.api.gestion_candidats import router as gestion_candidats_router
 from app.api.surveillants import router as surveillants_router
 from app.api.surveillant_portal import router as surveillant_portal_router
 from app.api.planches import router as planches_router
+from app.api.admin_auth import router as admin_auth_router
+from app.api.admins import router as admins_router
 
 app = FastAPI(title="Oraux Platform")
 
@@ -83,6 +86,8 @@ app.include_router(gestion_candidats_router)
 app.include_router(surveillants_router)
 app.include_router(surveillant_portal_router)
 app.include_router(planches_router)
+app.include_router(admin_auth_router)
+app.include_router(admins_router)
 
 
 @app.api_route("/", methods=["GET", "HEAD"])
@@ -194,10 +199,27 @@ def _run_migrations():
                 conn.rollback()
 
 
+def _bootstrap_admin():
+    """Crée le premier compte admin si la table est vide (via ADMIN_USERNAME / ADMIN_PASSWORD)."""
+    username = os.getenv("ADMIN_USERNAME")
+    password = os.getenv("ADMIN_PASSWORD")
+    if not username or not password:
+        return
+    from app.core.auth import hash_password
+
+    with SessionLocal() as db:
+        if db.query(Admin).count() > 0:
+            return
+        db.add(Admin(username=username.strip(), password_hash=hash_password(password)))
+        db.commit()
+        print(f"[startup] Compte admin initial créé : {username}", flush=True)
+
+
 def _init_db():
     try:
         Base.metadata.create_all(bind=engine)
         _run_migrations()
+        _bootstrap_admin()
         print("[startup] DB init OK", flush=True)
     except Exception as e:
         print(f"[startup] DB init error: {e}", flush=True)

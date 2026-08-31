@@ -322,6 +322,12 @@ type MessageType = {
   corps_html: string;
 };
 
+type AdminAccount = {
+  id: number;
+  username: string;
+  actif: boolean;
+};
+
 type Conflit = {
   epreuve_id: number;
   date: string;
@@ -8118,7 +8124,17 @@ function EtablissementsSection() {
 }
 
 function ParametragesSection() {
-  const [tab, setTab] = useState<"matieres" | "salles" | "etablissements" | "messages" | "mdp">("matieres");
+  const [tab, setTab] = useState<"matieres" | "salles" | "etablissements" | "messages" | "mdp" | "comptes">("matieres");
+  const toastAdmins = useToast();
+  const confirmAdmins = useConfirm();
+  const [adminAccounts, setAdminAccounts] = useState<AdminAccount[]>([]);
+  const [loadingAdmins, setLoadingAdmins] = useState(true);
+  const [newAdminUsername, setNewAdminUsername] = useState("");
+  const [newAdminPassword, setNewAdminPassword] = useState("");
+  const [creatingAdmin, setCreatingAdmin] = useState(false);
+  const [adminErr, setAdminErr] = useState("");
+  const [resetPwFor, setResetPwFor] = useState<number | null>(null);
+  const [resetPwValue, setResetPwValue] = useState("");
   const [messages, setMessages] = useState<MessageType[]>([]);
   const [selected, setSelected] = useState<MessageType | null>(null);
   const [sujet, setSujet] = useState("");
@@ -8190,12 +8206,73 @@ function ParametragesSection() {
     }
   };
 
+  const loadAdmins = useCallback(async () => {
+    setLoadingAdmins(true);
+    try {
+      const data = await get<AdminAccount[]>("comptes/");
+      setAdminAccounts(data);
+    } catch { /* ignore */ }
+    finally { setLoadingAdmins(false); }
+  }, []);
+
+  useEffect(() => { if (tab === "comptes") loadAdmins(); }, [tab, loadAdmins]);
+
+  const createAdmin = async () => {
+    if (!newAdminUsername.trim() || newAdminPassword.length < 8) return;
+    setCreatingAdmin(true);
+    setAdminErr("");
+    try {
+      await post<AdminAccount>("comptes/", { username: newAdminUsername.trim(), password: newAdminPassword });
+      setNewAdminUsername("");
+      setNewAdminPassword("");
+      toastAdmins.success("Compte admin créé");
+      loadAdmins();
+    } catch (e: unknown) {
+      setAdminErr(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setCreatingAdmin(false);
+    }
+  };
+
+  const toggleAdminActif = async (a: AdminAccount) => {
+    try {
+      await patch<AdminAccount>(`comptes/${a.id}`, { actif: !a.actif });
+      loadAdmins();
+    } catch (e: unknown) {
+      toastAdmins.error(e instanceof Error ? e.message : "Erreur");
+    }
+  };
+
+  const submitResetPassword = async (a: AdminAccount) => {
+    if (resetPwValue.length < 8) return;
+    try {
+      await patch<AdminAccount>(`comptes/${a.id}`, { password: resetPwValue });
+      toastAdmins.success("Mot de passe réinitialisé");
+      setResetPwFor(null);
+      setResetPwValue("");
+    } catch (e: unknown) {
+      toastAdmins.error(e instanceof Error ? e.message : "Erreur");
+    }
+  };
+
+  const deleteAdmin = async (a: AdminAccount) => {
+    if (!await confirmAdmins(`Supprimer le compte « ${a.username} » ?`, { confirmLabel: "Supprimer", danger: true })) return;
+    try {
+      await del(`comptes/${a.id}`);
+      toastAdmins.success("Compte supprimé");
+      loadAdmins();
+    } catch (e: unknown) {
+      toastAdmins.error(e instanceof Error ? e.message : "Erreur");
+    }
+  };
+
   const tabs = [
     { key: "matieres" as const, label: "Matières" },
     { key: "salles" as const, label: "Salles" },
     { key: "etablissements" as const, label: "Établissements" },
     { key: "messages" as const, label: "Messages-type" },
     { key: "mdp" as const, label: "Mots de passe" },
+    { key: "comptes" as const, label: "Comptes admin" },
   ];
 
   return (
@@ -8323,6 +8400,104 @@ function ParametragesSection() {
                 <p className="text-sm text-green-700">Nouveau mdp : <span className="font-mono font-semibold">{resetResult.new_password}</span></p>
                 <p className="text-xs text-green-500 mt-1">À communiquer au candidat par email.</p>
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Comptes admin ── */}
+      {tab === "comptes" && (
+        <div className="max-w-2xl space-y-6">
+          <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-5 space-y-4">
+            <h2 className="text-base font-semibold text-gray-900">Créer un compte admin</h2>
+            <div className="flex items-end gap-3">
+              <div className="flex-1">
+                <Field label="Nom d'utilisateur">
+                  <Input
+                    value={newAdminUsername}
+                    onChange={(e) => setNewAdminUsername(e.target.value)}
+                    placeholder="ex. jdupont"
+                  />
+                </Field>
+              </div>
+              <div className="flex-1">
+                <Field label="Mot de passe" hint="8 caractères minimum">
+                  <Input
+                    type="password"
+                    value={newAdminPassword}
+                    onChange={(e) => setNewAdminPassword(e.target.value)}
+                    placeholder="••••••••"
+                  />
+                </Field>
+              </div>
+              <Btn
+                label={creatingAdmin ? "Création…" : "Créer"}
+                icon={UserPlus}
+                onClick={createAdmin}
+                disabled={creatingAdmin || !newAdminUsername.trim() || newAdminPassword.length < 8}
+              />
+            </div>
+            <ErrorMsg msg={adminErr} />
+          </div>
+
+          <div className="bg-white rounded-2xl border border-black/5 shadow-sm overflow-hidden">
+            {loadingAdmins ? (
+              <div className="p-6 flex justify-center"><Spinner /></div>
+            ) : adminAccounts.length === 0 ? (
+              <p className="p-6 text-sm text-gray-400 text-center">Aucun compte admin.</p>
+            ) : (
+              adminAccounts.map((a, i) => (
+                <div key={a.id} className={`px-5 py-4 flex items-center justify-between gap-3 ${i > 0 ? "border-t border-gray-100" : ""}`}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Shield className="h-4 w-4 text-gray-300 shrink-0" />
+                    <span className="text-sm font-medium text-gray-900 truncate">{a.username}</span>
+                  </div>
+
+                  {resetPwFor === a.id ? (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="w-40">
+                        <Input
+                          type="password"
+                          autoFocus
+                          value={resetPwValue}
+                          onChange={(e) => setResetPwValue(e.target.value)}
+                          placeholder="Nouveau mot de passe"
+                        />
+                      </div>
+                      <Btn label="Valider" small onClick={() => submitResetPassword(a)} disabled={resetPwValue.length < 8} />
+                      <Btn label="Annuler" small variant="ghost" onClick={() => { setResetPwFor(null); setResetPwValue(""); }} />
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => toggleAdminActif(a)}
+                        className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border font-medium transition ${
+                          a.actif
+                            ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
+                            : "bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100"
+                        }`}
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full ${a.actif ? "bg-green-500" : "bg-orange-400"}`} />
+                        {a.actif ? "Actif" : "Inactif"}
+                      </button>
+                      <Btn
+                        label="Mot de passe"
+                        icon={Key}
+                        small
+                        variant="ghost"
+                        onClick={() => { setResetPwFor(a.id); setResetPwValue(""); }}
+                      />
+                      <button
+                        onClick={() => deleteAdmin(a)}
+                        className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition"
+                        title="Supprimer"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))
             )}
           </div>
         </div>

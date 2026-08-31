@@ -27,6 +27,8 @@ services:
       ADMIN_API_KEY: ${ADMIN_API_KEY:?ADMIN_API_KEY required}
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY required}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
     depends_on:
       db:
         condition: service_healthy
@@ -44,7 +46,6 @@ services:
     restart: unless-stopped
     environment:
       ADMIN_API_KEY: ${ADMIN_API_KEY}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
       API_BASE_URL: http://backend:8000
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-}

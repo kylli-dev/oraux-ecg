@@ -67,9 +67,11 @@ Internet
 ```
 
 **Flux d'authentification admin :**
-1. `POST /api/auth/login` (Next.js route) → vérifie `ADMIN_PASSWORD`
-2. Émet un cookie httpOnly `admin_session` (JWT signé avec `JWT_SECRET`, durée 24h)
+1. `POST /api/auth/login` (Next.js route) → transmet `{username, password}` au backend `POST /admin/auth/login` (protégé par `X-Admin-Api-Key`), qui vérifie le couple contre la table `admin_user`
+2. Si valide, Next.js émet un cookie httpOnly `admin_session` (JWT signé avec `JWT_SECRET`, durée 24h)
 3. Les appels au backend passent par `/api/backend/[...path]` qui injecte le header `X-Admin-Api-Key`
+4. Les comptes admin se gèrent dans l'interface : Paramétrages → Comptes admin (créer, désactiver, réinitialiser un mot de passe)
+5. Au tout premier démarrage (table `admin_user` vide), un compte est créé automatiquement à partir de `ADMIN_USERNAME` / `ADMIN_PASSWORD` (backend)
 
 **Flux d'authentification candidat :**
 1. `POST /portal/login` (FastAPI direct) → vérifie INE + mot de passe
@@ -308,7 +310,8 @@ Ces routes sont des **handlers Next.js** (pas des pages) situés dans `frontend/
 | `ADMIN_API_KEY` | backend, frontend | Clé secrète pour les appels API admin (`openssl rand -hex 32`) |
 | `SECRET_KEY` | backend | Clé de signature JWT backend (`openssl rand -hex 32`) |
 | `CORS_ORIGINS` | backend | Origines CORS autorisées (ex: `https://oraux.ensae.fr`) |
-| `ADMIN_PASSWORD` | frontend | Mot de passe de l'interface admin |
+| `ADMIN_USERNAME` | backend | Nom d'utilisateur du compte admin créé au 1er démarrage (optionnel une fois un compte créé) |
+| `ADMIN_PASSWORD` | backend | Mot de passe du compte admin créé au 1er démarrage (optionnel une fois un compte créé) |
 | `JWT_SECRET` | frontend | Clé de signature JWT frontend (`openssl rand -hex 32`) |
 | `HTTP_PORT` | nginx | Port HTTP (défaut: 80) |
 | `HTTPS_PORT` | nginx | Port HTTPS (défaut: 443) |
@@ -567,13 +570,9 @@ docker compose top
 
 ### Changer le mot de passe admin
 
-```bash
-# Modifier dans .env.prod
-sed -i 's/^ADMIN_PASSWORD=.*/ADMIN_PASSWORD=nouveau_mdp_fort/' .env.prod
+Depuis l'interface : Paramétrage → Comptes admin → « Mot de passe » sur le compte concerné.
 
-# Recharger le frontend (mot de passe vérifié par le frontend)
-docker compose up -d frontend
-```
+`ADMIN_USERNAME` / `ADMIN_PASSWORD` dans `.env.prod` ne servent qu'à amorcer le tout premier compte (uniquement si la table `admin_user` est vide) — les modifier après coup n'a aucun effet.
 
 ### Ajouter une matière ou une salle
 
@@ -606,9 +605,10 @@ Si absent ou trop petit, augmenter puis `docker compose restart nginx`.
 ### Login admin retourne 401
 
 Causes possibles :
-1. **Mauvais mot de passe** — vérifier `ADMIN_PASSWORD` dans `.env.prod`
-2. **Frontend pas rechargé** après changement `.env` — faire `docker compose up -d frontend`
-3. **JWT_SECRET changé** — les cookies existants sont invalides, se reconnecter
+1. **Mauvais identifiants** — vérifier le nom d'utilisateur et le mot de passe (gérés via Paramétrage → Comptes admin, ou `ADMIN_USERNAME`/`ADMIN_PASSWORD` pour le tout premier compte)
+2. **Compte désactivé** — vérifier le statut « Actif » du compte dans Paramétrage → Comptes admin
+3. **ADMIN_API_KEY différent entre frontend et backend** — la route de login interroge le backend via ce header, une clé désynchronisée renvoie 401/500
+4. **JWT_SECRET changé** — les cookies existants sont invalides, se reconnecter
 
 ### Les créneaux ne s'affichent pas pour une date
 

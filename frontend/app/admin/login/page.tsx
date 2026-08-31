@@ -11,6 +11,7 @@ function LoginForm() {
   const params = useSearchParams();
   const from = params.get("from") ?? "/admin";
 
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -24,7 +25,7 @@ function LoginForm() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ username, password }),
       });
       const contentType = res.headers.get("content-type") ?? "";
       if (!res.ok) {
@@ -64,6 +65,21 @@ function LoginForm() {
           <form onSubmit={submit} className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-black/50 mb-1.5 uppercase tracking-wide">
+                Nom d&apos;utilisateur
+              </label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="admin"
+                autoFocus
+                autoComplete="username"
+                className="w-full px-4 py-2.5 rounded-lg border border-black/10 bg-[#FAFAFA] text-sm focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-black/20"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-black/50 mb-1.5 uppercase tracking-wide">
                 Mot de passe
               </label>
               <div className="relative">
@@ -72,7 +88,7 @@ function LoginForm() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  autoFocus
+                  autoComplete="current-password"
                   className="w-full px-4 py-2.5 pr-10 rounded-lg border border-black/10 bg-[#FAFAFA] text-sm focus:outline-none focus:ring-2 focus:ring-black/10 focus:border-black/20"
                 />
                 <button
@@ -93,7 +109,7 @@ function LoginForm() {
 
             <button
               type="submit"
-              disabled={loading || !password}
+              disabled={loading || !username || !password}
               className="w-full py-2.5 rounded-lg text-sm font-semibold text-white transition disabled:opacity-50"
               style={{ backgroundColor: RED }}
             >

@@ -16,6 +16,8 @@ services:
       DATABASE_URL: sqlite:///./oraux_dev.db
       ADMIN_API_KEY: change-me-dev
       SECRET_KEY: dev-secret-key-not-for-production
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: dev-password
 
   frontend:
     build:
@@ -35,5 +37,4 @@ services:
       API_BASE_URL: http://backend:8000
       NEXT_PUBLIC_ADMIN_API_KEY: change-me-dev
       ADMIN_API_KEY: change-me-dev
-      ADMIN_PASSWORD: dev-password
       JWT_SECRET: dev-jwt-secret-not-for-production
