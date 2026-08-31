@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 import { setAdminSessionCookie } from "../_session";
-
-const BASE = process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
-const KEY = process.env.ADMIN_API_KEY ?? "";
+import { BackendWakingUpError, backendConfigured, postAdminAuth } from "../_backend";
 
 export async function POST(req: NextRequest) {
   try {
     const { current_password, new_password } = await req.json();
 
-    if (!process.env.JWT_SECRET || !KEY || !BASE) {
+    if (!process.env.JWT_SECRET || !backendConfigured()) {
       return NextResponse.json({ error: "Configuration serveur manquante" }, { status: 500 });
     }
 
@@ -31,12 +29,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Mot de passe invalide (8 caractères minimum)" }, { status: 422 });
     }
 
-    const backendRes = await fetch(`${BASE}/admin/auth/change-password`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Admin-Api-Key": KEY },
-      body: JSON.stringify({ username, current_password, new_password }),
-      cache: "no-store",
-    });
+    let backendRes: Response;
+    try {
+      backendRes = await postAdminAuth("change-password", { username, current_password, new_password });
+    } catch (e) {
+      if (e instanceof BackendWakingUpError) {
+        return NextResponse.json(
+          { error: "Le serveur redémarre, veuillez réessayer dans quelques instants.", code: "backend_waking_up" },
+          { status: 503 }
+        );
+      }
+      throw e;
+    }
     if (!backendRes.ok) {
       const detail = (await backendRes.json().catch(() => null))?.detail;
       return NextResponse.json({ error: detail ?? "Mot de passe actuel incorrect" }, { status: 401 });

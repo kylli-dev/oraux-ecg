@@ -1,26 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import { setAdminSessionCookie } from "../_session";
-
-const BASE = process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
-const KEY = process.env.ADMIN_API_KEY ?? "";
+import { BackendWakingUpError, backendConfigured, postAdminAuth } from "../_backend";
 
 export async function POST(req: NextRequest) {
   try {
     const { username, password } = await req.json();
 
-    if (!process.env.JWT_SECRET || !KEY || !BASE) {
+    if (!process.env.JWT_SECRET || !backendConfigured()) {
       return NextResponse.json({ error: "Configuration serveur manquante" }, { status: 500 });
     }
     if (!username || !password) {
       return NextResponse.json({ error: "Identifiants incorrects" }, { status: 401 });
     }
 
-    const backendRes = await fetch(`${BASE}/admin/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Admin-Api-Key": KEY },
-      body: JSON.stringify({ username, password }),
-      cache: "no-store",
-    });
+    let backendRes: Response;
+    try {
+      backendRes = await postAdminAuth("login", { username, password });
+    } catch (e) {
+      if (e instanceof BackendWakingUpError) {
+        return NextResponse.json(
+          { error: "Le serveur redémarre, veuillez réessayer dans quelques instants.", code: "backend_waking_up" },
+          { status: 503 }
+        );
+      }
+      throw e;
+    }
     if (!backendRes.ok) {
       return NextResponse.json({ error: "Identifiants incorrects" }, { status: 401 });
     }

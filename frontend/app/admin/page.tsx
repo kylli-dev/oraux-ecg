@@ -366,29 +366,54 @@ type JourneeTypePreview = {
 };
 
 // ── API client ─────────────────────────────────────────────────────────────────
+// Le backend (Render, plan Free) se met en veille après 15 min d'inactivité et met
+// 30-60s à se réveiller. Le proxy /api/backend renvoie alors {code: "backend_waking_up"}
+// (503) au lieu de laisser Vercel couper brutalement : on réessaie automatiquement
+// en affichant une bannière, plutôt que de faire échouer l'action immédiatement.
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function notifyBackendWaking() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("backend-waking"));
+}
+function notifyBackendAwake() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("backend-awake"));
+}
+
 async function apiCall<T = unknown>(
   method: string,
   path: string,
   body?: unknown
 ): Promise<T> {
-  const res = await fetch(`/api/backend/${path}`, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : {},
-    body: body ? JSON.stringify(body) : undefined,
-    cache: "no-store",
-  });
-  if (res.status === 204) return null as T;
-  const text = await res.text();
-  let data: any;
-  try { data = JSON.parse(text); } catch { data = { detail: text || `Erreur ${res.status}` }; }
-  if (!res.ok) {
-    const detail = data.detail;
-    const msg = Array.isArray(detail)
-      ? detail.map((e: any) => `${e.loc?.slice(-1)[0] ?? ""}: ${e.msg}`).join(" | ")
-      : (detail ?? JSON.stringify(data));
-    throw new Error(msg);
+  const maxAttempts = 4;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const res = await fetch(`/api/backend/${path}`, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined,
+      cache: "no-store",
+    });
+    if (res.status === 204) { notifyBackendAwake(); return null as T; }
+    const text = await res.text();
+    let data: any;
+    try { data = JSON.parse(text); } catch { data = { detail: text || `Erreur ${res.status}` }; }
+
+    if (res.status === 503 && data?.code === "backend_waking_up" && attempt < maxAttempts) {
+      notifyBackendWaking();
+      await sleep(attempt * 2500);
+      continue;
+    }
+
+    if (!res.ok) {
+      const detail = data.detail;
+      const msg = Array.isArray(detail)
+        ? detail.map((e: any) => `${e.loc?.slice(-1)[0] ?? ""}: ${e.msg}`).join(" | ")
+        : (detail ?? JSON.stringify(data));
+      throw new Error(msg);
+    }
+    notifyBackendAwake();
+    return data;
   }
-  return data;
+  throw new Error("Le serveur redémarre, veuillez réessayer dans quelques instants.");
 }
 
 const get = <T,>(p: string) => apiCall<T>("GET", p);
@@ -422,6 +447,37 @@ function hm(t: string) {
 }
 
 // ── UI primitives ──────────────────────────────────────────────────────────────
+function BackendWakingBanner() {
+  const [waking, setWaking] = useState(false);
+
+  useEffect(() => {
+    let hideTimer: ReturnType<typeof setTimeout> | null = null;
+    const onWaking = () => {
+      if (hideTimer) clearTimeout(hideTimer);
+      setWaking(true);
+    };
+    const onAwake = () => {
+      hideTimer = setTimeout(() => setWaking(false), 800);
+    };
+    window.addEventListener("backend-waking", onWaking);
+    window.addEventListener("backend-awake", onAwake);
+    return () => {
+      window.removeEventListener("backend-waking", onWaking);
+      window.removeEventListener("backend-awake", onAwake);
+      if (hideTimer) clearTimeout(hideTimer);
+    };
+  }, []);
+
+  if (!waking) return null;
+
+  return (
+    <div className="fixed top-0 inset-x-0 z-[200] bg-amber-500 text-white text-xs md:text-sm text-center py-2 px-4 flex items-center justify-center gap-2 shadow-md">
+      <Loader2 className="h-3.5 w-3.5 md:h-4 md:w-4 animate-spin shrink-0" />
+      Le serveur redémarre après une période d&apos;inactivité — quelques secondes de patience…
+    </div>
+  );
+}
+
 function Spinner() {
   return <Loader2 className="h-4 w-4 animate-spin inline" />;
 }
@@ -10716,6 +10772,7 @@ export default function AdminPage() {
 
   return (
     <ToastProvider>
+    <BackendWakingBanner />
     <div className="flex min-h-screen bg-[#F5F5F5]">
       {/* Sidebar desktop */}
       <div className="hidden md:block h-screen sticky top-0">

@@ -16,26 +16,37 @@ function LoginForm() {
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [waking, setWaking] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setWaking(false);
+    const maxAttempts = 4;
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
-      const contentType = res.headers.get("content-type") ?? "";
-      if (!res.ok) {
-        const msg = contentType.includes("application/json")
-          ? (await res.json()).error
-          : `Erreur serveur (${res.status})`;
-        throw new Error(msg ?? "Erreur");
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        const contentType = res.headers.get("content-type") ?? "";
+        const data = contentType.includes("application/json") ? await res.json() : null;
+
+        if (res.status === 503 && data?.code === "backend_waking_up" && attempt < maxAttempts) {
+          setWaking(true);
+          await new Promise((r) => setTimeout(r, attempt * 2500));
+          continue;
+        }
+        setWaking(false);
+        if (!res.ok) {
+          throw new Error(data?.error ?? `Erreur serveur (${res.status})`);
+        }
+        router.push(from);
+        router.refresh();
+        return;
       }
-      router.push(from);
-      router.refresh();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -101,6 +112,12 @@ function LoginForm() {
               </div>
             </div>
 
+            {waking && (
+              <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+                Le serveur redémarre après une période d&apos;inactivité — nouvelle tentative dans quelques secondes…
+              </p>
+            )}
+
             {error && (
               <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
                 {error}
@@ -116,7 +133,7 @@ function LoginForm() {
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Connexion…
+                  {waking ? "Réveil du serveur…" : "Connexion…"}
                 </span>
               ) : (
                 "Se connecter"

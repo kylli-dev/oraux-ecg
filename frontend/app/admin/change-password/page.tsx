@@ -17,6 +17,7 @@ function ChangePasswordForm() {
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [waking, setWaking] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,18 +31,30 @@ function ChangePasswordForm() {
       return;
     }
     setLoading(true);
+    setWaking(false);
+    const maxAttempts = 4;
     try {
-      const res = await fetch("/api/auth/change-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
-      });
-      if (!res.ok) {
-        const msg = (await res.json().catch(() => null))?.error;
-        throw new Error(msg ?? "Erreur");
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const res = await fetch("/api/auth/change-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+        });
+        const data = await res.json().catch(() => null);
+
+        if (res.status === 503 && data?.code === "backend_waking_up" && attempt < maxAttempts) {
+          setWaking(true);
+          await new Promise((r) => setTimeout(r, attempt * 2500));
+          continue;
+        }
+        setWaking(false);
+        if (!res.ok) {
+          throw new Error(data?.error ?? "Erreur");
+        }
+        router.push("/admin");
+        router.refresh();
+        return;
       }
-      router.push("/admin");
-      router.refresh();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erreur");
     } finally {
@@ -124,6 +137,12 @@ function ChangePasswordForm() {
               />
             </div>
 
+            {waking && (
+              <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+                Le serveur redémarre après une période d&apos;inactivité — nouvelle tentative dans quelques secondes…
+              </p>
+            )}
+
             {error && (
               <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
                 {error}
@@ -139,7 +158,7 @@ function ChangePasswordForm() {
               {loading ? (
                 <span className="flex items-center justify-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Enregistrement…
+                  {waking ? "Réveil du serveur…" : "Enregistrement…"}
                 </span>
               ) : (
                 "Changer le mot de passe"

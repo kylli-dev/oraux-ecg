@@ -7,6 +7,30 @@ export const maxDuration = 10;
 const BASE = process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 const KEY  = process.env.ADMIN_API_KEY ?? "";
 
+// Le backend Render (plan Free) se met en veille après 15 min d'inactivité et met
+// 30-60s à redémarrer. On abandonne notre propre fetch avant la limite Vercel
+// (maxDuration=10s) pour renvoyer une réponse contrôlée plutôt qu'un
+// FUNCTION_INVOCATION_TIMEOUT brut — le frontend peut alors afficher un message
+// clair et réessayer automatiquement (voir `apiCall` dans admin/page.tsx).
+const BACKEND_TIMEOUT_MS = 8000;
+
+async function fetchBackend(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function wakingUpResponse() {
+  return NextResponse.json(
+    { detail: "Le serveur redémarre, veuillez réessayer dans quelques instants.", code: "backend_waking_up" },
+    { status: 503 }
+  );
+}
+
 async function currentAdminRole(req: NextRequest): Promise<string | null> {
   const token = req.cookies.get("admin_session")?.value;
   if (!token || !process.env.JWT_SECRET) return null;
@@ -32,7 +56,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     const role = await currentAdminRole(req);
     const headers: Record<string, string> = { "X-Admin-Api-Key": KEY };
     if (role) headers["X-Admin-Role"] = role;
-    const r = await fetch(url, { headers, cache: "no-store" });
+    const r = await fetchBackend(url, { headers, cache: "no-store" });
     const ct = r.headers.get("content-type") ?? "application/json";
     const isBinary = ct.includes("application/pdf") || ct.includes("application/zip") ||
       ct.includes("application/vnd.openxmlformats") || ct.includes("application/octet-stream");
@@ -42,6 +66,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
     if (cd) resHeaders["Content-Disposition"] = cd;
     return new NextResponse(body, { status: r.status, headers: resHeaders });
   } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") return wakingUpResponse();
     return NextResponse.json({ detail: String(e) }, { status: 502 });
   }
 }
@@ -64,7 +89,7 @@ async function mut(req: NextRequest, { params }: { params: Promise<{ path: strin
     if (role) hdrs["X-Admin-Role"] = role;
     if (body) hdrs["Content-Type"] = ct.includes("multipart") ? ct : "application/json";
 
-    const r = await fetch(url, {
+    const r = await fetchBackend(url, {
       method: req.method,
       headers: hdrs,
       body: body instanceof ArrayBuffer ? body : (body || undefined),
@@ -81,6 +106,7 @@ async function mut(req: NextRequest, { params }: { params: Promise<{ path: strin
     if (cd) resHeaders["Content-Disposition"] = cd;
     return new NextResponse(resBody, { status: r.status, headers: resHeaders });
   } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") return wakingUpResponse();
     return NextResponse.json({ detail: String(e) }, { status: 502 });
   }
 }
