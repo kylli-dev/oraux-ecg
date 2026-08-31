@@ -9,6 +9,12 @@ class AdminLoginIn(BaseModel):
     password: str = Field(min_length=1)
 
 
+class AdminChangePasswordIn(BaseModel):
+    username: str = Field(min_length=1, max_length=100)
+    current_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=8)
+
+
 class AdminCreate(BaseModel):
     username: str = Field(min_length=1, max_length=100)
     password: str = Field(min_length=8)
@@ -26,6 +32,7 @@ class AdminOut(BaseModel):
     username: str
     actif: bool
     role: Role
+    must_change_password: bool
 
     class Config:
         from_attributes = True

@@ -14,3 +14,6 @@ class Admin(Base):
     actif: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     # "admin" (par défaut) ou "super_admin" — seul un super_admin gère les comptes admin
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="admin")
+    # True tant que le mot de passe a été défini par quelqu'un d'autre (création, réinitialisation,
+    # amorçage) : force un changement de mot de passe à la prochaine connexion.
+    must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

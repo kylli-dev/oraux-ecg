@@ -191,6 +191,8 @@ def _run_migrations():
         "CREATE TABLE IF NOT EXISTS etablissement (id SERIAL PRIMARY KEY, code_uai VARCHAR(20) NOT NULL, nom VARCHAR(200) NOT NULL, ville VARCHAR(100), departement VARCHAR(100), academie VARCHAR(100), CONSTRAINT uq_etablissement_code_uai UNIQUE (code_uai))",
         # Rôle sur les comptes admin (admin / super_admin)
         "ALTER TABLE admin_user ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'admin'",
+        # Changement de mot de passe obligatoire à la prochaine connexion
+        "ALTER TABLE admin_user ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT TRUE",
     ]
     with engine.connect() as conn:
         for sql in migrations:

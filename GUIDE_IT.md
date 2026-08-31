@@ -72,6 +72,7 @@ Internet
 3. Les appels au backend passent par `/api/backend/[...path]` qui injecte `X-Admin-Api-Key` et `X-Admin-Role` (le rôle est lu depuis le cookie de session, pas depuis la base à chaque appel)
 4. Deux rôles : `admin` (accès standard) et `super_admin`. Seul un `super_admin` voit et utilise l'onglet **Paramétrages → Administrateur** (créer/désactiver un compte, réinitialiser un mot de passe, promouvoir/rétrograder) — le backend refuse ces actions (403) si `X-Admin-Role` n'est pas `super_admin`
 5. Au démarrage, s'il n'existe aucun `super_admin` actif, le backend en crée/promeut un à partir de `ADMIN_USERNAME` / `ADMIN_PASSWORD` — il ne peut jamais y avoir zéro super-admin actif (garde-fou sur désactivation/rétrogradation/suppression du dernier)
+6. Chaque compte a un flag `must_change_password` (vrai par défaut : création, réinitialisation par un super-admin, amorçage). Tant qu'il est vrai, le middleware Next.js redirige toute page `/admin/*` vers `/admin/change-password` ; ce flag repasse à faux dès que le titulaire change lui-même son mot de passe (`POST /admin/auth/change-password`, mot de passe actuel requis)
 
 **Flux d'authentification candidat :**
 1. `POST /portal/login` (FastAPI direct) → vérifie INE + mot de passe

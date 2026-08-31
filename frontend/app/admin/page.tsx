@@ -9294,10 +9294,24 @@ function Sidebar({
         </div>
       </nav>
 
-      <div className="p-4 border-t border-white/10">
+      <div className="p-4 border-t border-white/10 space-y-1">
+        <ChangePasswordLink />
         <LogoutButton />
       </div>
     </aside>
+  );
+}
+
+function ChangePasswordLink() {
+  const router = useRouter();
+  return (
+    <button
+      onClick={() => router.push("/admin/change-password")}
+      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-white/50 hover:bg-white/10 hover:text-white/80 transition text-xs"
+    >
+      <Key className="h-3.5 w-3.5" />
+      Changer mon mot de passe
+    </button>
   );
 }
 

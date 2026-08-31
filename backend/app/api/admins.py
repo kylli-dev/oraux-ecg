@@ -31,7 +31,12 @@ def list_admins(db: Session = Depends(get_db)):
 def create_admin(body: AdminCreate, db: Session = Depends(get_db)):
     if db.query(Admin).filter_by(username=body.username.strip()).first():
         raise HTTPException(status_code=409, detail="Ce nom d'utilisateur existe déjà")
-    a = Admin(username=body.username.strip(), password_hash=hash_password(body.password), role=body.role)
+    a = Admin(
+        username=body.username.strip(),
+        password_hash=hash_password(body.password),
+        role=body.role,
+        must_change_password=True,
+    )
     db.add(a)
     db.commit()
     db.refresh(a)
@@ -63,6 +68,7 @@ def update_admin(admin_id: int, body: AdminUpdate, db: Session = Depends(get_db)
 
     if body.password:
         a.password_hash = hash_password(body.password)
+        a.must_change_password = True
 
     db.commit()
     db.refresh(a)

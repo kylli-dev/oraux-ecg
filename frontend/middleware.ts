@@ -17,7 +17,15 @@ export async function middleware(req: NextRequest) {
 
   try {
     const secret = new TextEncoder().encode(process.env.JWT_SECRET!);
-    await jwtVerify(token, secret);
+    const { payload } = await jwtVerify(token, secret);
+
+    if (payload.must_change_password === true && pathname !== "/admin/change-password") {
+      const url = req.nextUrl.clone();
+      url.pathname = "/admin/change-password";
+      url.searchParams.set("forced", "1");
+      return NextResponse.redirect(url);
+    }
+
     return NextResponse.next();
   } catch {
     return redirectToLogin(req);

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SignJWT } from "jose";
+import { setAdminSessionCookie } from "../_session";
 
 const BASE = process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 const KEY = process.env.ADMIN_API_KEY ?? "";
@@ -26,21 +26,8 @@ export async function POST(req: NextRequest) {
     }
     const admin = await backendRes.json();
 
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-    const token = await new SignJWT({ sub: String(admin.id), username: admin.username, role: admin.role })
-      .setProtectedHeader({ alg: "HS256" })
-      .setIssuedAt()
-      .setExpirationTime("24h")
-      .sign(secret);
-
-    const res = NextResponse.json({ ok: true });
-    res.cookies.set("admin_session", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24,
-      path: "/",
-    });
+    const res = NextResponse.json({ ok: true, must_change_password: !!admin.must_change_password });
+    await setAdminSessionCookie(res, admin);
     return res;
   } catch (e) {
     console.error("Login error:", e);
