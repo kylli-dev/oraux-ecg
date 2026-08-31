@@ -69,9 +69,9 @@ Internet
 **Flux d'authentification admin :**
 1. `POST /api/auth/login` (Next.js route) → transmet `{username, password}` au backend `POST /admin/auth/login` (protégé par `X-Admin-Api-Key`), qui vérifie le couple contre la table `admin_user`
 2. Si valide, Next.js émet un cookie httpOnly `admin_session` (JWT signé avec `JWT_SECRET`, durée 24h)
-3. Les appels au backend passent par `/api/backend/[...path]` qui injecte le header `X-Admin-Api-Key`
-4. Les comptes admin se gèrent dans l'interface : Paramétrages → Comptes admin (créer, désactiver, réinitialiser un mot de passe)
-5. Au tout premier démarrage (table `admin_user` vide), un compte est créé automatiquement à partir de `ADMIN_USERNAME` / `ADMIN_PASSWORD` (backend)
+3. Les appels au backend passent par `/api/backend/[...path]` qui injecte `X-Admin-Api-Key` et `X-Admin-Role` (le rôle est lu depuis le cookie de session, pas depuis la base à chaque appel)
+4. Deux rôles : `admin` (accès standard) et `super_admin`. Seul un `super_admin` voit et utilise l'onglet **Paramétrages → Administrateur** (créer/désactiver un compte, réinitialiser un mot de passe, promouvoir/rétrograder) — le backend refuse ces actions (403) si `X-Admin-Role` n'est pas `super_admin`
+5. Au démarrage, s'il n'existe aucun `super_admin` actif, le backend en crée/promeut un à partir de `ADMIN_USERNAME` / `ADMIN_PASSWORD` — il ne peut jamais y avoir zéro super-admin actif (garde-fou sur désactivation/rétrogradation/suppression du dernier)
 
 **Flux d'authentification candidat :**
 1. `POST /portal/login` (FastAPI direct) → vérifie INE + mot de passe
@@ -570,7 +570,7 @@ docker compose top
 
 ### Changer le mot de passe admin
 
-Depuis l'interface : Paramétrage → Comptes admin → « Mot de passe » sur le compte concerné.
+Depuis l'interface : Paramétrage → Administrateur → « Mot de passe » sur le compte concerné.
 
 `ADMIN_USERNAME` / `ADMIN_PASSWORD` dans `.env.prod` ne servent qu'à amorcer le tout premier compte (uniquement si la table `admin_user` est vide) — les modifier après coup n'a aucun effet.
 
@@ -605,10 +605,14 @@ Si absent ou trop petit, augmenter puis `docker compose restart nginx`.
 ### Login admin retourne 401
 
 Causes possibles :
-1. **Mauvais identifiants** — vérifier le nom d'utilisateur et le mot de passe (gérés via Paramétrage → Comptes admin, ou `ADMIN_USERNAME`/`ADMIN_PASSWORD` pour le tout premier compte)
-2. **Compte désactivé** — vérifier le statut « Actif » du compte dans Paramétrage → Comptes admin
+1. **Mauvais identifiants** — vérifier le nom d'utilisateur et le mot de passe (gérés via Paramétrage → Administrateur, ou `ADMIN_USERNAME`/`ADMIN_PASSWORD` pour le tout premier compte)
+2. **Compte désactivé** — vérifier le statut « Actif » du compte dans Paramétrage → Administrateur
 3. **ADMIN_API_KEY différent entre frontend et backend** — la route de login interroge le backend via ce header, une clé désynchronisée renvoie 401/500
 4. **JWT_SECRET changé** — les cookies existants sont invalides, se reconnecter
+
+### L'onglet « Administrateur » n'apparaît pas / renvoie 403
+
+Normal si le compte connecté a le rôle `admin` (pas `super_admin`) — seul un super-admin y a accès. Un super-admin existant peut promouvoir un compte depuis cet onglet (bouton « Promouvoir »).
 
 ### Les créneaux ne s'affichent pas pour une date
 

@@ -12,3 +12,5 @@ class Admin(Base):
     username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     actif: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # "admin" (par défaut) ou "super_admin" — seul un super_admin gère les comptes admin
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="admin")

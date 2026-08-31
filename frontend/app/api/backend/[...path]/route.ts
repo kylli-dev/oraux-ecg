@@ -1,10 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jwtVerify } from "jose";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 10;
 
 const BASE = process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 const KEY  = process.env.ADMIN_API_KEY ?? "";
+
+async function currentAdminRole(req: NextRequest): Promise<string | null> {
+  const token = req.cookies.get("admin_session")?.value;
+  if (!token || !process.env.JWT_SECRET) return null;
+  try {
+    const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+    const { payload } = await jwtVerify(token, secret);
+    return typeof payload.role === "string" ? payload.role : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
@@ -16,10 +29,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
   if (!BASE) return NextResponse.json({ detail: "API_BASE_URL manquant" }, { status: 500 });
 
   try {
-    const r = await fetch(url, {
-      headers: { "X-Admin-Api-Key": KEY },
-      cache: "no-store",
-    });
+    const role = await currentAdminRole(req);
+    const headers: Record<string, string> = { "X-Admin-Api-Key": KEY };
+    if (role) headers["X-Admin-Role"] = role;
+    const r = await fetch(url, { headers, cache: "no-store" });
     const ct = r.headers.get("content-type") ?? "application/json";
     const isBinary = ct.includes("application/pdf") || ct.includes("application/zip") ||
       ct.includes("application/vnd.openxmlformats") || ct.includes("application/octet-stream");
@@ -46,7 +59,9 @@ async function mut(req: NextRequest, { params }: { params: Promise<{ path: strin
   try {
     const ct   = req.headers.get("content-type") ?? "";
     const body = ct.includes("multipart") ? await req.arrayBuffer() : await req.text();
+    const role = await currentAdminRole(req);
     const hdrs: Record<string, string> = { "X-Admin-Api-Key": KEY };
+    if (role) hdrs["X-Admin-Role"] = role;
     if (body) hdrs["Content-Type"] = ct.includes("multipart") ? ct : "application/json";
 
     const r = await fetch(url, {

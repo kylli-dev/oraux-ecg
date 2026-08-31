@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     const admin = await backendRes.json();
 
     const secret = new TextEncoder().encode(process.env.JWT_SECRET);
-    const token = await new SignJWT({ sub: String(admin.id), username: admin.username })
+    const token = await new SignJWT({ sub: String(admin.id), username: admin.username, role: admin.role })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
       .setExpirationTime("24h")

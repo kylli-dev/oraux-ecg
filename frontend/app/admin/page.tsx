@@ -326,6 +326,7 @@ type AdminAccount = {
   id: number;
   username: string;
   actif: boolean;
+  role: "admin" | "super_admin";
 };
 
 type Conflit = {
@@ -8135,6 +8136,8 @@ function ParametragesSection() {
   const [adminErr, setAdminErr] = useState("");
   const [resetPwFor, setResetPwFor] = useState<number | null>(null);
   const [resetPwValue, setResetPwValue] = useState("");
+  const [newAdminSuperAdmin, setNewAdminSuperAdmin] = useState(false);
+  const [myRole, setMyRole] = useState<"admin" | "super_admin" | null>(null);
   const [messages, setMessages] = useState<MessageType[]>([]);
   const [selected, setSelected] = useState<MessageType | null>(null);
   const [sujet, setSujet] = useState("");
@@ -8206,6 +8209,15 @@ function ParametragesSection() {
     }
   };
 
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => setMyRole(data?.role === "super_admin" ? "super_admin" : "admin"))
+      .catch(() => setMyRole("admin"));
+  }, []);
+
+  const isSuperAdmin = myRole === "super_admin";
+
   const loadAdmins = useCallback(async () => {
     setLoadingAdmins(true);
     try {
@@ -8215,16 +8227,21 @@ function ParametragesSection() {
     finally { setLoadingAdmins(false); }
   }, []);
 
-  useEffect(() => { if (tab === "comptes") loadAdmins(); }, [tab, loadAdmins]);
+  useEffect(() => { if (tab === "comptes" && isSuperAdmin) loadAdmins(); }, [tab, isSuperAdmin, loadAdmins]);
 
   const createAdmin = async () => {
     if (!newAdminUsername.trim() || newAdminPassword.length < 8) return;
     setCreatingAdmin(true);
     setAdminErr("");
     try {
-      await post<AdminAccount>("comptes/", { username: newAdminUsername.trim(), password: newAdminPassword });
+      await post<AdminAccount>("comptes/", {
+        username: newAdminUsername.trim(),
+        password: newAdminPassword,
+        role: newAdminSuperAdmin ? "super_admin" : "admin",
+      });
       setNewAdminUsername("");
       setNewAdminPassword("");
+      setNewAdminSuperAdmin(false);
       toastAdmins.success("Compte admin créé");
       loadAdmins();
     } catch (e: unknown) {
@@ -8237,6 +8254,15 @@ function ParametragesSection() {
   const toggleAdminActif = async (a: AdminAccount) => {
     try {
       await patch<AdminAccount>(`comptes/${a.id}`, { actif: !a.actif });
+      loadAdmins();
+    } catch (e: unknown) {
+      toastAdmins.error(e instanceof Error ? e.message : "Erreur");
+    }
+  };
+
+  const toggleAdminRole = async (a: AdminAccount) => {
+    try {
+      await patch<AdminAccount>(`comptes/${a.id}`, { role: a.role === "super_admin" ? "admin" : "super_admin" });
       loadAdmins();
     } catch (e: unknown) {
       toastAdmins.error(e instanceof Error ? e.message : "Erreur");
@@ -8272,8 +8298,13 @@ function ParametragesSection() {
     { key: "etablissements" as const, label: "Établissements" },
     { key: "messages" as const, label: "Messages-type" },
     { key: "mdp" as const, label: "Mots de passe" },
-    { key: "comptes" as const, label: "Comptes admin" },
+    ...(isSuperAdmin ? [{ key: "comptes" as const, label: "Administrateur" }] : []),
   ];
+
+  // Si un compte non super-admin se retrouve sur l'onglet (ex. via un ancien lien), on le renvoie ailleurs.
+  useEffect(() => {
+    if (tab === "comptes" && myRole !== null && !isSuperAdmin) setTab("matieres");
+  }, [tab, myRole, isSuperAdmin]);
 
   return (
     <div>
@@ -8406,7 +8437,7 @@ function ParametragesSection() {
       )}
 
       {/* ── Comptes admin ── */}
-      {tab === "comptes" && (
+      {tab === "comptes" && isSuperAdmin && (
         <div className="max-w-2xl space-y-6">
           <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-5 space-y-4">
             <h2 className="text-base font-semibold text-gray-900">Créer un compte admin</h2>
@@ -8437,6 +8468,14 @@ function ParametragesSection() {
                 disabled={creatingAdmin || !newAdminUsername.trim() || newAdminPassword.length < 8}
               />
             </div>
+            <label className="flex items-center gap-2 text-sm text-gray-600">
+              <input
+                type="checkbox"
+                checked={newAdminSuperAdmin}
+                onChange={(e) => setNewAdminSuperAdmin(e.target.checked)}
+              />
+              Compte super-admin (accès à cet onglet Administrateur)
+            </label>
             <ErrorMsg msg={adminErr} />
           </div>
 
@@ -8449,8 +8488,13 @@ function ParametragesSection() {
               adminAccounts.map((a, i) => (
                 <div key={a.id} className={`px-5 py-4 flex items-center justify-between gap-3 ${i > 0 ? "border-t border-gray-100" : ""}`}>
                   <div className="flex items-center gap-2 min-w-0">
-                    <Shield className="h-4 w-4 text-gray-300 shrink-0" />
+                    <Shield className={`h-4 w-4 shrink-0 ${a.role === "super_admin" ? "text-amber-500" : "text-gray-300"}`} />
                     <span className="text-sm font-medium text-gray-900 truncate">{a.username}</span>
+                    {a.role === "super_admin" && (
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 shrink-0">
+                        Super-admin
+                      </span>
+                    )}
                   </div>
 
                   {resetPwFor === a.id ? (
@@ -8486,6 +8530,12 @@ function ParametragesSection() {
                         small
                         variant="ghost"
                         onClick={() => { setResetPwFor(a.id); setResetPwValue(""); }}
+                      />
+                      <Btn
+                        label={a.role === "super_admin" ? "Rétrograder" : "Promouvoir"}
+                        small
+                        variant="ghost"
+                        onClick={() => toggleAdminRole(a)}
                       />
                       <button
                         onClick={() => deleteAdmin(a)}

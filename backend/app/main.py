@@ -189,6 +189,8 @@ def _run_migrations():
         "ALTER TABLE planche ADD COLUMN fichier_data BYTEA",
         # Table des établissements (code UAI + nom)
         "CREATE TABLE IF NOT EXISTS etablissement (id SERIAL PRIMARY KEY, code_uai VARCHAR(20) NOT NULL, nom VARCHAR(200) NOT NULL, ville VARCHAR(100), departement VARCHAR(100), academie VARCHAR(100), CONSTRAINT uq_etablissement_code_uai UNIQUE (code_uai))",
+        # Rôle sur les comptes admin (admin / super_admin)
+        "ALTER TABLE admin_user ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'admin'",
     ]
     with engine.connect() as conn:
         for sql in migrations:
@@ -200,17 +202,28 @@ def _run_migrations():
 
 
 def _bootstrap_admin():
-    """Crée le premier compte admin si la table est vide (via ADMIN_USERNAME / ADMIN_PASSWORD)."""
-    username = os.getenv("ADMIN_USERNAME")
-    password = os.getenv("ADMIN_PASSWORD")
-    if not username or not password:
-        return
+    """
+    Garantit qu'un compte super-admin existe, via ADMIN_USERNAME / ADMIN_PASSWORD.
+    Ne fait rien si un super-admin actif existe déjà (les variables ne servent qu'à l'amorçage).
+    """
     from app.core.auth import hash_password
 
     with SessionLocal() as db:
-        if db.query(Admin).count() > 0:
+        if db.query(Admin).filter_by(role="super_admin", actif=True).first():
             return
-        db.add(Admin(username=username.strip(), password_hash=hash_password(password)))
+        username = os.getenv("ADMIN_USERNAME")
+        password = os.getenv("ADMIN_PASSWORD")
+        if not username or not password:
+            return
+        username = username.strip()
+        existing = db.query(Admin).filter_by(username=username).first()
+        if existing:
+            existing.role = "super_admin"
+            existing.actif = True
+            print(f"[startup] Compte admin promu super-admin : {username}", flush=True)
+        else:
+            db.add(Admin(username=username, password_hash=hash_password(password), role="super_admin"))
+            print(f"[startup] Compte admin initial créé (super-admin) : {username}", flush=True)
         db.commit()
         print(f"[startup] Compte admin initial créé : {username}", flush=True)
 
