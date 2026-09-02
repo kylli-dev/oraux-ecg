@@ -3212,12 +3212,16 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
   for (let oral = 0; oral < Ktotal; oral++) {
     if (pauseMinutes > 0 && oral === pauseAfter) {
       // La pause démarre exactement à la fin du dernier oral (pas au prochain deb_prepa,
-      // qui inclurait déjà le temps de préparation) et dure exactement pauseMinutes :
-      // le prochain oral reprend pile pauseMinutes après la fin de celui-ci.
+      // qui inclurait déjà le temps de préparation — purement pour l'affichage du bandeau
+      // "Pause déjeuner" dans la grille). La rotation reprend elle pauseMinutes après
+      // l'instant où le prochain oral aurait normalement commencé (t) : c'est ce décalage
+      // direct sur t, et non l'ancrage sur la fin d'exam affichée, qui garantit que chaque
+      // salle d'examen (deb_exam → fin_exam consécutifs) bénéficie d'exactement pauseMinutes
+      // de coupure, et que l'heure de fin totale corresponde à ce qui est annoncé.
       const pauseDisplayStart = t + (maxPrep + maxDuree - interval);
       const pauseDisplayEnd = pauseDisplayStart + pauseMinutes;
       rows.push({ deb_prepa: minutesToHM(pauseDisplayStart), deb_exam: minutesToHM(pauseDisplayStart), fin_exam: minutesToHM(pauseDisplayEnd), candidates: [], bloc_idx, isPause: true });
-      t = pauseDisplayEnd;
+      t = t + pauseMinutes;
     }
     rows.push({
       deb_prepa: minutesToHM(t),
