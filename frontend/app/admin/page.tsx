@@ -3107,7 +3107,7 @@ type BlocWizard = {
   nb_slots: number | null;        // null → N² automatique (créneaux ORAL)
   bonus_slots: number;            // créneaux bonus urgences (après les oraux réguliers)
   matieres_config: MatiereConfig[];
-  pause_midi_slots: number;       // 0 = pas de pause ; >0 = créneaux de pause (journée complète)
+  pause_midi_minutes: number;     // durée réelle de la pause déjeuner en minutes (0 = pas de pause)
   pause_midi_after: number | null; // null = auto (moitié des créneaux oraux)
 };
 
@@ -3183,8 +3183,8 @@ function blocCapacity(bloc: BlocWizard, configs: MatiereConfig[]): number {
   const end = efh * 60 + efm;
   const interval = maxDuree + bloc.pause_minutes;
   const slotDuration = maxPrep + maxDuree;
-  const pauseSlots = bloc.pause_midi_slots ?? 0;
-  const availableOral = (end - start) - pauseSlots * interval;
+  const pauseMinutes = bloc.pause_midi_minutes ?? 0;
+  const availableOral = (end - start) - pauseMinutes;
   const maxSlots = interval > 0 ? Math.floor((availableOral - slotDuration) / interval) + 1 : 0;
   if (bloc.nb_slots !== null) return bloc.nb_slots;
   return Math.max(N, maxSlots);
@@ -3199,7 +3199,7 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
   const [hh, mm] = bloc.heure_debut.split(":").map(Number);
   const start = hh * 60 + mm;
   const interval = maxDuree + bloc.pause_minutes;
-  const pauseSlots = bloc.pause_midi_slots ?? 0;
+  const pauseMinutes = bloc.pause_midi_minutes ?? 0;
   const Kregular = blocCapacity(bloc, configs);
   const Kbonus = bloc.bonus_slots ?? 0;
   const Ktotal = Kregular + Kbonus;
@@ -3210,14 +3210,14 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
   const rows: MatrixRow[] = [];
   let t = start;
   for (let oral = 0; oral < Ktotal; oral++) {
-    if (pauseSlots > 0 && oral === pauseAfter) {
-      // La pause affichée commence à fin_exam du dernier oral (pas au prochain deb_prepa)
-      // afin d'éviter le décalage visuel entre "début de pause" et fin de l'examen en cours.
-      // break_réel = (pauseSlots+1)*interval - slotDuration
+    if (pauseMinutes > 0 && oral === pauseAfter) {
+      // La pause démarre exactement à la fin du dernier oral (pas au prochain deb_prepa,
+      // qui inclurait déjà le temps de préparation) et dure exactement pauseMinutes :
+      // le prochain oral reprend pile pauseMinutes après la fin de celui-ci.
       const pauseDisplayStart = t + (maxPrep + maxDuree - interval);
-      const pauseDisplayEnd = pauseDisplayStart + pauseSlots * interval;
+      const pauseDisplayEnd = pauseDisplayStart + pauseMinutes;
       rows.push({ deb_prepa: minutesToHM(pauseDisplayStart), deb_exam: minutesToHM(pauseDisplayStart), fin_exam: minutesToHM(pauseDisplayEnd), candidates: [], bloc_idx, isPause: true });
-      for (let p = 0; p < pauseSlots; p++) t += interval;
+      t = pauseDisplayEnd;
     }
     rows.push({
       deb_prepa: minutesToHM(t),
@@ -3261,7 +3261,7 @@ function blocToWizard(b: Bloc): BlocWizard {
     nb_slots: b.nb_slots ?? null,
     bonus_slots: b.bonus_slots ?? 0,
     matieres_config: configs,
-    pause_midi_slots: 0,
+    pause_midi_minutes: 0,
     pause_midi_after: null,
   };
 }
@@ -3270,7 +3270,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
   const isEdit = !!editJt;
   const [step, setStep] = useState<1 | 2>(1);
   const allMatieres = useMatieres();
-  const DEFAULT_BLOC: BlocWizard = { heure_debut: "08:00", heure_fin: "13:00", pause_minutes: 0, nb_slots: null, bonus_slots: 0, matieres_config: [], pause_midi_slots: 0, pause_midi_after: null };
+  const DEFAULT_BLOC: BlocWizard = { heure_debut: "08:00", heure_fin: "13:00", pause_minutes: 0, nb_slots: null, bonus_slots: 0, matieres_config: [], pause_midi_minutes: 0, pause_midi_after: null };
 
   const initParams = (): WizardParams => {
     if (editJt) {
@@ -3282,24 +3282,21 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
       const inferredMode: WizardParams["mode"] = isJC ? "journee-complete" : "demi-journee";
 
       // En journée complète avec 2 blocs sauvegardés, les fusionner en 1 bloc wizard
-      // avec pause_midi_slots et pause_midi_after reconstruits
+      // avec pause_midi_minutes et pause_midi_after reconstruits
       const inferredBlocs: BlocWizard[] = (() => {
         if (!genBlocs.length) return [DEFAULT_BLOC];
         if (!isJC || genBlocs.length < 2) return genBlocs.map(blocToWizard);
         const toHM = (t: string) => t.length === 8 ? t.slice(0, 5) : t;
         const toMin = (hhmm: string) => { const [h, m] = hhmm.split(":").map(Number); return h * 60 + m; };
         const b0 = blocToWizard(genBlocs[0]);
-        const maxDuree = b0.matieres_config.reduce((mx, c) => Math.max(mx, c.duree_minutes), 30);
-        const maxPrep  = b0.matieres_config.reduce((mx, c) => Math.max(mx, c.preparation_minutes), 0);
-        const interval = maxDuree + (b0.pause_minutes ?? 0);
+        // La pause déjeuner réelle = l'écart entre la fin du bloc du matin et le début du bloc de l'après-midi
         const gap = toMin(toHM(genBlocs[1].heure_debut)) - toMin(toHM(genBlocs[0].heure_fin));
-        const pause_midi_slots = interval > 0 ? Math.max(1, Math.round((gap + maxPrep - (b0.pause_minutes ?? 0)) / interval)) : 2;
         return [{
           ...b0,
           heure_debut: toHM(genBlocs[0].heure_debut),
           heure_fin: toHM(genBlocs[genBlocs.length - 1].heure_fin),
           nb_slots: genBlocs.reduce((s, b) => s + (b.nb_slots ?? 0), 0) || null,
-          pause_midi_slots,
+          pause_midi_minutes: Math.max(0, gap),
           pause_midi_after: genBlocs[0].nb_slots ?? null,
         }];
       })();
@@ -3318,8 +3315,8 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
       statut_initial: "LIBRE",
       mode: "demi-journee",
       blocs: [
-        { heure_debut: "08:00", heure_fin: "13:00", pause_minutes: 0, nb_slots: null, bonus_slots: 0, matieres_config: [], pause_midi_slots: 0, pause_midi_after: null },
-        { heure_debut: "14:00", heure_fin: "18:00", pause_minutes: 0, nb_slots: null, bonus_slots: 0, matieres_config: [], pause_midi_slots: 0, pause_midi_after: null },
+        { heure_debut: "08:00", heure_fin: "13:00", pause_minutes: 0, nb_slots: null, bonus_slots: 0, matieres_config: [], pause_midi_minutes: 0, pause_midi_after: null },
+        { heure_debut: "14:00", heure_fin: "18:00", pause_minutes: 0, nb_slots: null, bonus_slots: 0, matieres_config: [], pause_midi_minutes: 0, pause_midi_after: null },
       ],
     };
   };
@@ -3395,7 +3392,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
         salles_par_matiere: p.salles_par_matiere,
         bonus_slots: bloc.bonus_slots ?? 0,
       };
-      if (p.mode === "journee-complete" && (bloc.pause_midi_slots ?? 0) > 0) {
+      if (p.mode === "journee-complete" && (bloc.pause_midi_minutes ?? 0) > 0) {
         const oralBefore = blocRows.filter(r => !r.isPause).slice(0, bloc.pause_midi_after ?? Math.ceil(blocRows.filter(r => !r.isPause).length / 2));
         const oralAfter = blocRows.filter(r => !r.isPause).slice(oralBefore.length);
         if (oralBefore.length) await post(`journee-types/${jtId}/blocs`, { ...blocPayload, ordre: ordre++, heure_debut: oralBefore[0].deb_prepa + ":00", heure_fin: oralBefore[oralBefore.length - 1].fin_exam + ":00", nb_slots: oralBefore.length });
@@ -3464,7 +3461,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
 
     const isJC = p.mode === "journee-complete";
 
-    // Quand on bascule en journée complète, forcer 1 seul bloc avec pause_midi_slots=2
+    // Quand on bascule en journée complète, forcer 1 seul bloc avec 1h de pause déjeuner
     const switchMode = (m: WizardParams["mode"]) => {
       if (m === "journee-complete") {
         setP(prev => ({
@@ -3475,7 +3472,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
             heure_debut: "08:30",
             heure_fin: "18:30",
             nb_slots: null,
-            pause_midi_slots: 2,
+            pause_midi_minutes: 60,
             pause_midi_after: null,
           }],
         }));
@@ -3484,8 +3481,8 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
           ...prev,
           mode: m,
           blocs: [
-            { ...prev.blocs[0], pause_midi_slots: 0, pause_midi_after: null },
-            { heure_debut: "14:00", heure_fin: "18:00", pause_minutes: prev.blocs[0].pause_minutes, nb_slots: null, bonus_slots: 0, matieres_config: [], pause_midi_slots: 0, pause_midi_after: null },
+            { ...prev.blocs[0], pause_midi_minutes: 0, pause_midi_after: null },
+            { heure_debut: "14:00", heure_fin: "18:00", pause_minutes: prev.blocs[0].pause_minutes, nb_slots: null, bonus_slots: 0, matieres_config: [], pause_midi_minutes: 0, pause_midi_after: null },
           ],
         }));
       }
@@ -3618,11 +3615,11 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                   const slotAdvance = bMaxDuree + bloc.pause_minutes;
                   const [sdh, sdm] = bloc.heure_debut.split(":").map(Number);
                   const startMin = sdh * 60 + sdm;
-                  const pauseMidi = bloc.pause_midi_slots ?? 0;
-                  // heure_fin inclut les créneaux de pause midi
+                  const pauseMidiMinutes = bloc.pause_midi_minutes ?? 0;
+                  // heure_fin inclut la pause déjeuner (durée fixe en minutes, indépendante du nb de créneaux)
                   const nbOralForFin = bloc.nb_slots ?? autoTotal;
                   const computedFinMin = nbOralForFin > 0 && slotAdvance > 0
-                    ? startMin + bMaxPrep + (nbOralForFin + pauseMidi) * slotAdvance
+                    ? startMin + bMaxPrep + nbOralForFin * slotAdvance + pauseMidiMinutes
                     : null;
                   const toHM = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
                   const computedFin = computedFinMin !== null ? toHM(computedFinMin) : null;
@@ -3633,15 +3630,15 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                       blocs: prev.blocs.map((b, i) => {
                         if (i !== idx) return b;
                         const sAdv = bMaxDuree + b.pause_minutes;
-                        const pm = b.pause_midi_slots ?? 0;
+                        const pm = b.pause_midi_minutes ?? 0;
                         const [sh, sm] = b.heure_debut.split(":").map(Number);
-                        const finMin = val !== null && sAdv > 0 ? (sh * 60 + sm) + bMaxPrep + (val + pm) * sAdv : null;
+                        const finMin = val !== null && sAdv > 0 ? (sh * 60 + sm) + bMaxPrep + val * sAdv + pm : null;
                         return { ...b, nb_slots: val, heure_fin: finMin !== null ? toHM(finMin) : b.heure_fin };
                       }),
                     }));
                   };
 
-                  const updatePauseMidi = (pm: number) => {
+                  const updatePauseMidi = (minutes: number) => {
                     setP(prev => ({
                       ...prev,
                       blocs: prev.blocs.map((b, i) => {
@@ -3649,8 +3646,8 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                         const sAdv = bMaxDuree + b.pause_minutes;
                         const nb = b.nb_slots ?? autoTotal;
                         const [sh, sm] = b.heure_debut.split(":").map(Number);
-                        const finMin = nb > 0 && sAdv > 0 ? (sh * 60 + sm) + bMaxPrep + (nb + pm) * sAdv : null;
-                        return { ...b, pause_midi_slots: pm, heure_fin: finMin !== null ? toHM(finMin) : b.heure_fin };
+                        const finMin = nb > 0 && sAdv > 0 ? (sh * 60 + sm) + bMaxPrep + nb * sAdv + minutes : null;
+                        return { ...b, pause_midi_minutes: minutes, heure_fin: finMin !== null ? toHM(finMin) : b.heure_fin };
                       }),
                     }));
                   };
@@ -3687,20 +3684,12 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                       {isJC && (
                         <div className="rounded-lg border border-orange-100 bg-orange-50/50 px-3 py-2.5 flex items-center gap-4">
                           <span className="text-[11px] font-semibold text-orange-700 uppercase tracking-wide shrink-0">Pause déjeuner</span>
-                          <Field
-                            label="Durée (min)"
-                            hint={slotAdvance > 0 ? `≈ ${pauseMidi} créneau${pauseMidi > 1 ? "x" : ""} de ${slotAdvance}min` : "définissez d'abord les matières"}
-                          >
+                          <Field label="Durée (min)">
                             <Input
                               type="number"
-                              value={pauseMidi * slotAdvance}
-                              onChange={(e) => {
-                                const minutes = Math.max(0, Number(e.target.value));
-                                const newSlots = slotAdvance > 0 ? Math.ceil(minutes / slotAdvance) : 0;
-                                updatePauseMidi(newSlots);
-                              }}
+                              value={pauseMidiMinutes}
+                              onChange={(e) => updatePauseMidi(Math.max(0, Number(e.target.value)))}
                               min={0} step={5} max={600}
-                              disabled={slotAdvance <= 0}
                               className="w-20"
                             />
                           </Field>
@@ -3715,7 +3704,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                           </Field>
                           {computedFin && (
                             <span className="text-xs text-orange-700 font-medium ml-auto shrink-0">
-                              {(bloc.nb_slots ?? autoTotal) + pauseMidi} créneaux · fin à {computedFin}
+                              {bloc.nb_slots ?? autoTotal} créneaux + {pauseMidiMinutes}min de pause · fin à {computedFin}
                             </span>
                           )}
                         </div>
