@@ -3687,13 +3687,21 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                       {isJC && (
                         <div className="rounded-lg border border-orange-100 bg-orange-50/50 px-3 py-2.5 flex items-center gap-4">
                           <span className="text-[11px] font-semibold text-orange-700 uppercase tracking-wide shrink-0">Pause déjeuner</span>
-                          <Field label="Nb créneaux de pause">
+                          <Field
+                            label="Durée (min)"
+                            hint={slotAdvance > 0 ? `≈ ${pauseMidi} créneau${pauseMidi > 1 ? "x" : ""} de ${slotAdvance}min` : "définissez d'abord les matières"}
+                          >
                             <Input
                               type="number"
-                              value={pauseMidi}
-                              onChange={(e) => updatePauseMidi(Math.max(0, Number(e.target.value)))}
-                              min={0} max={10}
-                              className="w-16"
+                              value={pauseMidi * slotAdvance}
+                              onChange={(e) => {
+                                const minutes = Math.max(0, Number(e.target.value));
+                                const newSlots = slotAdvance > 0 ? Math.ceil(minutes / slotAdvance) : 0;
+                                updatePauseMidi(newSlots);
+                              }}
+                              min={0} step={5} max={600}
+                              disabled={slotAdvance <= 0}
+                              className="w-20"
                             />
                           </Field>
                           <Field label="Après le créneau n°" hint="vide = milieu auto">

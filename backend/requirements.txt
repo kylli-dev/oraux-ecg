@@ -11,3 +11,4 @@ bcrypt==4.2.1
 python-jose[cryptography]==3.3.0
 pypdf==5.1.0
 reportlab==4.2.5
+tzdata; sys_platform == "win32"
