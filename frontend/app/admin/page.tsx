@@ -429,6 +429,16 @@ function addDays(dateStr: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+function enumerateDates(start: string, end: string): string[] {
+  const dates: string[] = [];
+  let d = start;
+  while (d <= end) {
+    dates.push(d);
+    d = addDays(d, 1);
+  }
+  return dates;
+}
+
 function formatDate(dateStr: string): string {
   try {
     return new Date(dateStr + "T12:00:00").toLocaleDateString("fr-FR", {
@@ -1724,7 +1734,7 @@ function PlanningDaySection({
           )}
 
           {/* Modals */}
-          <Modal open={applyModal} onClose={() => setApplyModal(false)} title="Appliquer un gabarit">
+          <Modal open={applyModal} onClose={() => setApplyModal(false)} title="Appliquer un gabarit" wide>
             {journeeTypes.length === 0 ? (
               <p className="text-sm text-black/50">
                 Aucune journée type disponible. Créez-en une dans la section &laquo; Journées types &raquo;.
@@ -1733,6 +1743,8 @@ function PlanningDaySection({
               <ApplyForm
                 planningId={planning.id}
                 date={date}
+                dateDebut={planning.date_debut}
+                dateFin={planning.date_fin}
                 journeeTypes={journeeTypes}
                 onSuccess={() => { setApplyModal(false); loadDay(); }}
               />
@@ -2361,50 +2373,109 @@ function DemiJourneeCard({
 function ApplyForm({
   planningId,
   date,
+  dateDebut,
+  dateFin,
   journeeTypes,
   onSuccess,
 }: {
   planningId: number;
   date: string;
+  dateDebut: string;
+  dateFin: string;
   journeeTypes: JourneeType[];
   onSuccess: () => void;
 }) {
   const [jtId, setJtId] = useState(journeeTypes[0]?.id ?? 0);
+  const [mode, setMode] = useState<"single" | "multi">("single");
+  const [singleDate, setSingleDate] = useState(date);
+  const allDates = enumerateDates(dateDebut, dateFin);
+  const [selectedDates, setSelectedDates] = useState<Set<string>>(() => new Set([date]));
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{
-    demi_journees_created: number;
-    epreuves_created: number;
-  } | null>(null);
+  type ApplyResult = { date: string; demi_journees_created: number; epreuves_created: number; warnings: string[] };
+  const [results, setResults] = useState<ApplyResult[] | null>(null);
+  const [failed, setFailed] = useState<{ date: string; message: string }[]>([]);
   const [error, setError] = useState("");
 
-  const submit = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const r = await post<any>(`plannings/${planningId}/apply-journee-type`, {
-        journee_type_id: jtId,
-        date,
-      });
-      setResult(r);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
+  const toggleDate = (d: string) => {
+    setSelectedDates((prev) => {
+      const next = new Set(prev);
+      if (next.has(d)) next.delete(d); else next.add(d);
+      return next;
+    });
   };
 
-  if (result) {
+  const submit = async () => {
+    const dates = mode === "single" ? [singleDate] : Array.from(selectedDates).sort();
+    if (dates.length === 0) {
+      setError("Sélectionnez au moins une date");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    const newResults: ApplyResult[] = [];
+    const newFailed: { date: string; message: string }[] = [];
+    for (const d of dates) {
+      try {
+        const r = await post<any>(`plannings/${planningId}/apply-journee-type`, {
+          journee_type_id: jtId,
+          date: d,
+        });
+        newResults.push({
+          date: d,
+          demi_journees_created: r.demi_journees_created,
+          epreuves_created: r.epreuves_created,
+          warnings: r.warnings ?? [],
+        });
+      } catch (e: any) {
+        newFailed.push({ date: d, message: e.message });
+      }
+    }
+    setResults(newResults);
+    setFailed(newFailed);
+    setLoading(false);
+  };
+
+  if (results) {
+    const totalDj = results.reduce((s, r) => s + r.demi_journees_created, 0);
+    const totalEp = results.reduce((s, r) => s + r.epreuves_created, 0);
+    const withWarnings = results.filter((r) => r.warnings.length > 0);
+    const hasIssue = failed.length > 0 || withWarnings.length > 0;
+
     return (
       <div className="space-y-4">
-        <div className="rounded-xl bg-green-50 border border-green-100 p-4">
-          <p className="font-semibold text-green-700 text-sm">
-            Génération réussie
+        <div className={`rounded-xl border p-4 ${hasIssue ? "bg-amber-50 border-amber-100" : "bg-green-50 border-green-100"}`}>
+          <p className={`font-semibold text-sm ${hasIssue ? "text-amber-700" : "text-green-700"}`}>
+            {results.length} date{results.length > 1 ? "s" : ""} traitée{results.length > 1 ? "s" : ""}
+            {failed.length > 0 && ` • ${failed.length} échec${failed.length > 1 ? "s" : ""}`}
           </p>
-          <p className="text-sm text-green-600 mt-1">
-            {result.demi_journees_created} demi-journée(s) créée(s) &bull;{" "}
-            {result.epreuves_created} épreuve(s) générée(s)
+          <p className={`text-sm mt-1 ${hasIssue ? "text-amber-600" : "text-green-600"}`}>
+            {totalDj} demi-journée(s) créée(s) &bull; {totalEp} épreuve(s) générée(s)
           </p>
         </div>
+
+        {withWarnings.length > 0 && (
+          <div className="rounded-xl border border-amber-100 bg-amber-50 p-3 space-y-2">
+            {withWarnings.map((r) => (
+              <div key={r.date} className="text-xs">
+                <strong className="text-amber-800">{formatDate(r.date)}</strong>
+                {r.warnings.map((w, i) => (
+                  <p key={i} className="text-amber-700 mt-0.5">{w}</p>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {failed.length > 0 && (
+          <div className="rounded-xl border border-red-100 bg-red-50 p-3 space-y-1.5">
+            {failed.map((f) => (
+              <p key={f.date} className="text-xs text-red-700">
+                <strong>{formatDate(f.date)}</strong> — {f.message}
+              </p>
+            ))}
+          </div>
+        )}
+
         <Btn label="Fermer" onClick={onSuccess} />
       </div>
     );
@@ -2425,17 +2496,64 @@ function ApplyForm({
           ))}
         </Select>
       </Field>
-      <p className="text-sm text-black/40">
-        Date :{" "}
-        <strong className="text-black/60">{formatDate(date)}</strong>
-      </p>
+
+      <div className="flex gap-1 bg-black/[0.04] rounded-lg p-1 w-fit">
+        {(["single", "multi"] as const).map((m) => (
+          <button
+            key={m}
+            onClick={() => setMode(m)}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
+              mode === m ? "bg-white shadow-sm text-black" : "text-black/50 hover:text-black/70"
+            }`}
+          >
+            {m === "single" ? "Une date" : "Plusieurs dates"}
+          </button>
+        ))}
+      </div>
+
+      {mode === "single" ? (
+        <Field label="Date">
+          <Input
+            type="date"
+            value={singleDate}
+            min={dateDebut}
+            max={dateFin}
+            onChange={(e) => setSingleDate(e.target.value)}
+          />
+        </Field>
+      ) : (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-black/50 uppercase tracking-wide">
+              {selectedDates.size} date{selectedDates.size > 1 ? "s" : ""} sélectionnée{selectedDates.size > 1 ? "s" : ""}
+            </span>
+            <div className="flex gap-3">
+              <button onClick={() => setSelectedDates(new Set(allDates))} className="text-xs text-black/40 hover:text-black/70 underline">
+                Tout cocher
+              </button>
+              <button onClick={() => setSelectedDates(new Set())} className="text-xs text-black/40 hover:text-black/70 underline">
+                Tout décocher
+              </button>
+            </div>
+          </div>
+          <div className="max-h-60 overflow-y-auto rounded-lg border border-black/10 divide-y divide-black/5">
+            {allDates.map((d) => (
+              <label key={d} className="flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-black/[0.02] cursor-pointer">
+                <input type="checkbox" checked={selectedDates.has(d)} onChange={() => toggleDate(d)} />
+                <span className="capitalize">{formatDate(d)}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
       <ErrorMsg msg={error} />
       <div className="flex items-center gap-2 pt-1">
         <Btn
-          label={loading ? "Génération…" : "Générer"}
+          label={loading ? "Génération…" : mode === "multi" ? `Générer (${selectedDates.size})` : "Générer"}
           icon={Wand2}
           onClick={submit}
-          disabled={loading || !jtId}
+          disabled={loading || !jtId || (mode === "multi" && selectedDates.size === 0)}
         />
         {loading && <Spinner />}
       </div>
