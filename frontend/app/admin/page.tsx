@@ -2390,6 +2390,8 @@ function ApplyForm({
   const [singleDate, setSingleDate] = useState(date);
   const allDates = enumerateDates(dateDebut, dateFin);
   const [selectedDates, setSelectedDates] = useState<Set<string>>(() => new Set([date]));
+  const [rangeFrom, setRangeFrom] = useState(date);
+  const [rangeTo, setRangeTo] = useState(date);
   const [loading, setLoading] = useState(false);
   type ApplyResult = { date: string; demi_journees_created: number; epreuves_created: number; warnings: string[] };
   const [results, setResults] = useState<ApplyResult[] | null>(null);
@@ -2522,8 +2524,27 @@ function ApplyForm({
           />
         </Field>
       ) : (
-        <div>
-          <div className="flex items-center justify-between mb-2">
+        <div className="space-y-3">
+          <div className="rounded-lg border border-black/10 bg-black/[0.02] p-3">
+            <p className="text-xs font-medium text-black/50 uppercase tracking-wide mb-2">Sélectionner une plage</p>
+            <div className="flex items-end gap-2">
+              <Field label="Du">
+                <Input type="date" value={rangeFrom} min={dateDebut} max={dateFin} onChange={(e) => setRangeFrom(e.target.value)} />
+              </Field>
+              <Field label="Au">
+                <Input type="date" value={rangeTo} min={dateDebut} max={dateFin} onChange={(e) => setRangeTo(e.target.value)} />
+              </Field>
+              <Btn
+                label="Appliquer la plage"
+                small
+                variant="ghost"
+                disabled={rangeFrom > rangeTo}
+                onClick={() => setSelectedDates(new Set(enumerateDates(rangeFrom, rangeTo)))}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-black/50 uppercase tracking-wide">
               {selectedDates.size} date{selectedDates.size > 1 ? "s" : ""} sélectionnée{selectedDates.size > 1 ? "s" : ""}
             </span>
