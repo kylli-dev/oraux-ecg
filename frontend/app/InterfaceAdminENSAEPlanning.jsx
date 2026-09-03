@@ -1044,12 +1044,18 @@ export default function InterfaceAdminENSAEPlanning() {
   }, []);
 
   const loadBlocs = useCallback(async (jt, silent = false) => {
-    if (!jt) { setBlocs([]); setTripletStatuts({}); return; }
+    if (!jt) { setBlocs([]); setTripletStatuts({}); setCandidatsParBloc(null); return; }
     if (!silent) setLoading(true);
     try {
       const b = await apiFetch("GET", `journee-types/${jt.id}/blocs`);
       setBlocs(b ?? []);
-      if (!silent) setTripletStatuts({});
+      if (!silent) {
+        setTripletStatuts({});
+        // Initialise l'aperçu avec le nb_slots réellement enregistré sur le premier bloc
+        // GENERATION, plutôt que de rester sur le générique N² tant que l'admin n'y touche pas.
+        const genBloc = (b ?? []).find((x) => x.type_bloc === "GENERATION");
+        setCandidatsParBloc(genBloc?.nb_slots && genBloc.nb_slots > 0 ? genBloc.nb_slots : null);
+      }
     } catch {
       setBlocs([]);
     } finally {
