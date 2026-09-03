@@ -3027,6 +3027,60 @@ function JourneeTypeEditor({ jt, onRename }: { jt: JourneeType; onRename?: (newN
 }
 
 // ── Section : Journées types ───────────────────────────────────────────────────
+function ApplyJourneeTypeToPlanning({ jt, onClose }: { jt: JourneeType; onClose: () => void }) {
+  const [plannings, setPlannings] = useState<Planning[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [planningId, setPlanningId] = useState<number | null>(null);
+
+  useEffect(() => {
+    get<Planning[]>("plannings/")
+      .then((ps) => {
+        setPlannings(ps);
+        if (ps.length > 0) setPlanningId(ps[0].id);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return <div className="flex justify-center py-8"><Spinner /></div>;
+  }
+
+  if (plannings.length === 0) {
+    return (
+      <p className="text-sm text-black/50">
+        Aucun planning disponible. Créez-en un dans la section &laquo; Plannings &raquo;.
+      </p>
+    );
+  }
+
+  const planning = plannings.find((p) => p.id === planningId);
+
+  return (
+    <div className="space-y-4">
+      <Field label="Planning">
+        <Select value={planningId ?? ""} onChange={(e) => setPlanningId(Number(e.target.value))}>
+          {plannings.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.nom} ({p.date_debut} → {p.date_fin})
+            </option>
+          ))}
+        </Select>
+      </Field>
+      {planning && (
+        <ApplyForm
+          key={planning.id}
+          planningId={planning.id}
+          date={planning.date_debut}
+          dateDebut={planning.date_debut}
+          dateFin={planning.date_fin}
+          journeeTypes={[jt]}
+          onSuccess={onClose}
+        />
+      )}
+    </div>
+  );
+}
+
 function JourneeTypesSection() {
   const toast = useToast();
   const confirm = useConfirm();
@@ -3036,6 +3090,7 @@ function JourneeTypesSection() {
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<number | null>(null);
   const [wizardEdit, setWizardEdit] = useState<{ jt: JourneeType; blocs: Bloc[] } | null>(null);
+  const [applyingJt, setApplyingJt] = useState<JourneeType | null>(null);
 
   const openWizardEdit = async (jt: JourneeType) => {
     try {
@@ -3139,6 +3194,12 @@ function JourneeTypesSection() {
                 </div>
                 <div className="flex gap-2">
                   <Btn
+                    label="Appliquer"
+                    icon={Wand2}
+                    onClick={() => setApplyingJt(jt)}
+                    small
+                  />
+                  <Btn
                     label="Modifier"
                     icon={Pencil}
                     onClick={() => openWizardEdit(jt)}
@@ -3209,6 +3270,23 @@ function JourneeTypesSection() {
               setWizardEdit(null);
               toast.success("Journée type mise à jour");
               load();
+            }}
+          />
+        )}
+      </Modal>
+
+      <Modal
+        open={!!applyingJt}
+        onClose={() => setApplyingJt(null)}
+        title={applyingJt ? `Appliquer — ${applyingJt.nom}` : ""}
+        wide
+      >
+        {applyingJt && (
+          <ApplyJourneeTypeToPlanning
+            jt={applyingJt}
+            onClose={() => {
+              setApplyingJt(null);
+              toast.success("Gabarit appliqué");
             }}
           />
         )}
