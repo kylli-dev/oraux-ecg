@@ -2915,6 +2915,7 @@ function JourneeTypeEditor({ jt, onRename }: { jt: JourneeType; onRename?: (newN
                 dureeDefaut={jt.duree_defaut_minutes}
                 pauseDefaut={jt.pause_defaut_minutes}
                 preparationDefaut={jt.preparation_defaut_minutes}
+                isFirstBloc={blocs.length === 0}
                 onSuccess={() => { setShowAdd(false); load(); }}
               />
             </motion.div>
@@ -4180,12 +4181,14 @@ function AddBlocForm({
   dureeDefaut,
   pauseDefaut,
   preparationDefaut,
+  isFirstBloc,
   onSuccess,
 }: {
   jtId: number;
   dureeDefaut: number;
   pauseDefaut: number;
   preparationDefaut: number;
+  isFirstBloc?: boolean;
   onSuccess: () => void;
 }) {
   const [form, setForm] = useState({
@@ -4223,6 +4226,32 @@ function AddBlocForm({
         body.salles_par_matiere = form.salles_par_matiere;
       }
       await post(`journee-types/${jtId}/blocs`, body);
+      onSuccess();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Crée d'un coup un bloc matin + un bloc après-midi séparés par une vraie pause,
+  // pour que la distinction Matin/Après-midi de la vue matricielle reste valide
+  // (au lieu d'un unique bloc étiré sur toute la journée).
+  const submitMatinApresMidi = async () => {
+    if (!form.matieres.length) { setError("Sélectionnez au moins une matière"); return; }
+    setLoading(true);
+    setError("");
+    try {
+      const commun = {
+        type_bloc: "GENERATION",
+        matieres: form.matieres,
+        duree_minutes: form.duree_minutes,
+        pause_minutes: form.pause_minutes,
+        preparation_minutes: form.preparation_minutes,
+        salles_par_matiere: form.salles_par_matiere,
+      };
+      await post(`journee-types/${jtId}/blocs`, { ...commun, ordre: 1, heure_debut: "08:00:00", heure_fin: "13:00:00" });
+      await post(`journee-types/${jtId}/blocs`, { ...commun, ordre: 2, heure_debut: "14:00:00", heure_fin: "18:00:00" });
       onSuccess();
     } catch (e: any) {
       setError(e.message);
@@ -4319,9 +4348,24 @@ function AddBlocForm({
           </Field>
         </>
       )}
+      {isFirstBloc && form.type_bloc === "GENERATION" && (
+        <div className="rounded-lg border border-dashed border-black/15 bg-black/[0.02] p-2.5 space-y-1">
+          <Btn
+            label="Créer matin (08:00-13:00) + après-midi (14:00-18:00) avec pause déjeuner"
+            icon={Plus}
+            onClick={submitMatinApresMidi}
+            disabled={loading || form.matieres.length === 0}
+            small
+            variant="ghost"
+          />
+          <p className="text-[11px] text-black/35">
+            Recommandé : garde la distinction Matin/Après-midi valide, avec ces matières.
+          </p>
+        </div>
+      )}
       <ErrorMsg msg={error} />
       <Btn
-        label={loading ? "Ajout…" : "Ajouter le bloc"}
+        label={loading ? "Ajout…" : "Ajouter un seul bloc"}
         onClick={submit}
         disabled={loading}
         small

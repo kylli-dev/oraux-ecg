@@ -709,6 +709,31 @@ function BlocsEditor({ jtId, blocs, onReload }) {
     finally { setAdding(false); }
   }
 
+  // Crée d'un coup un bloc matin + un bloc après-midi séparés par une vraie pause,
+  // pour que la distinction Matin/Après-midi de la vue matricielle reste valide
+  // (au lieu d'un unique bloc étiré sur toute la journée).
+  async function addMatinApresMidi() {
+    if (!addForm.matieres.length) { setAddErr("Sélectionnez au moins une matière"); return; }
+    setAdding(true); setAddErr("");
+    const maxOrdre = blocs.length > 0 ? Math.max(...blocs.map((b) => b.ordre)) : 0;
+    try {
+      await apiFetch("POST", `journee-types/${jtId}/blocs`, {
+        type_bloc: "GENERATION", ordre: maxOrdre + 1,
+        heure_debut: "08:00", heure_fin: "13:00",
+        matieres: addForm.matieres, salles_par_matiere: 1,
+      });
+      await apiFetch("POST", `journee-types/${jtId}/blocs`, {
+        type_bloc: "GENERATION", ordre: maxOrdre + 2,
+        heure_debut: "14:00", heure_fin: "18:00",
+        matieres: addForm.matieres, salles_par_matiere: 1,
+      });
+      setShowAdd(false);
+      setAddForm({ type_bloc: "GENERATION", heure_debut: "08:00", heure_fin: "12:00", matieres: [] });
+      onReload();
+    } catch (e) { setAddErr(e.message); }
+    finally { setAdding(false); }
+  }
+
   return (
     <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-5 space-y-3">
       <div className="flex items-center justify-between">
@@ -997,6 +1022,22 @@ function BlocsEditor({ jtId, blocs, onReload }) {
 
               {addErr && <p className="text-xs text-red-500">{addErr}</p>}
 
+              {blocs.length === 0 && addForm.type_bloc === "GENERATION" && (
+                <div className="rounded-lg border border-dashed p-2.5" style={{ borderColor: ENSAE_RED + "30", backgroundColor: ENSAE_RED + "08" }}>
+                  <button
+                    onClick={addMatinApresMidi}
+                    disabled={adding || addForm.matieres.length === 0}
+                    className="flex items-center gap-1.5 text-xs font-medium transition disabled:opacity-40"
+                    style={{ color: ENSAE_RED }}
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Créer matin (08:00-13:00) + après-midi (14:00-18:00) avec pause déjeuner
+                  </button>
+                  <p className="text-[11px] text-black/35 mt-1">
+                    Recommandé : garde la distinction Matin/Après-midi valide, avec ces matières.
+                  </p>
+                </div>
+              )}
+
               <div className="flex gap-2">
                 <button
                   onClick={addBloc}
@@ -1005,7 +1046,7 @@ function BlocsEditor({ jtId, blocs, onReload }) {
                   style={{ backgroundColor: ENSAE_RED }}
                 >
                   {adding ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-                  Ajouter
+                  Ajouter un seul créneau
                 </button>
                 <button
                   onClick={() => { setShowAdd(false); setAddErr(""); }}
