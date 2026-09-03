@@ -3303,6 +3303,20 @@ function minutesToHM(total: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+// Mémorise la dernière durée de pause déjeuner saisie (par admin, dans ce navigateur),
+// pour la reproposer par défaut au lieu de retomber sur une valeur figée à chaque fois
+// qu'on bascule en mode "journée complète" ou qu'on crée un nouveau gabarit.
+const PAUSE_MIDI_STORAGE_KEY = "oraux_admin_pause_midi_minutes";
+function getRememberedPauseMidi(): number {
+  if (typeof window === "undefined") return 60;
+  const v = Number(window.localStorage.getItem(PAUSE_MIDI_STORAGE_KEY));
+  return v > 0 ? v : 60;
+}
+function rememberPauseMidi(minutes: number) {
+  if (typeof window === "undefined" || minutes <= 0) return;
+  try { window.localStorage.setItem(PAUSE_MIDI_STORAGE_KEY, String(minutes)); } catch { /* ignore */ }
+}
+
 const TRIPLET_BG = [
   "#FEF9C3","#DCFCE7","#DBEAFE","#FCE7F3","#FEE2E2",
   "#FFEDD5","#F3E8FF","#ECFDF5","#E0F2FE",
@@ -3681,7 +3695,9 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
 
     const isJC = p.mode === "journee-complete";
 
-    // Quand on bascule en journée complète, forcer 1 seul bloc avec 1h de pause déjeuner
+    // Quand on bascule en journée complète, reprendre la dernière durée de pause
+    // déjeuner utilisée par l'admin (mémorisée dans ce navigateur) plutôt qu'une
+    // valeur figée à 60min.
     const switchMode = (m: WizardParams["mode"]) => {
       if (m === "journee-complete") {
         setP(prev => ({
@@ -3692,7 +3708,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
             heure_debut: "08:30",
             heure_fin: "18:30",
             nb_slots: null,
-            pause_midi_minutes: 60,
+            pause_midi_minutes: prev.blocs[0].pause_midi_minutes > 0 ? prev.blocs[0].pause_midi_minutes : getRememberedPauseMidi(),
             pause_midi_after: null,
           }],
         }));
@@ -3859,6 +3875,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                   };
 
                   const updatePauseMidi = (minutes: number) => {
+                    rememberPauseMidi(minutes);
                     setP(prev => ({
                       ...prev,
                       blocs: prev.blocs.map((b, i) => {
