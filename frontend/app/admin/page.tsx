@@ -3347,47 +3347,18 @@ type MatrixRow = {
   isBonus?: boolean;
 };
 
-function gcd(a: number, b: number): number {
-  return b === 0 ? a : gcd(b, a % b);
-}
-
-// Trouve le step optimal pour K créneaux, N matières (modèle K-libre).
-//
-// Contrainte temporelle stricte (pour tout candidat, y compris les cas de boucle) :
-//   s ≥ minGap=2  ET  K-(N-1)×s ≥ minGap=2
-//   → maxStep = floor((K-2)/(N-1))
-//
-// Priorité 1 — gap maximal : targetStep = min(5, maxStep)
-//   gap candidat = (step - 2) × interval (ex. step=5 → 1h30 avec interval=30min)
-// Priorité 2 — rotation connectée : gcd(s,K)=1, sinon sous-groupes acceptés
-//
-// Règle : si le meilleur step copremier donne gap=0min, on préfère targetStep même avec sous-groupes.
-// Exemples :
-//   K=9,  N=3 → maxStep=3, targetStep=3, bestCoprime=2 (gap=0) → return 3 (gap=30min, sous-groupes)
-//   K=16, N=3 → maxStep=7, targetStep=5, bestCoprime=5 (gcd=1) → return 5 (gap=1h30, connecté)
-//   K=18, N=3 → maxStep=8, targetStep=5, bestCoprime=5 (gcd=1) → return 5 (gap=1h30, connecté)
-//   K=21, N=3 → maxStep=9, targetStep=5, bestCoprime=5 (gcd=1) → return 5 (gap=1h30, connecté)
-function bestStep(K: number, N: number): number {
-  if (N <= 1) return 1;
-  const maxStep = Math.floor((K - 2) / (N - 1));
-  if (maxStep < 1) return 1;
-  const minGap = 2;   // ceil(slotDuration/interval) = ceil(60/30) = 2 — évite le chevauchement réel
-  const targetStep = Math.min(5, maxStep);
-
-  // Largest coprime step in [minGap, targetStep] (rotation connectée = pas de sous-groupes)
-  let bestCoprime = 0;
-  for (let s = targetStep; s >= minGap; s--) {
-    if (gcd(s, K) === 1) { bestCoprime = s; break; }
-  }
-
-  // Si le step copremier donne un gap positif, l'utiliser (pas de sacrifice de gap)
-  if (bestCoprime > minGap) return bestCoprime;
-
-  // Sinon, utiliser targetStep même avec sous-groupes (meilleur gap qu'un step copremier à 0min)
-  if (targetStep > minGap) return targetStep;
-
-  // Dernier recours : minGap (gap=0min, mais pas de chevauchement physique)
-  return minGap;
+// Pas de rotation — DOIT rester identique au calcul réellement utilisé par le backend
+// pour l'inscription des candidats (get_triplets / s_inscrire_triplet dans portal.py) :
+// offset = total_slots // N_rooms (division entière simple, sans optimisation).
+// Un aperçu plus "malin" (ex. un ancien modèle recherchant un pas premier avec K pour
+// maximiser l'écart) donnerait une prévisualisation qui ne correspond pas à ce que les
+// candidats obtiennent réellement en s'inscrivant — potentiellement un écart entre
+// épreuves différent de celui montré à l'admin. Si K < N, ce calcul redonne 0 : c'est le
+// même comportement dégénéré (toutes les matières au même horaire) que le vrai backend,
+// volontairement rendu visible ici plutôt que masqué.
+function rotationOffset(K: number, N: number): number {
+  if (N <= 0) return 1;
+  return Math.floor(K / N);
 }
 
 function blocCapacity(bloc: BlocWizard, configs: MatiereConfig[]): number {
@@ -3422,7 +3393,7 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
   const Kbonus = bloc.bonus_slots ?? 0;
   const Ktotal = Kregular + Kbonus;
   // Les bonus s'intègrent dans la même rotation : step calculé sur Ktotal
-  const step = bestStep(Ktotal, N);
+  const step = rotationOffset(Ktotal, N);
   const pauseAfter = bloc.pause_midi_after ?? Math.ceil(Kregular / 2);
 
   const rows: MatrixRow[] = [];
