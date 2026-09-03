@@ -3618,6 +3618,17 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
         const oralBefore = blocRows.filter(r => !r.isPause).slice(0, bloc.pause_midi_after ?? Math.ceil(blocRows.filter(r => !r.isPause).length / 2));
         const oralAfter = blocRows.filter(r => !r.isPause).slice(oralBefore.length);
         if (oralBefore.length) await post(`journee-types/${jtId}/blocs`, { ...blocPayload, ordre: ordre++, heure_debut: oralBefore[0].deb_prepa + ":00", heure_fin: oralBefore[oralBefore.length - 1].fin_exam + ":00", nb_slots: oralBefore.length });
+        if (oralBefore.length && oralAfter.length) {
+          // La pause déjeuner devient un vrai bloc PAUSE (pas juste un trou horaire implicite
+          // entre deux blocs GENERATION), sur l'écart exact fin du matin -> début de la prépa
+          // de l'après-midi (voir le correctif de buildBlocRows qui garantit cette durée exacte).
+          await post(`journee-types/${jtId}/blocs`, {
+            type_bloc: "PAUSE",
+            ordre: ordre++,
+            heure_debut: oralBefore[oralBefore.length - 1].fin_exam + ":00",
+            heure_fin: oralAfter[0].deb_prepa + ":00",
+          });
+        }
         if (oralAfter.length) await post(`journee-types/${jtId}/blocs`, { ...blocPayload, ordre: ordre++, heure_debut: oralAfter[0].deb_prepa + ":00", heure_fin: oralAfter[oralAfter.length - 1].fin_exam + ":00", nb_slots: oralAfter.length });
       } else {
         await post(`journee-types/${jtId}/blocs`, { ...blocPayload, ordre: ordre++, heure_debut: bloc.heure_debut + ":00", heure_fin: blocRows[blocRows.length - 1].fin_exam + ":00", nb_slots: bloc.nb_slots ?? null });
