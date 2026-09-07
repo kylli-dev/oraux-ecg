@@ -205,8 +205,12 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
   const N = bloc.matieres.length;
   const Nsq = N * N;
   const isMatin = hmToMinutes(bloc.heure_debut) < 12 * 60;
-  const accentColor = isMatin ? "#F59E0B" : "#6366F1";
-  const accentBg = isMatin ? "#FFFBEB" : "#EEF2FF";
+  // Un bloc qui chevauche midi (démarre avant, finit après) ne peut pas être
+  // honnêtement étiqueté "Matin" en entier — c'était le cas avant : le label ne
+  // regardait que l'heure de début, jamais la fin réelle du bloc.
+  const isFullDay = isMatin && hmToMinutes(bloc.heure_fin) > 12 * 60;
+  const accentColor = isFullDay ? "#64748B" : isMatin ? "#F59E0B" : "#6366F1";
+  const accentBg = isFullDay ? "#F8FAFC" : isMatin ? "#FFFBEB" : "#EEF2FF";
 
   // N2 — row order + cell matrix
   const defaultOrder = matrix.map((r) => r.index);
@@ -360,13 +364,15 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
         className="flex items-center gap-2 px-4 py-2.5 rounded-xl mb-2"
         style={{ backgroundColor: accentBg, borderLeft: `4px solid ${accentColor}` }}
       >
-        {isMatin
+        {isFullDay
+          ? <LayoutGrid className="h-4 w-4 shrink-0" style={{ color: accentColor }} />
+          : isMatin
           ? <Sun className="h-4 w-4 shrink-0" style={{ color: accentColor }} />
           : <Sunset className="h-4 w-4 shrink-0" style={{ color: accentColor }} />
         }
         <div className="flex-1">
           <span className="font-semibold text-sm" style={{ color: accentColor }}>
-            {isMatin ? "Matin" : "Après-midi"}
+            {isFullDay ? "Journée complète" : isMatin ? "Matin" : "Après-midi"}
           </span>
           <span className="text-xs text-black/40 ml-2">
             {bloc.heure_debut?.slice(0, 5)} → {matrix.length > 0 ? matrix[matrix.length - 1]?.fin_exam : bloc.heure_fin?.slice(0, 5)}
@@ -1147,11 +1153,16 @@ export default function InterfaceAdminENSAEPlanning() {
   // Nsq théorique = somme des N² (utilisé pour l'indexation des triplets)
   const Nsq = blocGeneration.reduce((s, b) => s + b.matieres.length ** 2, 0) || N * N;
   const totalCandidats = candidatsParBloc ? candidatsParBloc * blocGeneration.length : Nsq;
-  // Créneaux réels = ce que buildMatrix génère en respectant heure_fin
+  // Créneaux réels = ce que buildMatrix génère en respectant heure_fin.
+  // Chaque ligne représente une position de rotation (= un candidat), pas un créneau
+  // horaire à multiplier par N — actualCreneaux et totalCandidats sont déjà dans la
+  // même unité (nombre de candidats), donc pas de "* N" ici (l'ancienne formule
+  // rendait ce compteur quasi toujours négatif, donc silencieux même en cas de
+  // débordement partiel réel).
   const actualCreneaux = selectedJT
     ? blocGeneration.reduce((s, b) => s + buildMatrix(b, selectedJT, 0, candidatsParBloc).length, 0)
     : 0;
-  const debordements = totalCandidats - actualCreneaux * N;
+  const debordements = Math.max(0, totalCandidats - actualCreneaux);
 
   return (
     <div className="min-h-screen bg-[#F5F5F5] text-black">

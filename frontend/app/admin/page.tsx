@@ -3401,6 +3401,8 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
   const maxPrep = Math.max(...configs.map(c => c.preparation_minutes));
   const [hh, mm] = bloc.heure_debut.split(":").map(Number);
   const start = hh * 60 + mm;
+  const [efh, efm] = bloc.heure_fin.split(":").map(Number);
+  const end = efh * 60 + efm;
   const interval = maxDuree + bloc.pause_minutes;
   const pauseMinutes = bloc.pause_midi_minutes ?? 0;
   const Kregular = blocCapacity(bloc, configs);
@@ -3426,6 +3428,11 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
       rows.push({ deb_prepa: minutesToHM(pauseDisplayStart), deb_exam: minutesToHM(pauseDisplayStart), fin_exam: minutesToHM(pauseDisplayEnd), candidates: [], bloc_idx, isPause: true });
       t = t + pauseMinutes;
     }
+    // Même condition d'arrêt que generate_in_range côté backend (t + prépa + durée <= fin) :
+    // si ce créneau ne rentre plus dans la fenêtre, on arrête ici plutôt que de continuer à
+    // générer au-delà de heure_fin. Sans ça, un nb_slots (ou des bonus) trop ambitieux pour la
+    // fenêtre produisait un aperçu qui dépassait silencieusement l'heure de fin annoncée.
+    if (t + maxPrep + maxDuree > end) break;
     rows.push({
       deb_prepa: minutesToHM(t),
       deb_exam: minutesToHM(t + maxPrep),
@@ -3691,7 +3698,14 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
   // ── Étape 1 ─────────────────────────────────────────────────────────────────
   if (step === 1) {
     const activeMatieres = allMatieres.filter(m => m.active);
-    const blocLabel = (heure_debut: string) => parseInt(heure_debut) < 13 ? "Matin" : "Après-midi";
+    const blocLabel = (heure_debut: string, heure_fin: string) => {
+      const debutH = parseInt(heure_debut);
+      const finH = parseInt(heure_fin);
+      // Un bloc qui chevauche midi ne peut pas être honnêtement étiqueté "Matin" en entier
+      // (c'était le cas avant : le label ne regardait que l'heure de début).
+      if (debutH < 12 && finH > 12) return "Journée complète";
+      return debutH < 13 ? "Matin" : "Après-midi";
+    };
 
     const isJC = p.mode === "journee-complete";
 
@@ -3772,7 +3786,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
               <div key={idx} className="rounded-xl border border-black/10 bg-gray-50/60 p-4 space-y-3">
                 {/* En-tête du bloc */}
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-black/70">Bloc {idx + 1} — {blocLabel(bloc.heure_debut)}</span>
+                  <span className="text-sm font-semibold text-black/70">Bloc {idx + 1} — {blocLabel(bloc.heure_debut, bloc.heure_fin)}</span>
                   <div className="flex items-center gap-3">
                     {N > 0 && (
                       <span className="text-xs text-green-700 font-medium">
@@ -3859,6 +3873,12 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                     : null;
                   const toHM = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
                   const computedFin = computedFinMin !== null ? toHM(computedFinMin) : null;
+                  // Si la fin calculée dépasse la fin de bloc réellement enregistrée, les derniers
+                  // créneaux demandés (nb_slots / bonus) ne rentreront pas dans la fenêtre et seront
+                  // coupés à la génération (comme le fera aussi le backend à l'application réelle).
+                  const [befh, befm] = bloc.heure_fin.split(":").map(Number);
+                  const blocEndMin = befh * 60 + befm;
+                  const depasseFenetre = computedFinMin !== null && computedFinMin > blocEndMin;
 
                   const updateNbSlots = (val: number | null) => {
                     setP(prev => ({
@@ -3898,7 +3918,14 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                         <Field label="Pause entre créneaux (min)">
                           <Input type="number" value={bloc.pause_minutes} onChange={(e) => setBloc(idx, "pause_minutes", Number(e.target.value))} min={0} max={120} />
                         </Field>
-                        <Field label="Nb créneaux oraux" hint={computedFin ? `→ fin à ${computedFin}` : autoTotal > 0 ? `vide = ${autoTotal} calculé` : ""}>
+                        <Field
+                          label="Nb créneaux oraux"
+                          hint={
+                            depasseFenetre ? `⚠ dépasse ${bloc.heure_fin} — coupé à la génération`
+                            : computedFin ? `→ fin à ${computedFin}`
+                            : autoTotal > 0 ? `vide = ${autoTotal} calculé` : ""
+                          }
+                        >
                           <Input
                             type="number"
                             value={bloc.nb_slots ?? ""}
@@ -3916,6 +3943,13 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                           />
                         </Field>
                       </div>
+
+                      {depasseFenetre && (
+                        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 flex items-center gap-2">
+                          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                          Le nombre de créneaux demandé finirait à {computedFin}, après la fin du bloc ({bloc.heure_fin}) : les derniers créneaux seront coupés à la génération, comme le fera aussi l&apos;application réelle.
+                        </div>
+                      )}
 
                       {/* Pause de midi — visible seulement en mode journée complète */}
                       {isJC && (
@@ -3986,7 +4020,14 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
     });
   };
 
-  const blocLabel = (heure_debut: string) => parseInt(heure_debut) < 13 ? "Matin" : "Après-midi";
+  const blocLabel = (heure_debut: string, heure_fin: string) => {
+      const debutH = parseInt(heure_debut);
+      const finH = parseInt(heure_fin);
+      // Un bloc qui chevauche midi ne peut pas être honnêtement étiqueté "Matin" en entier
+      // (c'était le cas avant : le label ne regardait que l'heure de début).
+      if (debutH < 12 && finH > 12) return "Journée complète";
+      return debutH < 13 ? "Matin" : "Après-midi";
+    };
 
   return (
     <div className="space-y-4">
@@ -4072,7 +4113,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                   {isNewBloc && (
                     <tr>
                       <td colSpan={totalCols} className="px-3 py-1.5 bg-black/[0.04] text-[11px] font-semibold text-black/50 uppercase tracking-wide">
-                        Bloc {row.bloc_idx + 1} — {blocLabel(p.blocs[row.bloc_idx].heure_debut)} · {p.blocs[row.bloc_idx].heure_debut} → {matrix.filter(r => r.bloc_idx === row.bloc_idx && !r.isPause).slice(-1)[0]?.fin_exam ?? p.blocs[row.bloc_idx].heure_fin}
+                        Bloc {row.bloc_idx + 1} — {blocLabel(p.blocs[row.bloc_idx].heure_debut, p.blocs[row.bloc_idx].heure_fin)} · {p.blocs[row.bloc_idx].heure_debut} → {matrix.filter(r => r.bloc_idx === row.bloc_idx && !r.isPause).slice(-1)[0]?.fin_exam ?? p.blocs[row.bloc_idx].heure_fin}
                       </td>
                     </tr>
                   )}
