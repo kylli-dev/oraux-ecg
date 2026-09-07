@@ -48,8 +48,13 @@ function buildMatrix(bloc, jtDefaults = {}, tripletOffset = 0, candidatsParBloc 
   const { matieres, duree_minutes, preparation_minutes, pause_minutes, heure_debut, heure_fin } = bloc;
   const N = matieres.length;
   if (N === 0) return [];
-  // Rotation flexible : totalVirtuel = plus petit multiple de N ≥ C
-  const C = (candidatsParBloc != null && candidatsParBloc > 0) ? candidatsParBloc : N * N;
+  // Rotation flexible : totalVirtuel = plus petit multiple de N ≥ C.
+  // candidatsParBloc est une surcharge MANUELLE et globale (le champ "Candidats / session"),
+  // volontairement appliquée à tous les blocs pour prévisualiser un scénario uniforme.
+  // Tant qu'elle n'est pas saisie, chaque bloc doit refléter SON PROPRE nb_slots enregistré
+  // (pas un N² générique identique pour tous les blocs, qui masquait les vraies valeurs
+  // différentes d'un bloc à l'autre — ex. bloc matin à 10 créneaux, bloc après-midi à 8).
+  const C = (candidatsParBloc != null && candidatsParBloc > 0) ? candidatsParBloc : (bloc.nb_slots ?? N * N);
   const totalVirtuel = Math.ceil(C / N) * N;
   const duree = duree_minutes ?? jtDefaults.duree_defaut_minutes ?? 20;
   const prep = preparation_minutes ?? jtDefaults.preparation_defaut_minutes ?? 0;
@@ -60,15 +65,21 @@ function buildMatrix(bloc, jtDefaults = {}, tripletOffset = 0, candidatsParBloc 
   const rows = [];
   for (let i = 0; i < totalVirtuel; i++) {
     const dPrepa = start + i * (duree + pause);
-    if (dPrepa >= end) break;
     const dExam = dPrepa + prep;
     const fExam = dExam + duree;
+    // L'ancienne condition (dPrepa >= end) ne vérifiait que le DÉBUT de la préparation,
+    // pas si l'examen avait le temps de se terminer avant heure_fin : une ligne pouvait
+    // donc être ajoutée (avec juste un flag "overflow") alors que sa fin dépassait déjà
+    // la fin du bloc — d'où un nombre de cellules affiché incohérent avec heure_fin.
+    // On arrête désormais dès que la ligne ne rentre plus entièrement, comme le fait le
+    // vrai moteur de génération (generate_in_range côté backend).
+    if (fExam > end) break;
     rows.push({
       index: i,
       deb_prepa: minutesToHM(dPrepa),
       deb_exam: minutesToHM(dExam),
       fin_exam: minutesToHM(fExam),
-      overflow: fExam > end,
+      overflow: false,
       candidates: matieres.map((_, j) => tripletOffset + ((i - j * N) % totalVirtuel + totalVirtuel) % totalVirtuel),
       idleMask: matieres.map((_, j) => ((i - j * N) % totalVirtuel + totalVirtuel) % totalVirtuel >= C),
     });
@@ -200,7 +211,7 @@ function DraggableTripletCell({ k, statut, onClick, blocId, rowIdx, matIdx }) {
 
 // ── Matrice journée type ───────────────────────────────────────────────────────
 function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletOffset = 0, onReload, candidatsParBloc = null }) {
-  const C = (candidatsParBloc != null && candidatsParBloc > 0) ? candidatsParBloc : bloc.matieres.length ** 2;
+  const C = (candidatsParBloc != null && candidatsParBloc > 0) ? candidatsParBloc : (bloc.nb_slots ?? bloc.matieres.length ** 2);
   const matrix = buildMatrix(bloc, jt, tripletOffset, candidatsParBloc);
   const N = bloc.matieres.length;
   const Nsq = N * N;
@@ -1098,10 +1109,10 @@ export default function InterfaceAdminENSAEPlanning() {
       setBlocs(b ?? []);
       if (!silent) {
         setTripletStatuts({});
-        // Initialise l'aperçu avec le nb_slots réellement enregistré sur le premier bloc
-        // GENERATION, plutôt que de rester sur le générique N² tant que l'admin n'y touche pas.
-        const genBloc = (b ?? []).find((x) => x.type_bloc === "GENERATION");
-        setCandidatsParBloc(genBloc?.nb_slots && genBloc.nb_slots > 0 ? genBloc.nb_slots : null);
+        // Chaque bloc utilise désormais son propre nb_slots par défaut (buildMatrix /
+        // MatriceJourneeType) : l'état partagé ne doit rester qu'une surcharge "what if"
+        // explicite de l'admin, jamais une valeur empruntée à un bloc en particulier.
+        setCandidatsParBloc(null);
       }
     } catch {
       setBlocs([]);
