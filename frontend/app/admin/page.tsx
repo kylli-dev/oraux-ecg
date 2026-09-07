@@ -3416,17 +3416,19 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
   let t = start;
   for (let oral = 0; oral < Ktotal; oral++) {
     if (pauseMinutes > 0 && oral === pauseAfter) {
-      // La pause démarre exactement à la fin du dernier oral (pas au prochain deb_prepa,
-      // qui inclurait déjà le temps de préparation — purement pour l'affichage du bandeau
-      // "Pause déjeuner" dans la grille). La rotation reprend elle pauseMinutes après
-      // l'instant où le prochain oral aurait normalement commencé (t) : c'est ce décalage
-      // direct sur t, et non l'ancrage sur la fin d'exam affichée, qui garantit que chaque
-      // salle d'examen (deb_exam → fin_exam consécutifs) bénéficie d'exactement pauseMinutes
-      // de coupure, et que l'heure de fin totale corresponde à ce qui est annoncé.
+      // La pause démarre exactement à la fin du dernier oral. Le bloc PAUSE réellement
+      // enregistré en base (saveBlocsToJt) va de la fin de ce dernier oral (fin_exam) au
+      // deb_prepa du prochain oral — donc pour que ce bloc PAUSE dure exactement
+      // pauseMinutes (ce que l'admin a tapé, et ce que montre déjà ce bandeau), le prochain
+      // oral doit reprendre à pauseDisplayEnd, pas pauseMinutes après le t théorique.
+      // Contrepartie assumée : la préparation du prochain oral démarre pile à la fin du
+      // bloc PAUSE affiché, donc la coupure réelle en salle d'examen (fin_exam → deb_exam)
+      // devient pauseMinutes + preparation_minutes, un peu plus longue que pauseMinutes —
+      // c'est le bloc PAUSE visible qui fait foi, pas la seule salle d'examen.
       const pauseDisplayStart = t + (maxPrep + maxDuree - interval);
       const pauseDisplayEnd = pauseDisplayStart + pauseMinutes;
       rows.push({ deb_prepa: minutesToHM(pauseDisplayStart), deb_exam: minutesToHM(pauseDisplayStart), fin_exam: minutesToHM(pauseDisplayEnd), candidates: [], bloc_idx, isPause: true });
-      t = t + pauseMinutes;
+      t = pauseDisplayEnd;
     }
     // Même condition d'arrêt que generate_in_range côté backend (t + prépa + durée <= fin) :
     // si ce créneau ne rentre plus dans la fenêtre, on arrête ici plutôt que de continuer à
@@ -3619,13 +3621,13 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
         if (oralBefore.length && oralAfter.length) {
           // La pause déjeuner devient un vrai bloc PAUSE (pas juste un trou horaire implicite
           // entre deux blocs GENERATION), sur l'écart fin du matin -> début de la prépa de
-          // l'après-midi. Ce n'est PAS toujours égal à pause_midi_minutes : la rotation garantit
-          // une vraie coupure de pause_midi_minutes côté salle d'EXAMEN (fin_exam -> deb_exam),
-          // mais la PRÉPARATION du premier oral de l'après-midi peut démarrer jusqu'à
-          // preparation_minutes avant, empiétant sur la fin de la pause déjeuner elle-même.
-          // Si cet empiètement mange toute la pause (voire plus), il n'y a plus de fenêtre
-          // valide pour un bloc PAUSE — on l'omet alors silencieusement (le trou horaire entre
-          // les deux blocs GENERATION reste correct, juste sans entité PAUSE explicite).
+          // l'après-midi. Grâce au calage de buildBlocRows sur pauseDisplayEnd, cet écart vaut
+          // désormais toujours exactement pause_midi_minutes : le bloc PAUSE affiché correspond
+          // pile à ce que l'admin a saisi (contrepartie : la préparation du premier oral de
+          // l'après-midi démarre juste après, donc la coupure réelle en salle d'examen est un
+          // peu plus longue que pause_midi_minutes — voir buildBlocRows). Le garde-fou ci-dessous
+          // ne sert donc plus qu'à couvrir un éventuel cas dégénéré (pause_midi_minutes = 0
+          // filtré plus haut, ou données legacy), pas un empiètement normal.
           const [ph, pm] = oralBefore[oralBefore.length - 1].fin_exam.split(":").map(Number);
           const [nh, nm] = oralAfter[0].deb_prepa.split(":").map(Number);
           if (ph * 60 + pm < nh * 60 + nm) {
