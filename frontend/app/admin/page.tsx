@@ -3362,17 +3362,20 @@ type MatrixRow = {
 };
 
 // Pas de rotation — DOIT rester identique au calcul réellement utilisé par le backend
-// pour l'inscription des candidats (get_triplets / s_inscrire_triplet dans portal.py) :
-// offset = total_slots // N_rooms (division entière simple, sans optimisation).
-// Un aperçu plus "malin" (ex. un ancien modèle recherchant un pas premier avec K pour
-// maximiser l'écart) donnerait une prévisualisation qui ne correspond pas à ce que les
-// candidats obtiennent réellement en s'inscrivant — potentiellement un écart entre
-// épreuves différent de celui montré à l'admin. Si K < N, ce calcul redonne 0 : c'est le
-// même comportement dégénéré (toutes les matières au même horaire) que le vrai backend,
-// volontairement rendu visible ici plutôt que masqué.
-function rotationOffset(K: number, N: number): number {
-  if (N <= 0) return 1;
-  return Math.floor(K / N);
+// pour l'inscription des candidats (_rotation_offset dans portal.py, partagée par
+// get_triplets / s_inscrire_triplet) : le plus petit écart (en nombre de créneaux) entre
+// deux passages d'un même candidat qui ne crée aucun chevauchement horaire réel (fin d'un
+// examen après le début de la préparation suivante), plutôt que d'étaler systématiquement
+// chaque matière sur toute la journée (ancien modèle total_slots // N_rooms, qui pouvait
+// représenter plusieurs heures d'écart). Ici, au sein d'un même bloc, l'intervalle entre
+// deux créneaux consécutifs d'une même salle est constant (`interval`), donc l'écart
+// minimal viable se réduit simplement à ceil(slotDuration / interval) — la version
+// backend, elle, doit composer avec des horaires réels potentiellement hétérogènes
+// (plusieurs blocs de durées différentes, trou de pause déjeuner), d'où un calcul par
+// horaires plutôt que par une simple division.
+function rotationOffset(slotDuration: number, interval: number): number {
+  if (interval <= 0) return 1;
+  return Math.max(1, Math.ceil(slotDuration / interval));
 }
 
 function blocCapacity(bloc: BlocWizard, configs: MatiereConfig[]): number {
@@ -3404,12 +3407,12 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
   const [efh, efm] = bloc.heure_fin.split(":").map(Number);
   const end = efh * 60 + efm;
   const interval = maxDuree + bloc.pause_minutes;
+  const slotDuration = maxPrep + maxDuree;
   const pauseMinutes = bloc.pause_midi_minutes ?? 0;
   const Kregular = blocCapacity(bloc, configs);
   const Kbonus = bloc.bonus_slots ?? 0;
   const Ktotal = Kregular + Kbonus;
-  // Les bonus s'intègrent dans la même rotation : step calculé sur Ktotal
-  const step = rotationOffset(Ktotal, N);
+  const step = rotationOffset(slotDuration, interval);
   const pauseAfter = bloc.pause_midi_after ?? Math.ceil(Kregular / 2);
 
   const rows: MatrixRow[] = [];

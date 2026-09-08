@@ -361,6 +361,53 @@ def _cutoff_date(planning: Planning) -> Date:
     return today_paris + timedelta(days=1)        # avant préavis : J+1 minimum
 
 
+def _rotation_offset(all_day_epreuves: list, all_slots: list, N_rooms: int) -> int:
+    """
+    Écart (en nombre de créneaux) entre deux passages d'un même candidat dans la rotation
+    circulaire (k + i × offset). L'ancien modèle utilisait offset = total_slots // N_rooms,
+    qui étale systématiquement chaque matière sur toute la journée (potentiellement
+    plusieurs heures d'écart entre deux passages d'un même candidat, même quand un écart
+    bien plus petit suffirait).
+
+    On cherche ici le plus petit écart physiquement viable : celui pour lequel, en avançant
+    de `o` créneaux dans la liste triée des horaires, la PRÉPARATION du créneau suivant
+    (qui démarre `preparation_minutes` avant heure_debut, PAS à heure_debut) ne commence
+    jamais avant la fin de l'examen précédent — donc aucun chevauchement horaire réel pour
+    le candidat, prépa comprise. Calculé à partir des heure_fin/heure_debut/
+    preparation_minutes réels des épreuves (et non d'un intervalle supposé constant) : reste
+    valable même si les blocs ont des durées différentes ou qu'il y a un trou (pause
+    déjeuner) entre deux créneaux. Retombe sur l'ancien comportement (total_slots //
+    N_rooms) si aucun écart plus petit n'est sûr, par sécurité.
+    """
+    total_slots = len(all_slots)
+    if N_rooms <= 0 or total_slots == 0:
+        return 1
+
+    def to_min(t) -> int:
+        return t.hour * 60 + t.minute
+
+    fin_max_par_slot: dict = {}
+    deb_prepa_min_par_slot: dict = {}
+    for e in all_day_epreuves:
+        fin_min = to_min(e.heure_fin)
+        if fin_min > fin_max_par_slot.get(e.heure_debut, -1):
+            fin_max_par_slot[e.heure_debut] = fin_min
+
+        deb_prepa = to_min(e.heure_debut) - (e.preparation_minutes or 0)
+        if deb_prepa < deb_prepa_min_par_slot.get(e.heure_debut, deb_prepa + 1):
+            deb_prepa_min_par_slot[e.heure_debut] = deb_prepa
+
+    fallback = total_slots // N_rooms or 1
+    for o in range(1, total_slots):
+        if all(
+            fin_max_par_slot.get(all_slots[idx], to_min(all_slots[idx]))
+            <= deb_prepa_min_par_slot.get(all_slots[idx + o], to_min(all_slots[idx + o]))
+            for idx in range(total_slots - o)
+        ):
+            return o
+    return fallback
+
+
 @router.get("/me/triplets", response_model=List[TripletOut])
 def get_triplets(
     candidat_id: int = Depends(require_candidat),
@@ -439,8 +486,8 @@ def get_triplets(
 
         all_slots = sorted(set(e.heure_debut for e in all_day_epreuves))
         total_slots = len(all_slots)
-        # offset = total_slots // N (rotation circulaire sur la journée entière)
-        offset = total_slots // N_rooms if N_rooms else 1
+        # Écart minimal viable entre deux passages d'un même candidat (voir _rotation_offset).
+        offset = _rotation_offset(all_day_epreuves, all_slots, N_rooms)
 
         # Index : (matiere, heure_debut) → liste d'épreuves LIBRES
         libres_multi: dict = _dd(list)
@@ -636,7 +683,8 @@ def s_inscrire_triplet(
 
     all_slots = sorted(set(e.heure_debut for e in all_day_epreuves))
     total_slots = len(all_slots)
-    offset = total_slots // N_rooms if N_rooms else 1
+    # Écart minimal viable entre deux passages d'un même candidat (voir _rotation_offset).
+    offset = _rotation_offset(all_day_epreuves, all_slots, N_rooms)
 
     libres_multi: dict = _dd(list)
     for e in all_day_epreuves:
