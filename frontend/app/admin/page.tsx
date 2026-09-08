@@ -3361,21 +3361,26 @@ type MatrixRow = {
   isBonus?: boolean;
 };
 
+// Marge minimale entre la fin d'un passage et le début de préparation du suivant, pour un
+// même candidat (le temps de changer de salle) — DOIT rester synchronisée avec
+// MARGIN_TRANSITION_MINUTES côté backend (portal.py) et InterfaceAdminENSAEPlanning.jsx.
+const MARGIN_TRANSITION_MINUTES = 5;
+
 // Pas de rotation — DOIT rester identique au calcul réellement utilisé par le backend
 // pour l'inscription des candidats (_rotation_offset dans portal.py, partagée par
 // get_triplets / s_inscrire_triplet) : le plus petit écart (en nombre de créneaux) entre
-// deux passages d'un même candidat qui ne crée aucun chevauchement horaire réel (fin d'un
-// examen après le début de la préparation suivante), plutôt que d'étaler systématiquement
-// chaque matière sur toute la journée (ancien modèle total_slots // N_rooms, qui pouvait
-// représenter plusieurs heures d'écart). Ici, au sein d'un même bloc, l'intervalle entre
-// deux créneaux consécutifs d'une même salle est constant (`interval`), donc l'écart
-// minimal viable se réduit simplement à ceil(slotDuration / interval) — la version
-// backend, elle, doit composer avec des horaires réels potentiellement hétérogènes
-// (plusieurs blocs de durées différentes, trou de pause déjeuner), d'où un calcul par
-// horaires plutôt que par une simple division.
+// deux passages d'un même candidat qui laisse au moins MARGIN_TRANSITION_MINUTES entre la
+// fin d'un examen et le début de la préparation suivante, plutôt que d'étaler
+// systématiquement chaque matière sur toute la journée (ancien modèle total_slots //
+// N_rooms, qui pouvait représenter plusieurs heures d'écart). Ici, au sein d'un même bloc,
+// l'intervalle entre deux créneaux consécutifs d'une même salle est constant (`interval`),
+// donc l'écart minimal viable se réduit simplement à ceil((slotDuration + marge) / interval)
+// — la version backend, elle, doit composer avec des horaires réels potentiellement
+// hétérogènes (plusieurs blocs de durées différentes, trou de pause déjeuner), d'où un
+// calcul par horaires plutôt que par une simple division.
 function rotationOffset(slotDuration: number, interval: number): number {
   if (interval <= 0) return 1;
-  return Math.max(1, Math.ceil(slotDuration / interval));
+  return Math.max(1, Math.ceil((slotDuration + MARGIN_TRANSITION_MINUTES) / interval));
 }
 
 function blocCapacity(bloc: BlocWizard, configs: MatiereConfig[]): number {

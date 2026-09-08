@@ -44,15 +44,21 @@ function hmToMinutes(t) {
   return h * 60 + m;
 }
 
+// Marge minimale entre la fin d'un passage et le début de préparation du suivant, pour un
+// même candidat (le temps de changer de salle) — DOIT rester synchronisée avec
+// MARGIN_TRANSITION_MINUTES côté backend (portal.py) et admin/page.tsx.
+const MARGIN_TRANSITION_MINUTES = 5;
+
 // Écart minimal viable (en nombre de lignes) entre deux passages d'un même candidat :
 // doit rester cohérent avec _rotation_offset côté backend (portal.py) et rotationOffset
 // côté wizard de création (admin/page.tsx). Au sein d'un même bloc, l'intervalle entre deux
 // lignes consécutives est constant (durée + pause_minutes), donc l'écart minimal se réduit
-// à ceil((préparation + durée) / intervalle) — le plus petit nombre de lignes à avancer pour
-// que la préparation du prochain passage ne chevauche jamais la fin de l'examen précédent.
+// à ceil((préparation + durée + marge) / intervalle) — le plus petit nombre de lignes à
+// avancer pour laisser au moins MARGIN_TRANSITION_MINUTES entre la fin d'un examen et le
+// début de la préparation du prochain passage du même candidat.
 function rotationOffset(slotDuration, interval) {
   if (interval <= 0) return 1;
-  return Math.max(1, Math.ceil(slotDuration / interval));
+  return Math.max(1, Math.ceil((slotDuration + MARGIN_TRANSITION_MINUTES) / interval));
 }
 
 function buildMatrix(bloc, jtDefaults = {}, tripletOffset = 0, candidatsParBloc = null) {

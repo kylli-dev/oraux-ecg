@@ -361,6 +361,12 @@ def _cutoff_date(planning: Planning) -> Date:
     return today_paris + timedelta(days=1)        # avant préavis : J+1 minimum
 
 
+# Marge minimale entre la fin d'un passage et le début de préparation du suivant, pour un
+# même candidat (le temps de changer de salle) — DOIT rester synchronisée avec
+# MARGIN_TRANSITION_MINUTES côté frontend (admin/page.tsx et InterfaceAdminENSAEPlanning.jsx).
+MARGIN_TRANSITION_MINUTES = 5
+
+
 def _rotation_offset(all_day_epreuves: list, all_slots: list, N_rooms: int) -> int:
     """
     Écart (en nombre de créneaux) entre deux passages d'un même candidat dans la rotation
@@ -372,12 +378,13 @@ def _rotation_offset(all_day_epreuves: list, all_slots: list, N_rooms: int) -> i
     On cherche ici le plus petit écart physiquement viable : celui pour lequel, en avançant
     de `o` créneaux dans la liste triée des horaires, la PRÉPARATION du créneau suivant
     (qui démarre `preparation_minutes` avant heure_debut, PAS à heure_debut) ne commence
-    jamais avant la fin de l'examen précédent — donc aucun chevauchement horaire réel pour
-    le candidat, prépa comprise. Calculé à partir des heure_fin/heure_debut/
-    preparation_minutes réels des épreuves (et non d'un intervalle supposé constant) : reste
-    valable même si les blocs ont des durées différentes ou qu'il y a un trou (pause
-    déjeuner) entre deux créneaux. Retombe sur l'ancien comportement (total_slots //
-    N_rooms) si aucun écart plus petit n'est sûr, par sécurité.
+    jamais avant MARGIN_TRANSITION_MINUTES après la fin de l'examen précédent — donc aucun
+    chevauchement horaire réel pour le candidat, prépa comprise, et une marge pour changer
+    de salle. Calculé à partir des heure_fin/heure_debut/preparation_minutes réels des
+    épreuves (et non d'un intervalle supposé constant) : reste valable même si les blocs ont
+    des durées différentes ou qu'il y a un trou (pause déjeuner) entre deux créneaux.
+    Retombe sur l'ancien comportement (total_slots // N_rooms) si aucun écart plus petit
+    n'est sûr, par sécurité.
     """
     total_slots = len(all_slots)
     if N_rooms <= 0 or total_slots == 0:
@@ -400,7 +407,7 @@ def _rotation_offset(all_day_epreuves: list, all_slots: list, N_rooms: int) -> i
     fallback = total_slots // N_rooms or 1
     for o in range(1, total_slots):
         if all(
-            fin_max_par_slot.get(all_slots[idx], to_min(all_slots[idx]))
+            fin_max_par_slot.get(all_slots[idx], to_min(all_slots[idx])) + MARGIN_TRANSITION_MINUTES
             <= deb_prepa_min_par_slot.get(all_slots[idx + o], to_min(all_slots[idx + o]))
             for idx in range(total_slots - o)
         ):
