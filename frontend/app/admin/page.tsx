@@ -370,7 +370,16 @@ type JourneeTypePreview = {
 // 30-60s à se réveiller. Le proxy /api/backend renvoie alors {code: "backend_waking_up"}
 // (503) au lieu de laisser Vercel couper brutalement : on réessaie automatiquement
 // en affichant une bannière, plutôt que de faire échouer l'action immédiatement.
+//
+// 3 tentatives rapprochées (2.5s / 5s / 7.5s) couvrent le réveil normal. Si le backend
+// reste injoignable après ça, c'est traité comme une vraie erreur de connexion (bannière
+// dédiée) plutôt que de continuer à afficher "réveil en cours" indéfiniment — mais en
+// production uniquement, une 4e tentative est retentée après 5 min (le cold start peut
+// exceptionnellement prendre plus longtemps sous charge) avant d'abandonner pour de bon.
+// En développement, 3 tentatives suffisent : pas de veille Render à attendre en local.
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const FAST_ATTEMPTS = 3;
+const LONG_RETRY_DELAY_MS = 5 * 60 * 1000;
 
 function notifyBackendWaking() {
   if (typeof window !== "undefined") window.dispatchEvent(new Event("backend-waking"));
@@ -378,13 +387,20 @@ function notifyBackendWaking() {
 function notifyBackendAwake() {
   if (typeof window !== "undefined") window.dispatchEvent(new Event("backend-awake"));
 }
+function notifyBackendConnectionError(retryInMs: number | null) {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("backend-connection-error", { detail: { retryInMs } }));
+  }
+}
 
 async function apiCall<T = unknown>(
   method: string,
   path: string,
   body?: unknown
 ): Promise<T> {
-  const maxAttempts = 4;
+  const isProd = process.env.NEXT_PUBLIC_ENV === "production";
+  const maxAttempts = isProd ? FAST_ATTEMPTS + 1 : FAST_ATTEMPTS;
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const res = await fetch(`/api/backend/${path}`, {
       method,
@@ -398,12 +414,22 @@ async function apiCall<T = unknown>(
     try { data = JSON.parse(text); } catch { data = { detail: text || `Erreur ${res.status}` }; }
 
     if (res.status === 503 && data?.code === "backend_waking_up" && attempt < maxAttempts) {
-      notifyBackendWaking();
-      await sleep(attempt * 2500);
+      if (attempt < FAST_ATTEMPTS) {
+        notifyBackendWaking();
+        await sleep(attempt * 2500);
+      } else {
+        // Toujours en échec après les tentatives rapprochées : on passe en état
+        // "erreur de connexion" (pas juste "réveil") et on retente une dernière fois
+        // 5 min plus tard — uniquement atteint ici quand isProd (sinon maxAttempts
+        // arrête la boucle avant ce point).
+        notifyBackendConnectionError(LONG_RETRY_DELAY_MS);
+        await sleep(LONG_RETRY_DELAY_MS);
+      }
       continue;
     }
 
     if (!res.ok) {
+      notifyBackendAwake();
       const detail = data.detail;
       const msg = Array.isArray(detail)
         ? detail.map((e: any) => `${e.loc?.slice(-1)[0] ?? ""}: ${e.msg}`).join(" | ")
@@ -413,7 +439,12 @@ async function apiCall<T = unknown>(
     notifyBackendAwake();
     return data;
   }
-  throw new Error("Le serveur redémarre, veuillez réessayer dans quelques instants.");
+  notifyBackendConnectionError(null);
+  throw new Error(
+    isProd
+      ? "Le serveur reste injoignable après plusieurs tentatives, y compris un nouvel essai après 5 minutes. Réessayez plus tard ou contactez l'équipe technique."
+      : "Le serveur ne répond pas. Vérifiez qu'il est bien lancé en local."
+  );
 }
 
 const get = <T,>(p: string) => apiCall<T>("GET", p);
@@ -458,27 +489,62 @@ function hm(t: string) {
 
 // ── UI primitives ──────────────────────────────────────────────────────────────
 function BackendWakingBanner() {
-  const [waking, setWaking] = useState(false);
+  const [state, setState] = useState<"idle" | "waking" | "error">("idle");
+  const [retryAt, setRetryAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     let hideTimer: ReturnType<typeof setTimeout> | null = null;
     const onWaking = () => {
       if (hideTimer) clearTimeout(hideTimer);
-      setWaking(true);
+      setState("waking");
+      setRetryAt(null);
+    };
+    // Émis après les 3 tentatives rapprochées : le serveur est traité comme injoignable
+    // (pas juste "en cours de réveil"), avec le décompte avant la 4e tentative en prod.
+    const onConnectionError = (e: Event) => {
+      if (hideTimer) clearTimeout(hideTimer);
+      const retryInMs = (e as CustomEvent<{ retryInMs: number | null }>).detail?.retryInMs ?? null;
+      setState("error");
+      setRetryAt(retryInMs != null ? Date.now() + retryInMs : null);
     };
     const onAwake = () => {
-      hideTimer = setTimeout(() => setWaking(false), 800);
+      hideTimer = setTimeout(() => { setState("idle"); setRetryAt(null); }, 800);
     };
     window.addEventListener("backend-waking", onWaking);
+    window.addEventListener("backend-connection-error", onConnectionError as EventListener);
     window.addEventListener("backend-awake", onAwake);
     return () => {
       window.removeEventListener("backend-waking", onWaking);
+      window.removeEventListener("backend-connection-error", onConnectionError as EventListener);
       window.removeEventListener("backend-awake", onAwake);
       if (hideTimer) clearTimeout(hideTimer);
     };
   }, []);
 
-  if (!waking) return null;
+  // Rafraîchit le compte à rebours une fois par seconde tant qu'une 4e tentative est planifiée
+  useEffect(() => {
+    if (retryAt == null) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [retryAt]);
+
+  if (state === "idle") return null;
+
+  if (state === "error") {
+    const remainingSec = retryAt != null ? Math.max(0, Math.ceil((retryAt - now) / 1000)) : null;
+    const countdown = remainingSec != null
+      ? `${Math.floor(remainingSec / 60)}:${String(remainingSec % 60).padStart(2, "0")}`
+      : null;
+    return (
+      <div className="fixed top-0 inset-x-0 z-[200] bg-red-600 text-white text-xs md:text-sm text-center py-2 px-4 flex items-center justify-center gap-2 shadow-md">
+        <AlertTriangle className="h-3.5 w-3.5 md:h-4 md:w-4 shrink-0" />
+        {countdown
+          ? `Serveur injoignable — nouvelle tentative dans ${countdown}`
+          : "Serveur injoignable après plusieurs tentatives. Réessayez plus tard."}
+      </div>
+    );
+  }
 
   return (
     <div className="fixed top-0 inset-x-0 z-[200] bg-amber-500 text-white text-xs md:text-sm text-center py-2 px-4 flex items-center justify-center gap-2 shadow-md">
