@@ -93,9 +93,32 @@ function buildMatrix(bloc, jtDefaults = {}, tripletOffset = 0, candidatsParBloc 
       deb_exam: minutesToHM(dExam),
       fin_exam: minutesToHM(fExam),
       overflow: false,
-      candidates: matieres.map((_, j) => tripletOffset + ((i - j * step) % totalVirtuel + totalVirtuel) % totalVirtuel),
+      candidates: matieres.map((_, j) => ((i - j * step) % totalVirtuel + totalVirtuel) % totalVirtuel),
     });
   }
+
+  // Un candidat n'a un triplet complet que si SES N passages (un par matière) tombent tous
+  // dans les lignes réellement générées ci-dessus (rows.length peut être < totalVirtuel :
+  // la fenêtre horaire du bloc peut couper court avant la fin du cycle théorique). Sinon,
+  // un de ses passages est simplement absent (hors fenêtre), tandis qu'un autre peut, par
+  // un pur effet de l'arithmétique circulaire (mod totalVirtuel), retomber sur une ligne
+  // déjà générée bien plus tôt dans la journée — donnant l'impression trompeuse que ce
+  // candidat "termine" un examen sans qu'on l'ait jamais vu "commencer" avant dans le
+  // tableau. On marque ces cellules comme incomplètes plutôt que de les laisser paraître
+  // normales.
+  const genCount = rows.length;
+  const isCandidateComplete = (k0) => matieres.every((_, j) => ((k0 + j * step) % totalVirtuel) < genCount);
+  // Exposé sur le tableau (pas indexé par position de cellule) car les candidats peuvent
+  // être réassignés manuellement par glisser-déposer (cellMatrix) : la complétude est une
+  // propriété du candidat lui-même, pas de la cellule où il apparaît à un instant donné.
+  const incompleteSet = new Set();
+  for (let k0 = 0; k0 < totalVirtuel; k0++) {
+    if (!isCandidateComplete(k0)) incompleteSet.add(tripletOffset + k0);
+  }
+  for (const row of rows) {
+    row.candidates = row.candidates.map((k0) => tripletOffset + k0);
+  }
+  rows.incompleteSet = incompleteSet;
   return rows;
 }
 
@@ -171,7 +194,7 @@ function DragDropRow({ blocId, rowIdx, overflow, isDraggingThis, isDropTarget, c
 }
 
 // ── Cellule triplet draggable + droppable ─────────────────────────────────────
-function DraggableTripletCell({ k, statut, onClick, blocId, rowIdx, matIdx }) {
+function DraggableTripletCell({ k, statut, onClick, blocId, rowIdx, matIdx, incomplete = false }) {
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: `celldrop-${blocId}-${rowIdx}-${matIdx}`,
     data: { type: "cell-target", rowIdx, matIdx },
@@ -193,16 +216,21 @@ function DraggableTripletCell({ k, statut, onClick, blocId, rowIdx, matIdx }) {
     >
       <button
         onClick={() => onClick(k)}
-        title={`T${k + 1} — ${statutOpt.label}`}
+        title={`T${k + 1} — ${statutOpt.label}${incomplete ? " — Triplet incomplet : ce candidat n'a pas ses 3 matières dans la fenêtre horaire de ce bloc" : ""}`}
         className="inline-flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-lg font-semibold text-[11px] text-gray-700 transition hover:scale-105 active:scale-95"
         style={{
           backgroundColor: isOver ? "#DBEAFE" : statut !== "LIBRE" ? statutOpt.bg : TRIPLET_BG[k % TRIPLET_BG.length],
-          outline: `1.5px solid ${isOver ? "#3B82F6" : statut !== "LIBRE" ? statutOpt.color + "60" : TRIPLET_RING[k % TRIPLET_RING.length]}`,
+          outline: incomplete
+            ? "1.5px dashed #F59E0B"
+            : `1.5px solid ${isOver ? "#3B82F6" : statut !== "LIBRE" ? statutOpt.color + "60" : TRIPLET_RING[k % TRIPLET_RING.length]}`,
           color: isOver ? "#1D4ED8" : statut !== "LIBRE" ? statutOpt.color : "#374151",
           minWidth: 48,
         }}
       >
-        <span>T{k + 1}</span>
+        <span className="inline-flex items-center gap-1">
+          T{k + 1}
+          {incomplete && <AlertTriangle className="h-2.5 w-2.5 text-amber-500 shrink-0" />}
+        </span>
         {statut !== "LIBRE" && (
           <span className="text-[9px] font-medium opacity-80">{statutOpt.label}</span>
         )}
@@ -542,6 +570,7 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
                           blocId={bloc.id}
                           rowIdx={row.index}
                           matIdx={matIdx}
+                          incomplete={matrix.incompleteSet?.has(k)}
                         />
                       </td>
                     ))}
