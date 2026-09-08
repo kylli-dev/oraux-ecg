@@ -81,7 +81,6 @@ function buildMatrix(bloc, jtDefaults = {}, tripletOffset = 0, candidatsParBloc 
       fin_exam: minutesToHM(fExam),
       overflow: false,
       candidates: matieres.map((_, j) => tripletOffset + ((i - j * N) % totalVirtuel + totalVirtuel) % totalVirtuel),
-      idleMask: matieres.map((_, j) => ((i - j * N) % totalVirtuel + totalVirtuel) % totalVirtuel >= C),
     });
   }
   return rows;
@@ -521,27 +520,18 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
                       </span>
                     </td>
                     {/* Cellules triplet — draggables */}
-                    {(cellMatrix[row.index] ?? row.candidates).map((k, matIdx) => {
-                      const isIdle = (k - tripletOffset) >= C;
-                      return (
-                        <td key={matIdx} className="px-2 py-1.5 border-b border-black/5 text-center">
-                          {isIdle ? (
-                            <span className="inline-flex items-center justify-center rounded-lg text-[11px] text-black/20 bg-black/[0.03] border border-dashed border-black/10" style={{ minWidth: 48, height: 28 }}>
-                              —
-                            </span>
-                          ) : (
-                            <DraggableTripletCell
-                              k={k}
-                              statut={tripletStatuts[k] ?? "LIBRE"}
-                              onClick={onTripletClick}
-                              blocId={bloc.id}
-                              rowIdx={row.index}
-                              matIdx={matIdx}
-                            />
-                          )}
-                        </td>
-                      );
-                    })}
+                    {(cellMatrix[row.index] ?? row.candidates).map((k, matIdx) => (
+                      <td key={matIdx} className="px-2 py-1.5 border-b border-black/5 text-center">
+                        <DraggableTripletCell
+                          k={k}
+                          statut={tripletStatuts[k] ?? "LIBRE"}
+                          onClick={onTripletClick}
+                          blocId={bloc.id}
+                          rowIdx={row.index}
+                          matIdx={matIdx}
+                        />
+                      </td>
+                    ))}
                   </DragDropRow>
                 ))}
               </tbody>
