@@ -3397,8 +3397,12 @@ function blocCapacity(bloc: BlocWizard, configs: MatiereConfig[]): number {
   const pauseMinutes = bloc.pause_midi_minutes ?? 0;
   const availableOral = (end - start) - pauseMinutes;
   const maxSlots = interval > 0 ? Math.floor((availableOral - slotDuration) / interval) + 1 : 0;
-  if (bloc.nb_slots !== null) return bloc.nb_slots;
-  return Math.max(N, maxSlots);
+  // La fenêtre horaire fait foi : la capacité réelle est plafonnée au multiple de N
+  // inférieur qui tient entièrement dedans (au moins N, un tour complet), pour qu'aucun
+  // triplet ne soit jamais tronqué par la fenêtre — que nb_slots soit automatique ou saisi
+  // manuellement, il ne peut plus jamais la dépasser ; seule une réduction reste possible.
+  const capped = Math.max(N, Math.floor(Math.max(0, maxSlots) / N) * N);
+  return bloc.nb_slots !== null ? Math.min(bloc.nb_slots, capped) : capped;
 }
 
 function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, bloc_idx: number, oralOffset = 0): MatrixRow[] {
@@ -3781,17 +3785,13 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
         <div className="space-y-3">
           {p.blocs.map((bloc, idx) => {
             const N = bloc.matieres_config.length;
-            const Nsq = N * N;
             const bMaxDuree = N > 0 ? Math.max(...bloc.matieres_config.map(c => c.duree_minutes)) : 0;
             const bMaxPrep = N > 0 ? Math.max(...bloc.matieres_config.map(c => c.preparation_minutes)) : 0;
-            const interval = bMaxDuree + bloc.pause_minutes;
-            const slotDuration = bMaxPrep + bMaxDuree;
-            const [bh, bm] = bloc.heure_debut.split(":").map(Number);
-            const [eh, em] = bloc.heure_fin.split(":").map(Number);
-            const available = (eh * 60 + em) - (bh * 60 + bm);
-            const maxSlots = N > 0 && interval > 0 ? Math.floor((available - slotDuration) / interval) + 1 : Nsq;
-            const autoTotal = N > 0 ? Math.max(1, Math.floor(maxSlots / Nsq)) * Nsq : 0;
-            const total = bloc.nb_slots !== null ? bloc.nb_slots : autoTotal;
+            // La fenêtre horaire (heure_debut → heure_fin) fait foi : blocCapacity plafonne
+            // toujours au multiple de N qui tient entièrement dedans, qu'un nb_slots manuel
+            // soit saisi ou non — voir blocCapacity pour le détail du calcul et du plafonnage.
+            const autoTotal = N > 0 ? blocCapacity({ ...bloc, nb_slots: null }, bloc.matieres_config) : 0;
+            const total = bloc.nb_slots !== null ? blocCapacity(bloc, bloc.matieres_config) : autoTotal;
             return (
               <div key={idx} className="rounded-xl border border-black/10 bg-gray-50/60 p-4 space-y-3">
                 {/* En-tête du bloc */}
@@ -3800,7 +3800,9 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                   <div className="flex items-center gap-3">
                     {N > 0 && (
                       <span className="text-xs text-green-700 font-medium">
-                        {bloc.nb_slots !== null ? `${total} créneaux (manuel)` : `${autoTotal} créneaux (N²=${Nsq})`}
+                        {bloc.nb_slots !== null
+                          ? `${total} créneaux (manuel${bloc.nb_slots > total ? ", plafonné" : ""})`
+                          : `${autoTotal} créneaux (max. fenêtre)`}
                       </span>
                     )}
                     {p.blocs.length > 1 && (

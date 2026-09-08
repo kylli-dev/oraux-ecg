@@ -65,14 +65,12 @@ function buildMatrix(bloc, jtDefaults = {}, tripletOffset = 0, candidatsParBloc 
   const { matieres, duree_minutes, preparation_minutes, pause_minutes, heure_debut, heure_fin } = bloc;
   const N = matieres.length;
   if (N === 0) return [];
-  // Rotation flexible : totalVirtuel = plus petit multiple de N ≥ C.
   // candidatsParBloc est une surcharge MANUELLE et globale (le champ "Candidats / session"),
   // volontairement appliquée à tous les blocs pour prévisualiser un scénario uniforme.
   // Tant qu'elle n'est pas saisie, chaque bloc doit refléter SON PROPRE nb_slots enregistré
   // (pas un N² générique identique pour tous les blocs, qui masquait les vraies valeurs
   // différentes d'un bloc à l'autre — ex. bloc matin à 10 créneaux, bloc après-midi à 8).
   const C = (candidatsParBloc != null && candidatsParBloc > 0) ? candidatsParBloc : (bloc.nb_slots ?? N * N);
-  const totalVirtuel = Math.ceil(C / N) * N;
   const duree = duree_minutes ?? jtDefaults.duree_defaut_minutes ?? 20;
   const prep = preparation_minutes ?? jtDefaults.preparation_defaut_minutes ?? 0;
   const pause = pause_minutes ?? jtDefaults.pause_defaut_minutes ?? 0;
@@ -81,50 +79,37 @@ function buildMatrix(bloc, jtDefaults = {}, tripletOffset = 0, candidatsParBloc 
   const start = hmToMinutes(heure_debut);
   const end = heure_fin ? hmToMinutes(heure_fin) : Infinity;
 
+  // Nombre de lignes RÉELLEMENT générables, exactement comme generate_in_range côté
+  // backend : jusqu'à C créneaux, jamais arrondi à un multiple de N. Le vrai moteur de
+  // génération (et la rotation réelle des candidats dans portal.py) ne connaissent aucune
+  // notion de "cycle théorique" plus grand que le nombre de lignes qui existent vraiment —
+  // arrondir à un multiple de N ici (comme avant) créait des candidats dont un passage
+  // retombait, par un pur effet de l'arithmétique circulaire, sur une ligne bien antérieure
+  // à ses autres passages ("triplet incomplet"), un artefact de CE calcul et non un vrai
+  // problème de planning.
+  let genCount = 0;
+  for (let i = 0; i < C; i++) {
+    const fExam = start + i * interval + prep + duree;
+    if (fExam > end) break;
+    genCount++;
+  }
+
   const rows = [];
-  for (let i = 0; i < totalVirtuel; i++) {
+  for (let i = 0; i < genCount; i++) {
     const dPrepa = start + i * interval;
     const dExam = dPrepa + prep;
     const fExam = dExam + duree;
-    // L'ancienne condition (dPrepa >= end) ne vérifiait que le DÉBUT de la préparation,
-    // pas si l'examen avait le temps de se terminer avant heure_fin : une ligne pouvait
-    // donc être ajoutée (avec juste un flag "overflow") alors que sa fin dépassait déjà
-    // la fin du bloc — d'où un nombre de cellules affiché incohérent avec heure_fin.
-    // On arrête désormais dès que la ligne ne rentre plus entièrement, comme le fait le
-    // vrai moteur de génération (generate_in_range côté backend).
-    if (fExam > end) break;
     rows.push({
       index: i,
       deb_prepa: minutesToHM(dPrepa),
       deb_exam: minutesToHM(dExam),
       fin_exam: minutesToHM(fExam),
       overflow: false,
-      candidates: matieres.map((_, j) => ((i - j * step) % totalVirtuel + totalVirtuel) % totalVirtuel),
+      // Modulo genCount (pas C) : chaque candidat 0..genCount-1 a par construction ses N
+      // passages dans les lignes réellement générées, plus jamais de triplet incomplet.
+      candidates: matieres.map((_, j) => tripletOffset + (((i - j * step) % genCount) + genCount) % genCount),
     });
   }
-
-  // Un candidat n'a un triplet complet que si SES N passages (un par matière) tombent tous
-  // dans les lignes réellement générées ci-dessus (rows.length peut être < totalVirtuel :
-  // la fenêtre horaire du bloc peut couper court avant la fin du cycle théorique). Sinon,
-  // un de ses passages est simplement absent (hors fenêtre), tandis qu'un autre peut, par
-  // un pur effet de l'arithmétique circulaire (mod totalVirtuel), retomber sur une ligne
-  // déjà générée bien plus tôt dans la journée — donnant l'impression trompeuse que ce
-  // candidat "termine" un examen sans qu'on l'ait jamais vu "commencer" avant dans le
-  // tableau. On marque ces cellules comme incomplètes plutôt que de les laisser paraître
-  // normales.
-  const genCount = rows.length;
-  const isCandidateComplete = (k0) => matieres.every((_, j) => ((k0 + j * step) % totalVirtuel) < genCount);
-  // Exposé sur le tableau (pas indexé par position de cellule) car les candidats peuvent
-  // être réassignés manuellement par glisser-déposer (cellMatrix) : la complétude est une
-  // propriété du candidat lui-même, pas de la cellule où il apparaît à un instant donné.
-  const incompleteSet = new Set();
-  for (let k0 = 0; k0 < totalVirtuel; k0++) {
-    if (!isCandidateComplete(k0)) incompleteSet.add(tripletOffset + k0);
-  }
-  for (const row of rows) {
-    row.candidates = row.candidates.map((k0) => tripletOffset + k0);
-  }
-  rows.incompleteSet = incompleteSet;
   return rows;
 }
 
@@ -200,7 +185,7 @@ function DragDropRow({ blocId, rowIdx, overflow, isDraggingThis, isDropTarget, c
 }
 
 // ── Cellule triplet draggable + droppable ─────────────────────────────────────
-function DraggableTripletCell({ k, statut, onClick, blocId, rowIdx, matIdx, incomplete = false }) {
+function DraggableTripletCell({ k, statut, onClick, blocId, rowIdx, matIdx }) {
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: `celldrop-${blocId}-${rowIdx}-${matIdx}`,
     data: { type: "cell-target", rowIdx, matIdx },
@@ -222,21 +207,16 @@ function DraggableTripletCell({ k, statut, onClick, blocId, rowIdx, matIdx, inco
     >
       <button
         onClick={() => onClick(k)}
-        title={`T${k + 1} — ${statutOpt.label}${incomplete ? " — Triplet incomplet : ce candidat n'a pas ses 3 matières dans la fenêtre horaire de ce bloc" : ""}`}
+        title={`T${k + 1} — ${statutOpt.label}`}
         className="inline-flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-lg font-semibold text-[11px] text-gray-700 transition hover:scale-105 active:scale-95"
         style={{
           backgroundColor: isOver ? "#DBEAFE" : statut !== "LIBRE" ? statutOpt.bg : TRIPLET_BG[k % TRIPLET_BG.length],
-          outline: incomplete
-            ? "1.5px dashed #F59E0B"
-            : `1.5px solid ${isOver ? "#3B82F6" : statut !== "LIBRE" ? statutOpt.color + "60" : TRIPLET_RING[k % TRIPLET_RING.length]}`,
+          outline: `1.5px solid ${isOver ? "#3B82F6" : statut !== "LIBRE" ? statutOpt.color + "60" : TRIPLET_RING[k % TRIPLET_RING.length]}`,
           color: isOver ? "#1D4ED8" : statut !== "LIBRE" ? statutOpt.color : "#374151",
           minWidth: 48,
         }}
       >
-        <span className="inline-flex items-center gap-1">
-          T{k + 1}
-          {incomplete && <AlertTriangle className="h-2.5 w-2.5 text-amber-500 shrink-0" />}
-        </span>
+        <span>T{k + 1}</span>
         {statut !== "LIBRE" && (
           <span className="text-[9px] font-medium opacity-80">{statutOpt.label}</span>
         )}
@@ -260,7 +240,6 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
   const C = (candidatsParBloc != null && candidatsParBloc > 0) ? candidatsParBloc : (bloc.nb_slots ?? bloc.matieres.length ** 2);
   const matrix = buildMatrix(bloc, jt, tripletOffset, candidatsParBloc);
   const N = bloc.matieres.length;
-  const Nsq = N * N;
   const isMatin = hmToMinutes(bloc.heure_debut) < 12 * 60;
   // Un bloc qui chevauche midi (démarre avant, finit après) ne peut pas être
   // honnêtement étiqueté "Matin" en entier — c'était le cas avant : le label ne
@@ -437,7 +416,11 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
           {!hasNoMatieres && matrix.length > 0 && (
             <span className="text-[10px] text-black/30 ml-2">
               {N} mat. · {matrix.length} créneaux · {C} candidat(s)
-              {C !== Nsq && <span className="ml-1 text-amber-500">(N²={Nsq})</span>}
+              {matrix.length < C && (
+                <span className="ml-1 text-amber-500" title="La fenêtre horaire de ce bloc ne permet pas d'atteindre le nombre de candidats demandé">
+                  (fenêtre trop courte : {matrix.length}/{C})
+                </span>
+              )}
             </span>
           )}
         </div>
@@ -576,7 +559,6 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
                           blocId={bloc.id}
                           rowIdx={row.index}
                           matIdx={matIdx}
-                          incomplete={matrix.incompleteSet?.has(k)}
                         />
                       </td>
                     ))}
