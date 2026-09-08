@@ -44,6 +44,17 @@ function hmToMinutes(t) {
   return h * 60 + m;
 }
 
+// Écart minimal viable (en nombre de lignes) entre deux passages d'un même candidat :
+// doit rester cohérent avec _rotation_offset côté backend (portal.py) et rotationOffset
+// côté wizard de création (admin/page.tsx). Au sein d'un même bloc, l'intervalle entre deux
+// lignes consécutives est constant (durée + pause_minutes), donc l'écart minimal se réduit
+// à ceil((préparation + durée) / intervalle) — le plus petit nombre de lignes à avancer pour
+// que la préparation du prochain passage ne chevauche jamais la fin de l'examen précédent.
+function rotationOffset(slotDuration, interval) {
+  if (interval <= 0) return 1;
+  return Math.max(1, Math.ceil(slotDuration / interval));
+}
+
 function buildMatrix(bloc, jtDefaults = {}, tripletOffset = 0, candidatsParBloc = null) {
   const { matieres, duree_minutes, preparation_minutes, pause_minutes, heure_debut, heure_fin } = bloc;
   const N = matieres.length;
@@ -59,12 +70,14 @@ function buildMatrix(bloc, jtDefaults = {}, tripletOffset = 0, candidatsParBloc 
   const duree = duree_minutes ?? jtDefaults.duree_defaut_minutes ?? 20;
   const prep = preparation_minutes ?? jtDefaults.preparation_defaut_minutes ?? 0;
   const pause = pause_minutes ?? jtDefaults.pause_defaut_minutes ?? 0;
+  const interval = duree + pause;
+  const step = rotationOffset(prep + duree, interval);
   const start = hmToMinutes(heure_debut);
   const end = heure_fin ? hmToMinutes(heure_fin) : Infinity;
 
   const rows = [];
   for (let i = 0; i < totalVirtuel; i++) {
-    const dPrepa = start + i * (duree + pause);
+    const dPrepa = start + i * interval;
     const dExam = dPrepa + prep;
     const fExam = dExam + duree;
     // L'ancienne condition (dPrepa >= end) ne vérifiait que le DÉBUT de la préparation,
@@ -80,7 +93,7 @@ function buildMatrix(bloc, jtDefaults = {}, tripletOffset = 0, candidatsParBloc 
       deb_exam: minutesToHM(dExam),
       fin_exam: minutesToHM(fExam),
       overflow: false,
-      candidates: matieres.map((_, j) => tripletOffset + ((i - j * N) % totalVirtuel + totalVirtuel) % totalVirtuel),
+      candidates: matieres.map((_, j) => tripletOffset + ((i - j * step) % totalVirtuel + totalVirtuel) % totalVirtuel),
     });
   }
   return rows;
