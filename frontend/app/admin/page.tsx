@@ -3430,7 +3430,7 @@ type MatrixRow = {
 // Marge minimale entre la fin d'un passage et le début de préparation du suivant, pour un
 // même candidat (le temps de changer de salle) — DOIT rester synchronisée avec
 // MARGIN_TRANSITION_MINUTES côté backend (portal.py) et InterfaceAdminENSAEPlanning.jsx.
-const MARGIN_TRANSITION_MINUTES = 5;
+const MARGIN_TRANSITION_MINUTES = 30;
 
 // Pas de rotation — DOIT rester identique au calcul réellement utilisé par le backend
 // pour l'inscription des candidats (_rotation_offset dans portal.py, partagée par

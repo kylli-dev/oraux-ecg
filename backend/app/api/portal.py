@@ -364,7 +364,7 @@ def _cutoff_date(planning: Planning) -> Date:
 # Marge minimale entre la fin d'un passage et le début de préparation du suivant, pour un
 # même candidat (le temps de changer de salle) — DOIT rester synchronisée avec
 # MARGIN_TRANSITION_MINUTES côté frontend (admin/page.tsx et InterfaceAdminENSAEPlanning.jsx).
-MARGIN_TRANSITION_MINUTES = 5
+MARGIN_TRANSITION_MINUTES = 30
 
 
 def _rotation_offset(all_day_epreuves: list, all_slots: list, N_rooms: int) -> int:

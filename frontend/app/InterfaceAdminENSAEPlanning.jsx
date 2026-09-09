@@ -47,7 +47,7 @@ function hmToMinutes(t) {
 // Marge minimale entre la fin d'un passage et le début de préparation du suivant, pour un
 // même candidat (le temps de changer de salle) — DOIT rester synchronisée avec
 // MARGIN_TRANSITION_MINUTES côté backend (portal.py) et admin/page.tsx.
-const MARGIN_TRANSITION_MINUTES = 5;
+const MARGIN_TRANSITION_MINUTES = 30;
 
 // Écart minimal viable (en nombre de lignes) entre deux passages d'un même candidat :
 // doit rester cohérent avec _rotation_offset côté backend (portal.py) et rotationOffset
