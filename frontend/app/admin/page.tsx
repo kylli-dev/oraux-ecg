@@ -10609,6 +10609,9 @@ function SallesSection() {
   const [addErr, setAddErr] = useState("");
   const [filterMatiere, setFilterMatiere] = useState("");
   const [filterDate, setFilterDate] = useState("");
+  const [filterHeure, setFilterHeure] = useState("");
+  // "" = toutes, "none" = non affectée, sinon l'id de la salle (en string)
+  const [filterSalle, setFilterSalle] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkSalleId, setBulkSalleId] = useState<string>("");
   const [bulkSallePrepId, setBulkSallePrepId] = useState<string>("");
@@ -10763,9 +10766,16 @@ function SallesSection() {
   }
 
   const matieres = Array.from(new Set(epreuves.map((e) => e.matiere))).sort();
+  const heures = Array.from(new Set(epreuves.map((e) => e.heure_debut))).sort();
   const filtered = epreuves
     .filter((e) => !filterMatiere || e.matiere === filterMatiere)
-    .filter((e) => !filterDate || e.date === filterDate);
+    .filter((e) => !filterDate || e.date === filterDate)
+    .filter((e) => !filterHeure || e.heure_debut === filterHeure)
+    .filter((e) => {
+      if (!filterSalle) return true;
+      if (filterSalle === "none") return e.salle_id == null;
+      return e.salle_id === Number(filterSalle);
+    });
 
   // Grouper par (date, matière, heure) — granularité à l'heure plutôt qu'à la demi-journée :
   // deux créneaux de la même matière le même jour peuvent recevoir des salles différentes.
@@ -10978,6 +10988,37 @@ function SallesSection() {
                     <option key={d} value={d}>
                       {new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}
                     </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {heures.length > 0 && (
+              <div className="flex-1 min-w-[140px]">
+                <label className="text-xs text-black/40 mb-1 block">Filtrer par heure</label>
+                <select
+                  value={filterHeure}
+                  onChange={(e) => setFilterHeure(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-black/15"
+                >
+                  <option value="">Toutes</option>
+                  {heures.map((h) => (
+                    <option key={h} value={h}>{h.slice(0, 5)}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {epreuves.length > 0 && (
+              <div className="flex-1 min-w-[160px]">
+                <label className="text-xs text-black/40 mb-1 block">Filtrer par salle d&apos;examen</label>
+                <select
+                  value={filterSalle}
+                  onChange={(e) => setFilterSalle(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-black/15"
+                >
+                  <option value="">Toutes</option>
+                  <option value="none">Non affectée</option>
+                  {activeSalles.map((s) => (
+                    <option key={s.id} value={s.id}>{s.intitule}</option>
                   ))}
                 </select>
               </div>
