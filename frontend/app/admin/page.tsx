@@ -11096,7 +11096,8 @@ function SallesSection() {
                         })}
                       </span>
                     </div>
-                    <table className="w-full text-xs">
+                    <div className="overflow-x-auto">
+                    <table className="w-full text-xs min-w-[820px]">
                       <thead>
                         <tr className="border-b border-black/5">
                           <th className="px-4 py-2 w-8">
@@ -11217,6 +11218,7 @@ function SallesSection() {
                         })}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 );
               })}
