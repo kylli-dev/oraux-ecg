@@ -3463,11 +3463,15 @@ function blocCapacity(bloc: BlocWizard, configs: MatiereConfig[]): number {
   const pauseMinutes = bloc.pause_midi_minutes ?? 0;
   const availableOral = (end - start) - pauseMinutes;
   const maxSlots = interval > 0 ? Math.floor((availableOral - slotDuration) / interval) + 1 : 0;
-  // La fenêtre horaire fait foi : la capacité réelle est plafonnée au multiple de N
-  // inférieur qui tient entièrement dedans (au moins N, un tour complet), pour qu'aucun
-  // triplet ne soit jamais tronqué par la fenêtre — que nb_slots soit automatique ou saisi
-  // manuellement, il ne peut plus jamais la dépasser ; seule une réduction reste possible.
-  const capped = Math.max(N, Math.floor(Math.max(0, maxSlots) / N) * N);
+  // La fenêtre horaire (heure_debut → heure_fin) plafonne la capacité, mais SANS arrondir
+  // à un multiple de N : depuis le correctif "fenêtre horaire fait foi" (buildMatrix côté
+  // Matrice oraux, cf. genCount), la rotation n'exige plus que nb_slots soit un multiple de
+  // N pour être complète — n'importe quel nombre marche (vérifié en conditions réelles avec
+  // 17 créneaux). Arrondir ici était donc redondant ET néfaste : comme updateNbSlots recalcule
+  // heure_fin pour tenir EXACTEMENT le nb_slots saisi, ce plafond arrondi la reréduisait
+  // aussitôt (ex. 17 → 15), donnant l'impression trompeuse que l'heure de fin résistait à la
+  // valeur tapée alors qu'elle la suit fidèlement.
+  const capped = Math.max(N, Math.max(0, maxSlots));
   return bloc.nb_slots !== null ? Math.min(bloc.nb_slots, capped) : capped;
 }
 
