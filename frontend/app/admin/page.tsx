@@ -10612,7 +10612,13 @@ function SyncedScrollX({ children }: { children: React.ReactNode }) {
   const topRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [scrollWidth, setScrollWidth] = useState(0);
+  const [dragging, setDragging] = useState(false);
   const syncing = useRef(false);
+  // startX/startScrollLeft : origine du glisser. moved : distance parcourue, pour
+  // distinguer un simple clic (sur une case à cocher, un menu déroulant...) d'un
+  // véritable glisser — sans ce seuil, cliquer sur "Salle d'examen" pour l'ouvrir
+  // se ferait passer pour un (micro) déplacement et perturberait le clic normal.
+  const drag = useRef({ active: false, startX: 0, startScrollLeft: 0, moved: 0 });
 
   useEffect(() => {
     const el = bottomRef.current;
@@ -10634,6 +10640,27 @@ function SyncedScrollX({ children }: { children: React.ReactNode }) {
     syncing.current = false;
   };
 
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Ne démarre pas le glisser depuis un contrôle interactif (case à cocher, menu
+    // déroulant, bouton...) : ceux-ci doivent garder un clic normal, sans interférence.
+    const target = e.target as HTMLElement;
+    if (target.closest("select, input, button, option, a")) return;
+    if (!bottomRef.current) return;
+    drag.current = { active: true, startX: e.clientX, startScrollLeft: bottomRef.current.scrollLeft, moved: 0 };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!drag.current.active || !bottomRef.current) return;
+    const dx = e.clientX - drag.current.startX;
+    drag.current.moved = Math.max(drag.current.moved, Math.abs(dx));
+    if (drag.current.moved > 3) setDragging(true);
+    bottomRef.current.scrollLeft = drag.current.startScrollLeft - dx;
+  };
+  const endDrag = () => {
+    drag.current.active = false;
+    setDragging(false);
+  };
+
   return (
     <>
       <div
@@ -10644,7 +10671,15 @@ function SyncedScrollX({ children }: { children: React.ReactNode }) {
       >
         <div style={{ width: scrollWidth, height: 1 }} />
       </div>
-      <div ref={bottomRef} onScroll={() => syncFrom("bottom")} className="overflow-x-auto">
+      <div
+        ref={bottomRef}
+        onScroll={() => syncFrom("bottom")}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerLeave={endDrag}
+        className={`overflow-x-auto ${dragging ? "cursor-grabbing select-none" : "cursor-grab"}`}
+      >
         {children}
       </div>
     </>
