@@ -718,7 +718,7 @@ function BlocsEditor({ jtId, blocs, onReload }) {
   }
 
   async function deleteBloc(bloc) {
-    if (!confirm(`Supprimer ce créneau (${bloc.type_bloc} ${bloc.heure_debut?.slice(0,5)}–${bloc.heure_fin?.slice(0,5)}) ?`)) return;
+    if (!confirm(`Supprimer ce bloc (${bloc.type_bloc} ${bloc.heure_debut?.slice(0,5)}–${bloc.heure_fin?.slice(0,5)}) ?`)) return;
     await apiFetch("DELETE", `journee-types/blocs/${bloc.id}`);
     onReload();
   }
@@ -771,20 +771,20 @@ function BlocsEditor({ jtId, blocs, onReload }) {
   return (
     <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-5 space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold text-black/40 uppercase tracking-wide">Créneaux du gabarit</p>
+        <p className="text-xs font-semibold text-black/40 uppercase tracking-wide">Blocs du gabarit</p>
         <button
           onClick={() => { setShowAdd(true); setAddErr(""); }}
           className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition hover:bg-black/[0.03]"
           style={{ borderColor: ENSAE_RED + "40", color: ENSAE_RED }}
         >
-          <Plus className="h-3.5 w-3.5" /> Ajouter un créneau
+          <Plus className="h-3.5 w-3.5" /> Ajouter un bloc
         </button>
       </div>
 
-      {/* Liste des blocs */}
+      {/* Liste des blocs — un bloc PAUSE n'est jamais un créneau d'examen, ne pas le nommer ainsi */}
       <div className="divide-y divide-black/5 rounded-xl border border-black/8 overflow-hidden">
         {sorted.length === 0 && (
-          <p className="text-sm text-black/30 text-center py-6">Aucun créneau. Cliquez sur "Ajouter un créneau".</p>
+          <p className="text-sm text-black/30 text-center py-6">Aucun bloc. Cliquez sur "Ajouter un bloc".</p>
         )}
         {sorted.map((bloc, idx) => {
           const isEditing = editingId === bloc.id;
@@ -982,7 +982,7 @@ function BlocsEditor({ jtId, blocs, onReload }) {
             className="overflow-hidden"
           >
             <div className="rounded-xl border border-dashed border-black/15 bg-black/[0.015] p-4 space-y-3">
-              <p className="text-xs font-semibold text-black/50">Nouveau créneau</p>
+              <p className="text-xs font-semibold text-black/50">Nouveau bloc</p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[11px] text-black/40 mb-1 block">Type</label>
@@ -1080,7 +1080,7 @@ function BlocsEditor({ jtId, blocs, onReload }) {
                   style={{ backgroundColor: ENSAE_RED }}
                 >
                   {adding ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-                  Ajouter un seul créneau
+                  Ajouter un seul bloc
                 </button>
                 <button
                   onClick={() => { setShowAdd(false); setAddErr(""); }}
@@ -1260,7 +1260,7 @@ export default function InterfaceAdminENSAEPlanning() {
                       <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-10 text-center">
                         <LayoutGrid className="h-8 w-8 mx-auto mb-3 text-black/15" />
                         <p className="text-sm text-black/40">Ce gabarit n'a pas de bloc GENERATION.</p>
-                        <p className="text-xs text-black/25 mt-1">Ajoutez un créneau ci-dessous.</p>
+                        <p className="text-xs text-black/25 mt-1">Ajoutez un bloc ci-dessous.</p>
                       </div>
                     ) : (
                       <>
@@ -1292,7 +1292,7 @@ export default function InterfaceAdminENSAEPlanning() {
                       </>
                     )}
 
-                    {/* Éditeur de créneaux */}
+                    {/* Éditeur de blocs (GENERATION + PAUSE) */}
                     <BlocsEditor
                       jtId={selectedJT.id}
                       blocs={blocs}
