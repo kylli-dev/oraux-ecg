@@ -61,16 +61,13 @@ function rotationOffset(slotDuration, interval) {
   return Math.max(1, Math.ceil((slotDuration + MARGIN_TRANSITION_MINUTES) / interval));
 }
 
-function buildMatrix(bloc, jtDefaults = {}, tripletOffset = 0, candidatsParBloc = null) {
+function buildMatrix(bloc, jtDefaults = {}, tripletOffset = 0) {
   const { matieres, duree_minutes, preparation_minutes, pause_minutes, heure_debut, heure_fin } = bloc;
   const N = matieres.length;
   if (N === 0) return [];
-  // candidatsParBloc est une surcharge MANUELLE et globale (le champ "Candidats / session"),
-  // volontairement appliquée à tous les blocs pour prévisualiser un scénario uniforme.
-  // Tant qu'elle n'est pas saisie, chaque bloc doit refléter SON PROPRE nb_slots enregistré
-  // (pas un N² générique identique pour tous les blocs, qui masquait les vraies valeurs
-  // différentes d'un bloc à l'autre — ex. bloc matin à 10 créneaux, bloc après-midi à 8).
-  const C = (candidatsParBloc != null && candidatsParBloc > 0) ? candidatsParBloc : (bloc.nb_slots ?? N * N);
+  // Chaque bloc reflète SON PROPRE nb_slots enregistré (pas de surcharge manuelle possible :
+  // ce nombre est un indicateur de ce qui est réellement configuré, pas un paramètre "what if").
+  const C = bloc.nb_slots ?? N * N;
   const duree = duree_minutes ?? jtDefaults.duree_defaut_minutes ?? 20;
   const prep = preparation_minutes ?? jtDefaults.preparation_defaut_minutes ?? 0;
   const pause = pause_minutes ?? jtDefaults.pause_defaut_minutes ?? 0;
@@ -236,9 +233,9 @@ function DraggableTripletCell({ k, statut, onClick, blocId, rowIdx, matIdx }) {
 }
 
 // ── Matrice journée type ───────────────────────────────────────────────────────
-function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletOffset = 0, onReload, candidatsParBloc = null }) {
-  const C = (candidatsParBloc != null && candidatsParBloc > 0) ? candidatsParBloc : (bloc.nb_slots ?? bloc.matieres.length ** 2);
-  const matrix = buildMatrix(bloc, jt, tripletOffset, candidatsParBloc);
+function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletOffset = 0, onReload }) {
+  const C = bloc.nb_slots ?? bloc.matieres.length ** 2;
+  const matrix = buildMatrix(bloc, jt, tripletOffset);
   const N = bloc.matieres.length;
   const isMatin = hmToMinutes(bloc.heure_debut) < 12 * 60;
   // Un bloc qui chevauche midi (démarre avant, finit après) ne peut pas être
@@ -1109,7 +1106,6 @@ export default function InterfaceAdminENSAEPlanning() {
   const [loading, setLoading] = useState(false);
 
   const [tripletStatuts, setTripletStatuts] = useState({});
-  const [candidatsParBloc, setCandidatsParBloc] = useState(null);
   const [selPlanningId, setSelPlanningId] = useState("");
   const [applyDate, setApplyDate] = useState("");
   const [applying, setApplying] = useState(false);
@@ -1122,17 +1118,13 @@ export default function InterfaceAdminENSAEPlanning() {
   }, []);
 
   const loadBlocs = useCallback(async (jt, silent = false) => {
-    if (!jt) { setBlocs([]); setTripletStatuts({}); setCandidatsParBloc(null); return; }
+    if (!jt) { setBlocs([]); setTripletStatuts({}); return; }
     if (!silent) setLoading(true);
     try {
       const b = await apiFetch("GET", `journee-types/${jt.id}/blocs`);
       setBlocs(b ?? []);
       if (!silent) {
         setTripletStatuts({});
-        // Chaque bloc utilise désormais son propre nb_slots par défaut (buildMatrix /
-        // MatriceJourneeType) : l'état partagé ne doit rester qu'une surcharge "what if"
-        // explicite de l'admin, jamais une valeur empruntée à un bloc en particulier.
-        setCandidatsParBloc(null);
       }
     } catch {
       setBlocs([]);
@@ -1183,7 +1175,12 @@ export default function InterfaceAdminENSAEPlanning() {
   const N = blocGeneration[0]?.matieres?.length ?? 0;
   // Nsq théorique = somme des N² (utilisé pour l'indexation des triplets)
   const Nsq = blocGeneration.reduce((s, b) => s + b.matieres.length ** 2, 0) || N * N;
-  const totalCandidats = candidatsParBloc ? candidatsParBloc * blocGeneration.length : Nsq;
+  // Total demandé = somme du nb_slots RÉELLEMENT enregistré sur chaque bloc (pas de
+  // surcharge manuelle possible : c'est un indicateur de ce qui est configuré, pas un
+  // paramètre "what if" — voir buildMatrix).
+  const totalCandidats = blocGeneration.length
+    ? blocGeneration.reduce((s, b) => s + (b.nb_slots ?? b.matieres.length ** 2), 0)
+    : Nsq;
   // Créneaux réels = ce que buildMatrix génère en respectant heure_fin.
   // Chaque ligne représente une position de rotation (= un candidat), pas un créneau
   // horaire à multiplier par N — actualCreneaux et totalCandidats sont déjà dans la
@@ -1191,7 +1188,7 @@ export default function InterfaceAdminENSAEPlanning() {
   // rendait ce compteur quasi toujours négatif, donc silencieux même en cas de
   // débordement partiel réel).
   const actualCreneaux = selectedJT
-    ? blocGeneration.reduce((s, b) => s + buildMatrix(b, selectedJT, 0, candidatsParBloc).length, 0)
+    ? blocGeneration.reduce((s, b) => s + buildMatrix(b, selectedJT, 0).length, 0)
     : 0;
   const debordements = Math.max(0, totalCandidats - actualCreneaux);
 
@@ -1279,10 +1276,12 @@ export default function InterfaceAdminENSAEPlanning() {
                               onTripletClick={handleTripletClick}
                               tripletOffset={offset}
                               onReload={(silent) => loadBlocs(selectedJT, silent)}
-                              candidatsParBloc={candidatsParBloc}
                             />
                           );
-                          acc.offset += Nb * Nb;
+                          // Le décalage pour le bloc suivant doit refléter le nombre RÉEL de
+                          // candidats de ce bloc (bloc.nb_slots), pas systématiquement N² —
+                          // sinon la numérotation T1.. dérive dès qu'un bloc n'est pas en N².
+                          acc.offset += bloc.nb_slots ?? Nb * Nb;
                           return acc;
                         }, { els: [], offset: 0 }).els}
                         {totalCandidats > 0 && (
@@ -1374,19 +1373,12 @@ export default function InterfaceAdminENSAEPlanning() {
                     <div className="text-xs text-black/50 space-y-1">
                       <div className="flex justify-between items-center">
                         <span>Candidats / session</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={99}
-                          value={candidatsParBloc ?? ""}
-                          placeholder={String(N * N)}
-                          onChange={(e) => {
-                            const v = parseInt(e.target.value);
-                            setCandidatsParBloc(isNaN(v) || v <= 0 ? null : v);
-                          }}
-                          className="w-16 border rounded px-2 py-0.5 text-xs font-mono text-right focus:outline-none focus:ring-1 focus:ring-black/20"
-                          title="Nombre de candidats attendus par session (par défaut N²)"
-                        />
+                        <span
+                          className="font-medium text-black/70 font-mono"
+                          title="Somme du nb_slots réellement enregistré sur chaque bloc — un indicateur, pas un paramètre modifiable ici"
+                        >
+                          {totalCandidats}
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span>Matières</span>
@@ -1405,7 +1397,7 @@ export default function InterfaceAdminENSAEPlanning() {
                       </div>
                       <div className="flex justify-between">
                         <span>Capacité / session</span>
-                        <span className="font-medium text-black/70">{(candidatsParBloc ?? N * N) * (blocGeneration[0]?.salles_par_matiere ?? 1)} candidats</span>
+                        <span className="font-medium text-black/70">{totalCandidats * (blocGeneration[0]?.salles_par_matiere ?? 1)} candidats</span>
                       </div>
                       {debordements > 0 && (
                         <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700 flex items-start gap-2">
