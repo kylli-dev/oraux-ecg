@@ -91,11 +91,22 @@ function buildMatrix(bloc, jtDefaults = {}, tripletOffset = 0) {
     genCount++;
   }
 
+  // Dédoublement de jury : salles_par_matiere salles tournent en parallèle sur la même
+  // matière au même créneau horaire (le backend duplique réellement les épreuves, voir
+  // generate_in_range). Le candidat "principal" (lane 0, ci-dessous) reste identique au
+  // comportement existant — glisser-déposer, cellMatrix, etc. restent inchangés. Les lanes
+  // supplémentaires (1..S-1) sont exposées à part (extraCandidates), en lecture seule, pour
+  // rendre visible le dédoublement sans toucher à la logique d'édition déjà en place. Chaque
+  // lane a sa propre tranche de genCount candidats (r*genCount..r*genCount+genCount-1) : à
+  // l'intérieur d'une lane, la rotation est identique au cas à une seule salle.
+  const S = Math.max(1, bloc.salles_par_matiere ?? 1);
+
   const rows = [];
   for (let i = 0; i < genCount; i++) {
     const dPrepa = start + i * interval;
     const dExam = dPrepa + prep;
     const fExam = dExam + duree;
+    const laneCandidate = (j, r) => tripletOffset + r * genCount + (((i - j * step) % genCount) + genCount) % genCount;
     rows.push({
       index: i,
       deb_prepa: minutesToHM(dPrepa),
@@ -104,7 +115,10 @@ function buildMatrix(bloc, jtDefaults = {}, tripletOffset = 0) {
       overflow: false,
       // Modulo genCount (pas C) : chaque candidat 0..genCount-1 a par construction ses N
       // passages dans les lignes réellement générées, plus jamais de triplet incomplet.
-      candidates: matieres.map((_, j) => tripletOffset + (((i - j * step) % genCount) + genCount) % genCount),
+      candidates: matieres.map((_, j) => laneCandidate(j, 0)),
+      extraCandidates: S > 1
+        ? matieres.map((_, j) => Array.from({ length: S - 1 }, (_, k) => laneCandidate(j, k + 1)))
+        : null,
     });
   }
   return rows;
@@ -546,17 +560,31 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
                         {displayIdx + 1}
                       </span>
                     </td>
-                    {/* Cellules triplet — draggables */}
+                    {/* Cellules triplet — draggables (lane principale) + badges de dédoublement
+                        en lecture seule (lanes supplémentaires, salles_par_matiere > 1) */}
                     {(cellMatrix[row.index] ?? row.candidates).map((k, matIdx) => (
                       <td key={matIdx} className="px-2 py-1.5 border-b border-black/5 text-center">
-                        <DraggableTripletCell
-                          k={k}
-                          statut={tripletStatuts[k] ?? "LIBRE"}
-                          onClick={onTripletClick}
-                          blocId={bloc.id}
-                          rowIdx={row.index}
-                          matIdx={matIdx}
-                        />
+                        <div className="inline-flex flex-wrap items-center justify-center gap-1">
+                          <DraggableTripletCell
+                            k={k}
+                            statut={tripletStatuts[k] ?? "LIBRE"}
+                            onClick={onTripletClick}
+                            blocId={bloc.id}
+                            rowIdx={row.index}
+                            matIdx={matIdx}
+                          />
+                          {row.extraCandidates?.[matIdx]?.map((k2) => (
+                            <span
+                              key={k2}
+                              onClick={() => onTripletClick(k2)}
+                              title={`T${k2 + 1} — salle parallèle (dédoublement)`}
+                              className="inline-flex items-center justify-center px-2 py-1 rounded-lg font-semibold text-[11px] text-gray-500 bg-black/[0.03] border border-dashed border-black/15 cursor-pointer hover:bg-black/[0.06] transition"
+                              style={{ minWidth: 40 }}
+                            >
+                              T{k2 + 1}
+                            </span>
+                          ))}
+                        </div>
                       </td>
                     ))}
                   </DragDropRow>
