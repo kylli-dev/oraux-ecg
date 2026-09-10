@@ -3422,6 +3422,10 @@ type MatrixRow = {
   deb_exam: string;
   fin_exam: string;
   candidates: number[];
+  // Dédoublement de jury (salles_par_matiere > 1) : les S-1 candidats des salles
+  // parallèles pour chaque matière de cette ligne, en plus du candidat "principal" de
+  // `candidates` — voir buildBlocRows. undefined/vide si salles_par_matiere <= 1.
+  extraCandidates?: number[][];
   bloc_idx: number;
   isPause?: boolean;
   isBonus?: boolean;
@@ -3482,7 +3486,7 @@ function blocCapacity(bloc: BlocWizard, configs: MatiereConfig[]): number {
   return bloc.nb_slots !== null ? Math.min(bloc.nb_slots, capped) : capped;
 }
 
-function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, bloc_idx: number, oralOffset = 0): MatrixRow[] {
+function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, bloc_idx: number, oralOffset = 0, sallesParMatiere = 1): MatrixRow[] {
   configs = configs ?? bloc.matieres_config;
   const N = configs.length;
   if (!N) return [];
@@ -3500,6 +3504,11 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
   const Ktotal = Kregular + Kbonus;
   const step = rotationOffset(slotDuration, interval);
   const pauseAfter = bloc.pause_midi_after ?? Math.ceil(Kregular / 2);
+  // Dédoublement de jury : S salles tournent en parallèle sur chaque matière, au même
+  // créneau horaire. Le candidat "principal" (lane 0) est inchangé — même formule qu'avant
+  // — les lanes supplémentaires (1..S-1) ont chacune leur propre tranche de Ktotal
+  // candidats, exposées à part (extraCandidates) pour ne rien changer au calcul déjà validé.
+  const S = Math.max(1, sallesParMatiere);
 
   const rows: MatrixRow[] = [];
   let t = start;
@@ -3524,13 +3533,17 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
     // générer au-delà de heure_fin. Sans ça, un nb_slots (ou des bonus) trop ambitieux pour la
     // fenêtre produisait un aperçu qui dépassait silencieusement l'heure de fin annoncée.
     if (t + maxPrep + maxDuree > end) break;
+    // Modèle K-libre sur Ktotal : candidat k passe matière j au créneau (k + j*step) % Ktotal
+    // Inverse : à l'oral `oral`, matière j, lane r → candidat = (oral - j*step + Ktotal*N) % Ktotal + r*Ktotal
+    const laneCandidate = (j: number, r: number) => (oral - j * step + Ktotal * N) % Ktotal + r * Ktotal + oralOffset;
     rows.push({
       deb_prepa: minutesToHM(t),
       deb_exam: minutesToHM(t + maxPrep),
       fin_exam: minutesToHM(t + maxPrep + maxDuree),
-      // Modèle K-libre sur Ktotal : candidat k passe matière j au créneau (k + j*step) % Ktotal
-      // Inverse : à l'oral `oral`, matière j → candidat = (oral - j*step + Ktotal*N) % Ktotal
-      candidates: Array.from({ length: N }, (_, j) => (oral - j * step + Ktotal * N) % Ktotal + oralOffset),
+      candidates: Array.from({ length: N }, (_, j) => laneCandidate(j, 0)),
+      extraCandidates: S > 1
+        ? Array.from({ length: N }, (_, j) => Array.from({ length: S - 1 }, (_, k) => laneCandidate(j, k + 1)))
+        : undefined,
       bloc_idx,
       isPause: false,
       isBonus: oral >= Kregular,   // les derniers Kbonus créneaux sont marqués bonus
@@ -3543,11 +3556,14 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
 
 function buildMatrix(p: WizardParams): MatrixRow[] {
   let oralOffset = 0;
+  const S = Math.max(1, p.salles_par_matiere ?? 1);
   return p.blocs.flatMap((bloc, idx) => {
     const Kregular = blocCapacity(bloc, bloc.matieres_config ?? []);
     const Kbonus = bloc.bonus_slots ?? 0;
-    const rows = buildBlocRows(bloc, bloc.matieres_config, idx, oralOffset);
-    oralOffset += Kregular + Kbonus;
+    const rows = buildBlocRows(bloc, bloc.matieres_config, idx, oralOffset, S);
+    // La numérotation du bloc suivant doit sauter par-dessus TOUTES les lanes (S) de
+    // celui-ci, sinon les candidats des salles parallèles chevauchent ceux du bloc suivant.
+    oralOffset += (Kregular + Kbonus) * S;
     return rows;
   });
 }
@@ -4266,6 +4282,17 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                           >
                             T{k + 1}
                           </span>
+                          {/* Dédoublement de jury (salles_par_matiere > 1) : salles parallèles
+                              en lecture seule, à côté du candidat principal ci-dessus. */}
+                          {row.extraCandidates?.[localJ]?.map((k2) => (
+                            <span
+                              key={k2}
+                              title="Salle parallèle (dédoublement)"
+                              className="inline-block ml-1 px-2 py-0.5 rounded-full font-semibold text-[11px] text-gray-500 bg-black/[0.03] border border-dashed border-black/15"
+                            >
+                              T{k2 + 1}
+                            </span>
+                          ))}
                         </td>
                       );
                     })}
