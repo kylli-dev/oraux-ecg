@@ -10604,6 +10604,53 @@ function PlanchesSection() {
   );
 }
 
+// Barre de défilement horizontal dupliquée EN HAUT du tableau, synchronisée avec le
+// défilement natif du bas — pour un tableau haut (beaucoup de créneaux), la barre de
+// défilement du navigateur ne se voit qu'en bas, après avoir déjà tout parcouru
+// verticalement. Cette barre du haut reste visible dès l'arrivée sur la section.
+function SyncedScrollX({ children }: { children: React.ReactNode }) {
+  const topRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const [scrollWidth, setScrollWidth] = useState(0);
+  const syncing = useRef(false);
+
+  useEffect(() => {
+    const el = bottomRef.current;
+    if (!el) return;
+    const update = () => setScrollWidth(el.scrollWidth);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  });
+
+  const syncFrom = (source: "top" | "bottom") => {
+    if (syncing.current) return;
+    syncing.current = true;
+    if (source === "top" && topRef.current && bottomRef.current) {
+      bottomRef.current.scrollLeft = topRef.current.scrollLeft;
+    } else if (source === "bottom" && topRef.current && bottomRef.current) {
+      topRef.current.scrollLeft = bottomRef.current.scrollLeft;
+    }
+    syncing.current = false;
+  };
+
+  return (
+    <>
+      <div
+        ref={topRef}
+        onScroll={() => syncFrom("top")}
+        className="overflow-x-auto overflow-y-hidden"
+        style={{ height: 12 }}
+      >
+        <div style={{ width: scrollWidth, height: 1 }} />
+      </div>
+      <div ref={bottomRef} onScroll={() => syncFrom("bottom")} className="overflow-x-auto">
+        {children}
+      </div>
+    </>
+  );
+}
+
 // ── Gestion des salles ─────────────────────────────────────────────────────────
 function SallesSection() {
   const toast = useToast();
@@ -11108,7 +11155,7 @@ function SallesSection() {
                         })}
                       </span>
                     </div>
-                    <div className="overflow-x-auto">
+                    <SyncedScrollX>
                     <table className="w-full text-xs min-w-[820px]">
                       <thead>
                         <tr className="border-b border-black/5">
@@ -11230,7 +11277,7 @@ function SallesSection() {
                         })}
                       </tbody>
                     </table>
-                    </div>
+                    </SyncedScrollX>
                   </div>
                 );
               })}
