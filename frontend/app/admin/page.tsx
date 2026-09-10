@@ -3461,7 +3461,14 @@ function blocCapacity(bloc: BlocWizard, configs: MatiereConfig[]): number {
   const interval = maxDuree + bloc.pause_minutes;
   const slotDuration = maxPrep + maxDuree;
   const pauseMinutes = bloc.pause_midi_minutes ?? 0;
-  const availableOral = (end - start) - pauseMinutes;
+  // L'insertion réelle de la pause (buildBlocRows) ne coûte pas seulement pauseMinutes :
+  // elle ancre la reprise sur pauseDisplayEnd = t + (slotDuration - interval) + pauseMinutes,
+  // soit (slotDuration - interval) de PLUS que pauseMinutes seul (le temps de "rattrapage" du
+  // dernier examen avant la pause, qui occupe slotDuration mais n'avance t que de interval).
+  // Sans ce surcoût, la fenêtre estimée ici promettait 1 créneau de plus que ce que
+  // buildBlocRows pouvait réellement générer (ex. 14 demandés, 13 générés avec une pause).
+  const pauseOverhead = pauseMinutes > 0 ? pauseMinutes + (slotDuration - interval) : 0;
+  const availableOral = (end - start) - pauseOverhead;
   const maxSlots = interval > 0 ? Math.floor((availableOral - slotDuration) / interval) + 1 : 0;
   // La fenêtre horaire (heure_debut → heure_fin) plafonne la capacité, mais SANS arrondir
   // à un multiple de N : depuis le correctif "fenêtre horaire fait foi" (buildMatrix côté
@@ -3953,10 +3960,17 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                   const [sdh, sdm] = bloc.heure_debut.split(":").map(Number);
                   const startMin = sdh * 60 + sdm;
                   const pauseMidiMinutes = bloc.pause_midi_minutes ?? 0;
+                  // L'insertion réelle de la pause (buildBlocRows) coûte pauseMinutes + le
+                  // "rattrapage" du dernier examen avant la pause (slotDuration - interval),
+                  // pas seulement pauseMinutes — sans ce surcoût, l'heure de fin calculée ici
+                  // promet 1 créneau de plus que ce que buildBlocRows peut réellement générer
+                  // (ex. nb_slots=14 avec pause déjeuner → seulement 13 lignes générées).
+                  const pauseOverhead = (pm: number, interval: number) =>
+                    pm > 0 ? pm + (bMaxPrep + bMaxDuree - interval) : 0;
                   // heure_fin inclut la pause déjeuner (durée fixe en minutes, indépendante du nb de créneaux)
                   const nbOralForFin = bloc.nb_slots ?? autoTotal;
                   const computedFinMin = nbOralForFin > 0 && slotAdvance > 0
-                    ? startMin + bMaxPrep + nbOralForFin * slotAdvance + pauseMidiMinutes
+                    ? startMin + bMaxPrep + nbOralForFin * slotAdvance + pauseOverhead(pauseMidiMinutes, slotAdvance)
                     : null;
                   const toHM = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
                   const computedFin = computedFinMin !== null ? toHM(computedFinMin) : null;
@@ -3975,7 +3989,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                         const sAdv = bMaxDuree + b.pause_minutes;
                         const pm = b.pause_midi_minutes ?? 0;
                         const [sh, sm] = b.heure_debut.split(":").map(Number);
-                        const finMin = val !== null && sAdv > 0 ? (sh * 60 + sm) + bMaxPrep + val * sAdv + pm : null;
+                        const finMin = val !== null && sAdv > 0 ? (sh * 60 + sm) + bMaxPrep + val * sAdv + pauseOverhead(pm, sAdv) : null;
                         return { ...b, nb_slots: val, heure_fin: finMin !== null ? toHM(finMin) : b.heure_fin };
                       }),
                     }));
@@ -3990,7 +4004,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                         const sAdv = bMaxDuree + b.pause_minutes;
                         const nb = b.nb_slots ?? autoTotal;
                         const [sh, sm] = b.heure_debut.split(":").map(Number);
-                        const finMin = nb > 0 && sAdv > 0 ? (sh * 60 + sm) + bMaxPrep + nb * sAdv + minutes : null;
+                        const finMin = nb > 0 && sAdv > 0 ? (sh * 60 + sm) + bMaxPrep + nb * sAdv + pauseOverhead(minutes, sAdv) : null;
                         return { ...b, pause_midi_minutes: minutes, heure_fin: finMin !== null ? toHM(finMin) : b.heure_fin };
                       }),
                     }));
