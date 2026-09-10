@@ -3921,6 +3921,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                 {/* Durées par matière */}
                 {N > 0 && (
                   <div className="rounded-lg border border-black/8 overflow-hidden">
+                    <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="bg-white border-b border-black/5">
@@ -3951,6 +3952,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 )}
 
@@ -5327,6 +5329,7 @@ function CandidatGestionDrawer({
                         <div key={date}>
                           <p className="text-xs font-semibold text-black/50 mb-2 capitalize">{fmt_date(date)}</p>
                           <div className="rounded-lg border overflow-hidden">
+                            <div className="overflow-x-auto">
                             <table className="w-full text-xs">
                               <thead>
                                 <tr className="bg-gray-50 text-left">
@@ -5366,6 +5369,7 @@ function CandidatGestionDrawer({
                                 ))}
                               </tbody>
                             </table>
+                            </div>
                           </div>
                         </div>
                       );
@@ -5864,6 +5868,7 @@ function ListeAttenteTab({ planningId }: { planningId: number }) {
                     <div className="px-4 py-2.5 border-b bg-gray-50">
                       <p className="text-xs font-semibold capitalize">{fmt_date(date)}</p>
                     </div>
+                    <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="text-left border-b">
@@ -5903,6 +5908,7 @@ function ListeAttenteTab({ planningId }: { planningId: number }) {
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 );
               })}
@@ -6162,6 +6168,7 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
                       <div key={date}>
                         <p className="text-xs font-semibold text-black/50 mb-2 capitalize">{fmt_date(date)}</p>
                         <div className="rounded-lg border overflow-hidden">
+                          <div className="overflow-x-auto">
                           <table className="w-full text-xs">
                             <thead>
                               <tr className="bg-gray-50 text-left">
@@ -6201,6 +6208,7 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
                               ))}
                             </tbody>
                           </table>
+                          </div>
                         </div>
                       </div>
                     );
@@ -9534,6 +9542,7 @@ function SurveillantsSection() {
                         </span>
                       )}
                     </div>
+                    <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="border-b border-black/5 bg-black/[0.01]">
@@ -9575,6 +9584,7 @@ function SurveillantsSection() {
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   </div>
                 );
               })}
@@ -10886,6 +10896,7 @@ function SallesSection() {
               {matieres.length === 0 ? (
                 <p className="text-xs text-black/30">Aucune matière trouvée pour ce planning.</p>
               ) : (
+                <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-black/5">
@@ -10943,6 +10954,7 @@ function SallesSection() {
                     })}
                   </tbody>
                 </table>
+                </div>
               )}
             </div>
           )}
