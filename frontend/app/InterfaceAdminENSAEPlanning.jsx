@@ -1407,6 +1407,17 @@ export default function InterfaceAdminENSAEPlanning() {
                         <span>Capacité / session</span>
                         <span className="font-medium text-black/70">{(candidatsParBloc ?? N * N) * (blocGeneration[0]?.salles_par_matiere ?? 1)} candidats</span>
                       </div>
+                      {debordements > 0 && (
+                        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-700 flex items-start gap-2">
+                          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                          <span>
+                            {totalCandidats} candidats demandés, mais la fenêtre horaire des blocs n&apos;en accueille
+                            que {actualCreneaux} : {debordements} candidat{debordements > 1 ? "s" : ""} ne
+                            rentre{debordements > 1 ? "nt" : ""} pas et n&apos;apparaîtra{debordements > 1 ? "ont" : ""}
+                            {" "}pas dans la matrice. Élargissez l&apos;heure de fin du bloc pour tous les accueillir.
+                          </span>
+                        </div>
+                      )}
                       <div className="flex justify-between">
                         <span>Triplets libres</span>
                         <span className="font-medium text-emerald-600">{totalCandidats - Object.keys(tripletStatuts).length}</span>
