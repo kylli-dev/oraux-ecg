@@ -10668,10 +10668,11 @@ function SallesSection() {
   async function assignSalleBulk(
     date: string,
     matiere: string,
+    heure_debut: string,
     field: "salle_id" | "salle_preparation_id" | "surveillant_id",
     value: number | null
   ) {
-    const targets = epreuves.filter((e) => e.date === date && e.matiere === matiere);
+    const targets = epreuves.filter((e) => e.date === date && e.matiere === matiere && e.heure_debut === heure_debut);
     setSaving(-1);
     try {
       await Promise.all(
@@ -10679,7 +10680,7 @@ function SallesSection() {
       );
       setEpreuves((prev) =>
         prev.map((e) => {
-          if (e.date !== date || e.matiere !== matiere) return e;
+          if (e.date !== date || e.matiere !== matiere || e.heure_debut !== heure_debut) return e;
           if (field === "surveillant_id") {
             const surv = surveillants.find((s) => s.id === value) ?? null;
             return { ...e, surveillant_id: value, surveillant_nom: surv?.nom ?? null, surveillant_prenom: surv?.prenom ?? null };
@@ -10726,8 +10727,8 @@ function SallesSection() {
     try {
       await Promise.all(
         Array.from(selected).flatMap((key) => {
-          const [date, matiere] = key.split("||");
-          const targets = epreuves.filter((e) => e.date === date && e.matiere === matiere);
+          const [date, matiere, heure_debut] = key.split("||");
+          const targets = epreuves.filter((e) => e.date === date && e.matiere === matiere && e.heure_debut === heure_debut);
           return targets.flatMap((e) => {
             const calls = [];
             if (bulkSalleId !== "") calls.push(patch(`plannings/${planningId}/epreuves/${e.id}`, { salle_id: bulkSalleId ? Number(bulkSalleId) : null }));
@@ -10738,7 +10739,7 @@ function SallesSection() {
       );
       setEpreuves((prev) =>
         prev.map((e) => {
-          const key = `${e.date}||${e.matiere}`;
+          const key = `${e.date}||${e.matiere}||${e.heure_debut}`;
           if (!selected.has(key)) return e;
           const updates: Partial<EpreuveFlat> = {};
           if (bulkSalleId !== "") {
@@ -10766,19 +10767,22 @@ function SallesSection() {
     .filter((e) => !filterMatiere || e.matiere === filterMatiere)
     .filter((e) => !filterDate || e.date === filterDate);
 
-  // Grouper par (date, matière)
-  type GroupKey = { date: string; matiere: string };
+  // Grouper par (date, matière, heure) — granularité à l'heure plutôt qu'à la demi-journée :
+  // deux créneaux de la même matière le même jour peuvent recevoir des salles différentes.
+  // Si salles_par_matiere > 1, plusieurs épreuves partagent la même (date, matière, heure) —
+  // g.epreuves peut alors avoir plus d'une entrée pour ce même créneau (salles dupliquées).
+  type GroupKey = { date: string; matiere: string; heure_debut: string };
   const groupMap = filtered.reduce<Record<string, EpreuveFlat[]>>((acc, e) => {
-    const k = `${e.date}||${e.matiere}`;
+    const k = `${e.date}||${e.matiere}||${e.heure_debut}`;
     (acc[k] ??= []).push(e);
     return acc;
   }, {});
   const groups: (GroupKey & { epreuves: EpreuveFlat[] })[] = Object.entries(groupMap)
     .map(([k, eps]) => {
-      const [date, matiere] = k.split("||");
-      return { date, matiere, epreuves: eps };
+      const [date, matiere, heure_debut] = k.split("||");
+      return { date, matiere, heure_debut, epreuves: eps };
     })
-    .sort((a, b) => a.date.localeCompare(b.date) || a.matiere.localeCompare(b.matiere));
+    .sort((a, b) => a.date.localeCompare(b.date) || a.matiere.localeCompare(b.matiere) || a.heure_debut.localeCompare(b.heure_debut));
 
   const dates = Array.from(new Set(groups.map((g) => g.date))).sort();
 
@@ -10983,7 +10987,7 @@ function SallesSection() {
           {/* Barre de sélection groupée */}
           {selected.size > 0 && (
             <div className="bg-white rounded-2xl border border-black/5 shadow-sm px-4 py-3 flex items-center gap-3 flex-wrap">
-              <span className="text-xs font-semibold text-black/60">{selected.size} groupe(s) sélectionné(s)</span>
+              <span className="text-xs font-semibold text-black/60">{selected.size} créneau(x) sélectionné(s)</span>
               <select
                 value={bulkSalleId}
                 onChange={(e) => setBulkSalleId(e.target.value)}
@@ -11057,12 +11061,12 @@ function SallesSection() {
                           <th className="px-4 py-2 w-8">
                             <input
                               type="checkbox"
-                              checked={dayGroups.every((g) => selected.has(`${g.date}||${g.matiere}`))}
+                              checked={dayGroups.every((g) => selected.has(`${g.date}||${g.matiere}||${g.heure_debut}`))}
                               onChange={(e) => {
                                 setSelected((prev) => {
                                   const next = new Set(prev);
                                   dayGroups.forEach((g) => {
-                                    const k = `${g.date}||${g.matiere}`;
+                                    const k = `${g.date}||${g.matiere}||${g.heure_debut}`;
                                     e.target.checked ? next.add(k) : next.delete(k);
                                   });
                                   return next;
@@ -11072,7 +11076,8 @@ function SallesSection() {
                             />
                           </th>
                           <th className="text-left px-4 py-2 text-black/40 font-medium w-36">Matière</th>
-                          <th className="text-left px-4 py-2 text-black/40 font-medium w-20">Créneaux</th>
+                          <th className="text-left px-4 py-2 text-black/40 font-medium w-16">Heure</th>
+                          <th className="text-left px-4 py-2 text-black/40 font-medium w-20">Salles</th>
                           <th className="text-left px-4 py-2 text-black/60 font-semibold">Salle d'examen</th>
                           <th className="text-left px-4 py-2 text-black/40 font-medium">Salle de préparation</th>
                           <th className="text-left px-4 py-2 text-black/40 font-medium">Surveillant</th>
@@ -11080,13 +11085,18 @@ function SallesSection() {
                       </thead>
                       <tbody>
                         {dayGroups.map((g) => {
-                          const key = `${g.date}||${g.matiere}`;
+                          const key = `${g.date}||${g.matiere}||${g.heure_debut}`;
                           const isSelected = selected.has(key);
                           const salleId = g.epreuves[0]?.salle_id ?? null;
                           const sallesPrepId = g.epreuves[0]?.salle_preparation_id ?? null;
                           const surveillantId = g.epreuves[0]?.surveillant_id ?? null;
+                          // salles_par_matiere > 1 : plusieurs épreuves parallèles partagent ce
+                          // même créneau (même matière, même heure) — l'affectation groupée leur
+                          // donne à toutes la même salle ; distinguer chacune individuellement
+                          // irait au-delà de la granularité "à l'heure" demandée ici.
+                          const hasDoublons = g.epreuves.length > 1;
                           return (
-                            <tr key={g.matiere} className={`border-b border-black/[0.04] last:border-0 ${isSelected ? "bg-amber-50/60" : "hover:bg-black/[0.01]"}`}>
+                            <tr key={key} className={`border-b border-black/[0.04] last:border-0 ${isSelected ? "bg-amber-50/60" : "hover:bg-black/[0.01]"}`}>
                               <td className="px-4 py-2.5">
                                 <input
                                   type="checkbox"
@@ -11102,11 +11112,14 @@ function SallesSection() {
                                 />
                               </td>
                               <td className="px-4 py-2.5 font-medium text-black/70">{g.matiere}</td>
-                              <td className="px-4 py-2.5 text-black/40">{g.epreuves.length}</td>
+                              <td className="px-4 py-2.5 font-mono text-black/60">{g.heure_debut?.slice(0, 5)}</td>
+                              <td className="px-4 py-2.5 text-black/40" title={hasDoublons ? "Plusieurs salles en parallèle pour ce créneau (salles_par_matiere > 1)" : ""}>
+                                {g.epreuves.length}
+                              </td>
                               <td className="px-4 py-2.5">
                                 <select
                                   value={salleId ?? ""}
-                                  onChange={(ev) => assignSalleBulk(g.date, g.matiere, "salle_id", ev.target.value ? Number(ev.target.value) : null)}
+                                  onChange={(ev) => assignSalleBulk(g.date, g.matiere, g.heure_debut, "salle_id", ev.target.value ? Number(ev.target.value) : null)}
                                   disabled={saving === -1}
                                   className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[120px]"
                                 >
@@ -11119,7 +11132,7 @@ function SallesSection() {
                               <td className="px-4 py-2.5">
                                 <select
                                   value={sallesPrepId ?? ""}
-                                  onChange={(ev) => assignSalleBulk(g.date, g.matiere, "salle_preparation_id", ev.target.value ? Number(ev.target.value) : null)}
+                                  onChange={(ev) => assignSalleBulk(g.date, g.matiere, g.heure_debut, "salle_preparation_id", ev.target.value ? Number(ev.target.value) : null)}
                                   disabled={saving === -1}
                                   className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[120px]"
                                 >
@@ -11132,7 +11145,7 @@ function SallesSection() {
                               <td className="px-4 py-2.5">
                                 <select
                                   value={surveillantId ?? ""}
-                                  onChange={(ev) => assignSalleBulk(g.date, g.matiere, "surveillant_id", ev.target.value ? Number(ev.target.value) : null)}
+                                  onChange={(ev) => assignSalleBulk(g.date, g.matiere, g.heure_debut, "surveillant_id", ev.target.value ? Number(ev.target.value) : null)}
                                   disabled={saving === -1}
                                   className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[140px]"
                                 >
