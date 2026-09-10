@@ -11117,6 +11117,7 @@ function SallesSection() {
                             />
                           </th>
                           <th className="text-left px-4 py-2 text-black/40 font-medium w-36">Matière</th>
+                          <th className="text-left px-4 py-2 text-black/40 font-medium w-16">Prépa</th>
                           <th className="text-left px-4 py-2 text-black/40 font-medium w-28">Heure</th>
                           <th className="text-left px-4 py-2 text-black/40 font-medium w-20">Salles</th>
                           <th className="text-left px-4 py-2 text-black/60 font-semibold">Salle d'examen</th>
@@ -11136,6 +11137,16 @@ function SallesSection() {
                           // donne à toutes la même salle ; distinguer chacune individuellement
                           // irait au-delà de la granularité "à l'heure" demandée ici.
                           const hasDoublons = g.epreuves.length > 1;
+                          // Heure de préparation = heure_debut - preparation_minutes (même
+                          // formule que la vue Candidats), "—" si pas de prépa configurée.
+                          const prepMin = g.epreuves[0]?.preparation_minutes ?? null;
+                          const heurePrepa = prepMin
+                            ? (() => {
+                                const [h, m] = g.heure_debut.slice(0, 5).split(":").map(Number);
+                                const total = h * 60 + m - prepMin;
+                                return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+                              })()
+                            : "—";
                           return (
                             <tr key={key} className={`border-b border-black/[0.04] last:border-0 ${isSelected ? "bg-amber-50/60" : "hover:bg-black/[0.01]"}`}>
                               <td className="px-4 py-2.5">
@@ -11153,6 +11164,7 @@ function SallesSection() {
                                 />
                               </td>
                               <td className="px-4 py-2.5 font-medium text-black/70">{g.matiere}</td>
+                              <td className="px-4 py-2.5 font-mono text-black/40">{heurePrepa}</td>
                               <td className="px-4 py-2.5 font-mono text-black/60">
                                 {g.heure_debut?.slice(0, 5)}
                                 <span className="text-black/25"> → </span>
