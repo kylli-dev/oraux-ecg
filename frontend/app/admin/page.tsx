@@ -3582,6 +3582,11 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
         if (!isJC || genBlocs.length < 2) return genBlocs.map(blocToWizard);
         const toHM = (t: string) => t.length === 8 ? t.slice(0, 5) : t;
         const toMin = (hhmm: string) => { const [h, m] = hhmm.split(":").map(Number); return h * 60 + m; };
+        // nb_slots effectif d'un bloc sauvegardé : null veut dire "N² implicite", pas 0 —
+        // sans ce fallback, un bloc en N² implicite (fréquent, ex. bloc après-midi jamais
+        // explicitement chiffré) disparaissait purement et simplement du total recalculé à
+        // la réouverture du formulaire d'édition (9+9 devenait 9+0=9).
+        const effectiveSlots = (b: Bloc) => b.nb_slots ?? b.matieres.length ** 2;
         const b0 = blocToWizard(genBlocs[0]);
         // La pause déjeuner réelle = l'écart entre la fin du bloc du matin et le début du bloc de l'après-midi
         const gap = toMin(toHM(genBlocs[1].heure_debut)) - toMin(toHM(genBlocs[0].heure_fin));
@@ -3589,9 +3594,9 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
           ...b0,
           heure_debut: toHM(genBlocs[0].heure_debut),
           heure_fin: toHM(genBlocs[genBlocs.length - 1].heure_fin),
-          nb_slots: genBlocs.reduce((s, b) => s + (b.nb_slots ?? 0), 0) || null,
+          nb_slots: genBlocs.reduce((s, b) => s + effectiveSlots(b), 0) || null,
           pause_midi_minutes: Math.max(0, gap),
-          pause_midi_after: genBlocs[0].nb_slots ?? null,
+          pause_midi_after: effectiveSlots(genBlocs[0]),
         }];
       })();
 
