@@ -11117,8 +11117,7 @@ function SallesSection() {
                             />
                           </th>
                           <th className="text-left px-4 py-2 text-black/40 font-medium w-36">Matière</th>
-                          <th className="text-left px-4 py-2 text-black/40 font-medium w-16">Prépa</th>
-                          <th className="text-left px-4 py-2 text-black/40 font-medium w-28">Heure</th>
+                          <th className="text-left px-4 py-2 text-black/40 font-medium w-40">Horaire (prépa → oral)</th>
                           <th className="text-left px-4 py-2 text-black/40 font-medium w-20">Salles</th>
                           <th className="text-left px-4 py-2 text-black/60 font-semibold">Salle d'examen</th>
                           <th className="text-left px-4 py-2 text-black/40 font-medium">Salle de préparation</th>
@@ -11164,11 +11163,12 @@ function SallesSection() {
                                 />
                               </td>
                               <td className="px-4 py-2.5 font-medium text-black/70">{g.matiere}</td>
-                              <td className="px-4 py-2.5 font-mono text-black/40">{heurePrepa}</td>
-                              <td className="px-4 py-2.5 font-mono text-black/60">
-                                {g.heure_debut?.slice(0, 5)}
-                                <span className="text-black/25"> → </span>
-                                {g.epreuves[0]?.heure_fin?.slice(0, 5) ?? "—"}
+                              <td className="px-4 py-2.5 font-mono text-xs whitespace-nowrap">
+                                <span className="text-black/35">{heurePrepa}</span>
+                                <span className="text-black/20 mx-1">→</span>
+                                <span className="text-black/80 font-semibold">{g.heure_debut?.slice(0, 5)}</span>
+                                <span className="text-black/20 mx-1">→</span>
+                                <span className="text-black/50">{g.epreuves[0]?.heure_fin?.slice(0, 5) ?? "—"}</span>
                               </td>
                               <td className="px-4 py-2.5 text-black/40" title={hasDoublons ? "Plusieurs salles en parallèle pour ce créneau (salles_par_matiere > 1)" : ""}>
                                 {g.epreuves.length}
