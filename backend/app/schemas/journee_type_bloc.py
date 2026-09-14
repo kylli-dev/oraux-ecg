@@ -7,10 +7,13 @@ ALLOWED_BLOC_TYPE = {"GENERATION", "PAUSE"}
 
 
 class MatiereConfigItem(BaseModel):
-    """Durée et préparation propres à une matière."""
+    """Durée, préparation et dédoublement de jury propres à une matière."""
     nom: str
     duree_minutes: int = Field(ge=5, le=240)
     preparation_minutes: int = Field(ge=0, le=120)
+    # Nombre de salles en parallèle pour CETTE matière (dédoublement de jury sélectif) —
+    # retombe sur salles_par_matiere (bloc) si absent, pour les gabarits existants.
+    salles: Optional[int] = Field(default=None, ge=1, le=50)
 
 
 class JourneeTypeBlocCreate(BaseModel):

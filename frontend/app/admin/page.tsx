@@ -3396,6 +3396,9 @@ type MatiereConfig = {
   nom: string;
   duree_minutes: number;
   preparation_minutes: number;
+  // Dédoublement de jury pour CETTE matière (nb de salles en parallèle) — null/absent =
+  // retombe sur le réglage global "Salles par matière" du gabarit (voir blocCapacity).
+  salles?: number | null;
 };
 
 type BlocWizard = {
@@ -3504,11 +3507,15 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
   const Ktotal = Kregular + Kbonus;
   const step = rotationOffset(slotDuration, interval);
   const pauseAfter = bloc.pause_midi_after ?? Math.ceil(Kregular / 2);
-  // Dédoublement de jury : S salles tournent en parallèle sur chaque matière, au même
-  // créneau horaire. Le candidat "principal" (lane 0) est inchangé — même formule qu'avant
-  // — les lanes supplémentaires (1..S-1) ont chacune leur propre tranche de Ktotal
-  // candidats, exposées à part (extraCandidates) pour ne rien changer au calcul déjà validé.
-  const S = Math.max(1, sallesParMatiere);
+  // Dédoublement de jury SÉLECTIF : chaque matière peut avoir son propre nombre de salles
+  // en parallèle (configs[j].salles), sinon elle retombe sur le réglage global du gabarit
+  // (sallesParMatiere). Le candidat "principal" (lane 0) est inchangé — même formule
+  // qu'avant. sMax dimensionne l'espace de numérotation réservé par bloc (assez large pour
+  // la matière la plus dédoublée) ; chaque matière n'utilise que SES propres lanes
+  // (sallesPerMatiere[j] - 1), les lanes en trop pour les autres matières restent
+  // simplement inutilisées (aucun impact, juste des numéros non affichés).
+  const sallesPerMatiere = configs.map((c) => Math.max(1, c.salles ?? sallesParMatiere));
+  const sMax = Math.max(1, ...sallesPerMatiere);
 
   const rows: MatrixRow[] = [];
   let t = start;
@@ -3541,8 +3548,8 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
       deb_exam: minutesToHM(t + maxPrep),
       fin_exam: minutesToHM(t + maxPrep + maxDuree),
       candidates: Array.from({ length: N }, (_, j) => laneCandidate(j, 0)),
-      extraCandidates: S > 1
-        ? Array.from({ length: N }, (_, j) => Array.from({ length: S - 1 }, (_, k) => laneCandidate(j, k + 1)))
+      extraCandidates: sMax > 1
+        ? Array.from({ length: N }, (_, j) => Array.from({ length: sallesPerMatiere[j] - 1 }, (_, k) => laneCandidate(j, k + 1)))
         : undefined,
       bloc_idx,
       isPause: false,
@@ -3556,14 +3563,19 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
 
 function buildMatrix(p: WizardParams): MatrixRow[] {
   let oralOffset = 0;
-  const S = Math.max(1, p.salles_par_matiere ?? 1);
+  const sDefault = Math.max(1, p.salles_par_matiere ?? 1);
   return p.blocs.flatMap((bloc, idx) => {
-    const Kregular = blocCapacity(bloc, bloc.matieres_config ?? []);
+    const configs = bloc.matieres_config ?? [];
+    const Kregular = blocCapacity(bloc, configs);
     const Kbonus = bloc.bonus_slots ?? 0;
-    const rows = buildBlocRows(bloc, bloc.matieres_config, idx, oralOffset, S);
-    // La numérotation du bloc suivant doit sauter par-dessus TOUTES les lanes (S) de
-    // celui-ci, sinon les candidats des salles parallèles chevauchent ceux du bloc suivant.
-    oralOffset += (Kregular + Kbonus) * S;
+    const rows = buildBlocRows(bloc, configs, idx, oralOffset, sDefault);
+    // La numérotation du bloc suivant doit sauter par-dessus TOUTES les lanes de celui-ci
+    // (la matière la plus dédoublée du bloc), sinon les candidats des salles parallèles
+    // chevauchent ceux du bloc suivant.
+    const sMax = configs.length
+      ? Math.max(1, ...configs.map((c) => Math.max(1, c.salles ?? sDefault)))
+      : sDefault;
+    oralOffset += (Kregular + Kbonus) * sMax;
     return rows;
   });
 }
@@ -3944,6 +3956,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                           <th className="text-left px-3 py-1.5 text-black/40 font-medium">Matière</th>
                           <th className="text-center px-3 py-1.5 text-black/40 font-medium">Oral (min)</th>
                           <th className="text-center px-3 py-1.5 text-black/40 font-medium">Prépa (min)</th>
+                          <th className="text-center px-3 py-1.5 text-black/40 font-medium">Salles (dédoublement)</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -3961,6 +3974,14 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                               <input type="number" value={mc.preparation_minutes}
                                 onChange={(e) => setBlocMatiereConfig(idx, mc.nom, "preparation_minutes", Math.max(0, Number(e.target.value)))}
                                 min={0} max={120}
+                                className="w-14 text-center border border-black/10 rounded-lg px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-black/20"
+                              />
+                            </td>
+                            <td className="px-2 py-1 text-center">
+                              <input type="number" value={mc.salles ?? p.salles_par_matiere}
+                                onChange={(e) => setBlocMatiereConfig(idx, mc.nom, "salles", Math.max(1, Number(e.target.value)))}
+                                title="Nombre de salles en parallèle pour cette matière — par défaut, suit le réglage global Salles par matière"
+                                min={1} max={50}
                                 className="w-14 text-center border border-black/10 rounded-lg px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-black/20"
                               />
                             </td>

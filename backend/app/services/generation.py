@@ -226,17 +226,25 @@ def generate_in_range(
     if skip_ranges is None:
         skip_ranges = []
 
-    # Résolution des paramètres par matière
+    # Résolution des paramètres par matière. "salles" (dédoublement de jury) est optionnel
+    # par matière dans matieres_config — retombe sur salles_par_matiere (valeur de bloc,
+    # uniforme) si absent, pour rester compatible avec les gabarits existants qui n'ont
+    # jamais renseigné ce champ par matière.
     if matieres_config:
         names = [c["nom"] for c in matieres_config]
         durees = [int(c.get("duree_minutes", duree_minutes)) for c in matieres_config]
         preps = [int(c.get("preparation_minutes", preparation_minutes)) for c in matieres_config]
+        # "or" (pas .get(..., défaut)) : le champ peut être présent mais explicitement à
+        # None (Pydantic model_dump() inclut tous les champs déclarés, même absents côté
+        # client), auquel cas .get() renverrait None au lieu de retomber sur le défaut.
+        salles_list = [int(c.get("salles") or salles_par_matiere) for c in matieres_config]
         max_duree = max(durees)
         max_prep = max(preps)
     else:
         names = matieres
         durees = [duree_minutes] * len(matieres)
         preps = [preparation_minutes] * len(matieres)
+        salles_list = [salles_par_matiere] * len(matieres)
         max_duree = duree_minutes
         max_prep = preparation_minutes
 
@@ -263,9 +271,9 @@ def generate_in_range(
             t = _time_to_dt(skip_fin) - prep_delta
             continue
 
-        for nom, duree_j, prep_j in zip(names, durees, preps):
+        for nom, duree_j, prep_j, salles_j in zip(names, durees, preps, salles_list):
             exam_end_j = exam_start + timedelta(minutes=duree_j)
-            for _ in range(salles_par_matiere):
+            for _ in range(salles_j):
                 db.add(Epreuve(
                     demi_journee_id=demi_journee_id,
                     matiere=nom,
@@ -274,7 +282,7 @@ def generate_in_range(
                     statut=statut_initial,
                     preparation_minutes=prep_j if prep_j > 0 else None,
                 ))
-        count += n_matieres * salles_par_matiere
+        count += sum(salles_list)
         slots_placed += 1
         t = t + slot_advance + pause
 
@@ -298,9 +306,9 @@ def generate_in_range(
         if skip_fin is not None:
             t = _time_to_dt(skip_fin) - prep_delta
             continue
-        for nom, duree_j, prep_j in zip(names, durees, preps):
+        for nom, duree_j, prep_j, salles_j in zip(names, durees, preps, salles_list):
             exam_end_j = exam_start + timedelta(minutes=duree_j)
-            for _ in range(salles_par_matiere):
+            for _ in range(salles_j):
                 db.add(Epreuve(
                     demi_journee_id=demi_journee_id,
                     matiere=nom,
@@ -309,7 +317,7 @@ def generate_in_range(
                     statut="LIBRE",
                     preparation_minutes=prep_j if prep_j > 0 else None,
                 ))
-        count += n_matieres * salles_par_matiere
+        count += sum(salles_list)
         bonus_placed += 1
         t = t + slot_advance + pause
 

@@ -91,15 +91,20 @@ function buildMatrix(bloc, jtDefaults = {}, tripletOffset = 0) {
     genCount++;
   }
 
-  // Dédoublement de jury : salles_par_matiere salles tournent en parallèle sur la même
-  // matière au même créneau horaire (le backend duplique réellement les épreuves, voir
-  // generate_in_range). Le candidat "principal" (lane 0, ci-dessous) reste identique au
-  // comportement existant — glisser-déposer, cellMatrix, etc. restent inchangés. Les lanes
-  // supplémentaires (1..S-1) sont exposées à part (extraCandidates), en lecture seule, pour
-  // rendre visible le dédoublement sans toucher à la logique d'édition déjà en place. Chaque
-  // lane a sa propre tranche de genCount candidats (r*genCount..r*genCount+genCount-1) : à
-  // l'intérieur d'une lane, la rotation est identique au cas à une seule salle.
-  const S = Math.max(1, bloc.salles_par_matiere ?? 1);
+  // Dédoublement de jury SÉLECTIF : chaque matière peut avoir son propre nombre de salles
+  // en parallèle (bloc.matieres_config[j].salles), sinon elle retombe sur le réglage global
+  // du bloc (salles_par_matiere) — même résolution que generate_in_range côté backend. Le
+  // candidat "principal" (lane 0, ci-dessous) reste identique au comportement existant —
+  // glisser-déposer, cellMatrix, etc. restent inchangés. Les lanes supplémentaires sont
+  // exposées à part (extraCandidates), en lecture seule. sMax dimensionne l'espace de
+  // numérotation (r*genCount) réservé pour la matière la plus dédoublée ; les matières moins
+  // dédoublées laissent simplement des numéros de lane inutilisés (sans impact).
+  const sallesDefaut = Math.max(1, bloc.salles_par_matiere ?? 1);
+  const sallesParMatiere = matieres.map((nom) => {
+    const cfg = bloc.matieres_config?.find((c) => c.nom === nom);
+    return Math.max(1, cfg?.salles ?? sallesDefaut);
+  });
+  const S = Math.max(1, ...sallesParMatiere);
 
   const rows = [];
   for (let i = 0; i < genCount; i++) {
@@ -117,7 +122,7 @@ function buildMatrix(bloc, jtDefaults = {}, tripletOffset = 0) {
       // passages dans les lignes réellement générées, plus jamais de triplet incomplet.
       candidates: matieres.map((_, j) => laneCandidate(j, 0)),
       extraCandidates: S > 1
-        ? matieres.map((_, j) => Array.from({ length: S - 1 }, (_, k) => laneCandidate(j, k + 1)))
+        ? matieres.map((_, j) => Array.from({ length: sallesParMatiere[j] - 1 }, (_, k) => laneCandidate(j, k + 1)))
         : null,
     });
   }
