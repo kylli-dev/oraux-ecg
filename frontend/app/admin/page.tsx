@@ -10944,7 +10944,10 @@ function SallesSection() {
       const [date, matiere, heure_debut] = k.split("||");
       return { date, matiere, heure_debut, epreuves: eps };
     })
-    .sort((a, b) => a.date.localeCompare(b.date) || a.matiere.localeCompare(b.matiere) || a.heure_debut.localeCompare(b.heure_debut));
+    // Tri par heure d'abord (puis matière) — pour naviguer créneau par créneau,
+    // toutes matières confondues, plutôt que de devoir parcourir toute une matière
+    // avant d'atteindre la suivante à la même heure.
+    .sort((a, b) => a.date.localeCompare(b.date) || a.heure_debut.localeCompare(b.heure_debut) || a.matiere.localeCompare(b.matiere));
 
   const dates = Array.from(new Set(groups.map((g) => g.date))).sort();
 
@@ -11280,7 +11283,15 @@ function SallesSection() {
                         </tr>
                       </thead>
                       <tbody>
-                        {dayGroups.flatMap((g) => {
+                        {Array.from(new Set(dayGroups.map((g) => g.heure_debut))).sort().flatMap((h, hIdx) => {
+                        const heureGroups = dayGroups.filter((g) => g.heure_debut === h);
+                        return [
+                          <tr key={`h-${h}`} className={hIdx > 0 ? "border-t-2 border-black/10" : undefined}>
+                            <td colSpan={7} className="px-4 py-1.5 bg-black/[0.035] text-[11px] font-bold text-black/60 tracking-wide sticky top-0">
+                              {h.slice(0, 5)} <span className="font-normal text-black/35">— {heureGroups.reduce((n, g) => n + g.epreuves.length, 0)} créneau(x)</span>
+                            </td>
+                          </tr>,
+                          ...heureGroups.flatMap((g) => {
                           const key = `${g.date}||${g.matiere}||${g.heure_debut}`;
                           const isSelected = selected.has(key);
                           // salles_par_matiere / dédoublement sélectif > 1 : plusieurs épreuves
@@ -11376,6 +11387,8 @@ function SallesSection() {
                               </td>
                             </tr>
                           ));
+                          }),
+                        ];
                         })}
                       </tbody>
                     </table>
