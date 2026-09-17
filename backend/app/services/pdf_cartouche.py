@@ -14,6 +14,12 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
+# Taille du cartouche — réduite de 50% (28mm → 14mm de hauteur) pour laisser plus de
+# place au contenu original de la planche. Définie une seule fois ici et réutilisée par
+# _build_cartouche_pdf et generate_planche_with_cartouche pour qu'elles restent synchronisées.
+CARTOUCHE_MARGIN = 8 * mm
+CARTOUCHE_BOX_HEIGHT = 14 * mm
+
 
 def _build_cartouche_pdf(
     *,
@@ -32,8 +38,8 @@ def _build_cartouche_pdf(
     c = canvas.Canvas(buf, pagesize=(page_width, page_height))
 
     # Dimensions du cartouche
-    margin = 8 * mm
-    box_height = 28 * mm
+    margin = CARTOUCHE_MARGIN
+    box_height = CARTOUCHE_BOX_HEIGHT
     box_top = page_height - margin
     box_bottom = box_top - box_height
 
@@ -49,23 +55,26 @@ def _build_cartouche_pdf(
     # Ligne séparatrice centrale verticale
     mid_x = page_width / 2
     c.setLineWidth(0.5)
-    c.line(mid_x, box_bottom + 2 * mm, mid_x, box_top - 2 * mm)
+    c.line(mid_x, box_bottom + 1 * mm, mid_x, box_top - 1 * mm)
 
     # ── Colonne gauche ──────────────────────────────────────────────────────────
     label_color = colors.HexColor("#1A237E")
     value_color = colors.black
 
     def label_value(x: float, y: float, label: str, value: str) -> None:
-        c.setFont("Helvetica-Bold", 7.5)
+        # La boîte est réduite de 50% (28mm → 14mm), mais le texte n'est pas réduit à
+        # l'identique (7.5/9 → 3.75/4.5 serait illisible une fois imprimé) — 6/7pt reste
+        # un compromis lisible qui tient dans les ~4mm de hauteur disponibles par ligne.
+        c.setFont("Helvetica-Bold", 6)
         c.setFillColor(label_color)
         c.drawString(x, y, label)
-        c.setFont("Helvetica", 9)
+        c.setFont("Helvetica", 7)
         c.setFillColor(value_color)
         c.drawString(x + 22 * mm, y, value)
 
-    row1 = box_bottom + 18 * mm
-    row2 = box_bottom + 10 * mm
-    row3 = box_bottom + 3 * mm
+    row1 = box_bottom + 9 * mm
+    row2 = box_bottom + 5 * mm
+    row3 = box_bottom + 1.5 * mm
 
     left_x = margin + 4 * mm
     right_x = mid_x + 4 * mm
@@ -125,7 +134,7 @@ def generate_planche_with_cartouche(
     page_height = float(first_page.mediabox.height)
 
     # Hauteur réservée au cartouche (margin + boîte) en points
-    cartouche_height_pt = (8 + 28) * mm  # 36 mm
+    cartouche_height_pt = CARTOUCHE_MARGIN + CARTOUCHE_BOX_HEIGHT  # 8 + 14 = 22 mm
 
     # Facteur d'échelle uniforme : le contenu tient sous le cartouche
     scale = (page_height - cartouche_height_pt) / page_height
