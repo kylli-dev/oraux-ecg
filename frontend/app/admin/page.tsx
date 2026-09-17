@@ -3620,36 +3620,59 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
   const initParams = (): WizardParams => {
     if (editJt) {
       const genBlocs = editJt.blocs.filter(b => b.type_bloc === "GENERATION");
-      // Détection du mode : journée complète si 1 seul bloc,
-      // ou 2 blocs avec les mêmes matières (sauvegardé avec pause déjeuner)
       const key = (b: Bloc) => [...b.matieres].sort().join(",");
-      const isJC = genBlocs.length <= 1 || genBlocs.every(b => key(b) === key(genBlocs[0]));
+      const toHM = (t: string) => t.length === 8 ? t.slice(0, 5) : t;
+      const toMin = (hhmm: string) => { const [h, m] = hhmm.split(":").map(Number); return h * 60 + m; };
+
+      // Regroupe les blocs par "jury" (même liste de matières) — en journée complète, chaque
+      // jury peut être représenté par 1 bloc (sans pause déjeuner) ou 2 blocs consécutifs
+      // séparés par la pause déjeuner (mêmes matières des deux côtés).
+      const groupsMap = new Map<string, Bloc[]>();
+      for (const b of genBlocs) {
+        const k = key(b);
+        (groupsMap.get(k) ?? groupsMap.set(k, []).get(k)!).push(b);
+      }
+      const groups = Array.from(groupsMap.values()).map(bs => {
+        const sorted = [...bs].sort((a, b) => toMin(toHM(a.heure_debut)) - toMin(toHM(b.heure_debut)));
+        return { blocs: sorted, start: Math.min(...sorted.map(b => toMin(toHM(b.heure_debut)))), end: Math.max(...sorted.map(b => toMin(toHM(b.heure_fin)))) };
+      });
+
+      // Journée complète : un seul jury (peu importe qu'il soit scindé par la pause déjeuner),
+      // ou plusieurs jurys dont les plages horaires SE CHEVAUCHENT (jurys parallèles sur la
+      // même journée — pattern dédoublement). Des blocs à matières différentes mais
+      // séquentiels dans le temps (Matin ≠ Après-midi, aucun chevauchement) restent, eux,
+      // une demi-journée classique.
+      const overlaps = (a: { start: number; end: number }, b: { start: number; end: number }) => a.start < b.end && b.start < a.end;
+      const isJC = groups.length <= 1 || groups.every((g, i) => groups.slice(i + 1).every(g2 => overlaps(g, g2)));
       const inferredMode: WizardParams["mode"] = isJC ? "journee-complete" : "demi-journee";
 
-      // En journée complète avec 2 blocs sauvegardés, les fusionner en 1 bloc wizard
-      // avec pause_midi_minutes et pause_midi_after reconstruits
-      const inferredBlocs: BlocWizard[] = (() => {
-        if (!genBlocs.length) return [DEFAULT_BLOC];
-        if (!isJC || genBlocs.length < 2) return genBlocs.map(blocToWizard);
-        const toHM = (t: string) => t.length === 8 ? t.slice(0, 5) : t;
-        const toMin = (hhmm: string) => { const [h, m] = hhmm.split(":").map(Number); return h * 60 + m; };
-        // nb_slots effectif d'un bloc sauvegardé : null veut dire "N² implicite", pas 0 —
-        // sans ce fallback, un bloc en N² implicite (fréquent, ex. bloc après-midi jamais
-        // explicitement chiffré) disparaissait purement et simplement du total recalculé à
-        // la réouverture du formulaire d'édition (9+9 devenait 9+0=9).
-        const effectiveSlots = (b: Bloc) => b.nb_slots ?? b.matieres.length ** 2;
-        const b0 = blocToWizard(genBlocs[0]);
-        // La pause déjeuner réelle = l'écart entre la fin du bloc du matin et le début du bloc de l'après-midi
-        const gap = toMin(toHM(genBlocs[1].heure_debut)) - toMin(toHM(genBlocs[0].heure_fin));
-        return [{
+      // nb_slots effectif d'un bloc sauvegardé : null veut dire "N² implicite", pas 0 — sans
+      // ce fallback, un bloc en N² implicite (fréquent, ex. bloc après-midi jamais
+      // explicitement chiffré) disparaissait purement et simplement du total recalculé à la
+      // réouverture du formulaire d'édition (9+9 devenait 9+0=9).
+      const effectiveSlots = (b: Bloc) => b.nb_slots ?? b.matieres.length ** 2;
+
+      // Fusionne les 1-2 blocs d'un même jury (matin+après-midi scindés par la pause
+      // déjeuner) en 1 seul bloc wizard, avec pause_midi_minutes/pause_midi_after reconstruits.
+      const mergeGroup = (g: { blocs: Bloc[] }): BlocWizard => {
+        const b0 = blocToWizard(g.blocs[0]);
+        if (g.blocs.length < 2) return b0;
+        const gap = toMin(toHM(g.blocs[1].heure_debut)) - toMin(toHM(g.blocs[0].heure_fin));
+        return {
           ...b0,
-          heure_debut: toHM(genBlocs[0].heure_debut),
-          heure_fin: toHM(genBlocs[genBlocs.length - 1].heure_fin),
-          nb_slots: genBlocs.reduce((s, b) => s + effectiveSlots(b), 0) || null,
+          heure_debut: toHM(g.blocs[0].heure_debut),
+          heure_fin: toHM(g.blocs[g.blocs.length - 1].heure_fin),
+          nb_slots: g.blocs.reduce((s, b) => s + effectiveSlots(b), 0) || null,
           pause_midi_minutes: Math.max(0, gap),
-          pause_midi_after: effectiveSlots(genBlocs[0]),
-        }];
-      })();
+          pause_midi_after: effectiveSlots(g.blocs[0]),
+        };
+      };
+
+      const inferredBlocs: BlocWizard[] = !genBlocs.length
+        ? [DEFAULT_BLOC]
+        : isJC
+          ? groups.map(mergeGroup)
+          : genBlocs.map(blocToWizard);
 
       return {
         nom: editJt.jt.nom,
@@ -3707,10 +3730,16 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
   const set = (k: keyof WizardParams, v: any) => setP((prev) => ({ ...prev, [k]: v }));
   const setBloc = (idx: number, k: keyof BlocWizard, v: any) =>
     setP((prev) => ({ ...prev, blocs: prev.blocs.map((b, i) => i === idx ? { ...b, [k]: v } : b) }));
-  const addBloc = () => setP((prev) => ({
-    ...prev,
-    blocs: [...prev.blocs, { ...DEFAULT_BLOC, heure_debut: "14:00", heure_fin: "18:00", bonus_slots: 0 }],
-  }));
+  const addBloc = () => setP((prev) => {
+    // En mode "journée complète", un nouveau bloc représente typiquement un jury parallèle
+    // sur la même plage horaire (pattern dédoublement à 2 jurys) : on reprend donc les
+    // horaires et la pause déjeuner du premier bloc plutôt que le créneau après-midi par
+    // défaut du mode "demi-journée", qui n'aurait pas de sens ici.
+    const newBloc: BlocWizard = prev.mode === "journee-complete"
+      ? { ...DEFAULT_BLOC, heure_debut: prev.blocs[0].heure_debut, heure_fin: prev.blocs[0].heure_fin, pause_midi_minutes: prev.blocs[0].pause_midi_minutes, pause_midi_after: prev.blocs[0].pause_midi_after, bonus_slots: 0 }
+      : { ...DEFAULT_BLOC, heure_debut: "14:00", heure_fin: "18:00", bonus_slots: 0 };
+    return { ...prev, blocs: [...prev.blocs, newBloc] };
+  });
   const removeBloc = (idx: number) => setP((prev) => ({ ...prev, blocs: prev.blocs.filter((_, i) => i !== idx) }));
 
   const handleGenerate = () => {
@@ -4163,14 +4192,12 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
           })}
         </div>
 
-        {!isJC && (
-          <button
-            onClick={addBloc}
-            className="w-full py-2 rounded-xl border border-dashed border-black/20 text-xs text-black/40 hover:border-black/40 hover:text-black/60 transition flex items-center justify-center gap-1.5"
-          >
-            <Plus className="h-3.5 w-3.5" /> Ajouter un bloc
-          </button>
-        )}
+        <button
+          onClick={addBloc}
+          className="w-full py-2 rounded-xl border border-dashed border-black/20 text-xs text-black/40 hover:border-black/40 hover:text-black/60 transition flex items-center justify-center gap-1.5"
+        >
+          <Plus className="h-3.5 w-3.5" /> Ajouter un bloc{isJC ? " (jury parallèle)" : ""}
+        </button>
 
         <ErrorMsg msg={error} />
         <Btn label="Générer la matrice →" icon={LayoutGrid} onClick={handleGenerate} disabled={!p.nom.trim() || p.blocs.every(b => b.matieres_config.length === 0)} />
