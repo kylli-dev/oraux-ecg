@@ -129,6 +129,12 @@ async def upload_planches(
 
         stem = Path(upload.filename).stem
         data = await upload.read()
+        # L'extension ".pdf" seule ne garantit rien sur le contenu réel — un fichier
+        # renommé ou corrompu passait ce contrôle et ne cassait qu'au téléchargement du
+        # cartouche (500 opaque). Vérifier l'en-tête PDF ici évite d'importer un fichier
+        # inutilisable.
+        if not data.startswith(b"%PDF-"):
+            raise HTTPException(status_code=400, detail=f"'{upload.filename}' n'est pas un PDF valide (en-tête invalide).")
 
         planche = Planche(
             nom=stem,
@@ -256,16 +262,24 @@ def download_cartouche(epreuve_id: int, db: Session = Depends(get_db)):
         prep_dt = _dt.combine(_dt.today(), ep.heure_debut) - timedelta(minutes=ep.preparation_minutes)
         heure_prep = prep_dt.time()
 
-    pdf_bytes = generate_planche_with_cartouche(
-        original_pdf_bytes=original_bytes,
-        candidat_nom=candidat.nom,
-        candidat_prenom=candidat.prenom or "",
-        matiere=matiere_label or "—",
-        examinateur=examinateur_nom,
-        date_epreuve=dj.date,
-        heure_preparation=heure_prep,
-        heure_passage=ep.heure_debut,
-    )
+    from pypdf.errors import PyPdfError
+
+    try:
+        pdf_bytes = generate_planche_with_cartouche(
+            original_pdf_bytes=original_bytes,
+            candidat_nom=candidat.nom,
+            candidat_prenom=candidat.prenom or "",
+            matiere=matiere_label or "—",
+            examinateur=examinateur_nom,
+            date_epreuve=dj.date,
+            heure_preparation=heure_prep,
+            heure_passage=ep.heure_debut,
+        )
+    except (PyPdfError, IndexError) as e:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Le fichier PDF de la planche « {planche.nom} » est invalide ou corrompu ({e}) — réimportez-le.",
+        )
 
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
