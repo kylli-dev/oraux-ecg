@@ -10808,22 +10808,22 @@ function SallesSection() {
     finally { setSavingDefaults(false); }
   }
 
-  async function assignSalleBulk(
-    date: string,
-    matiere: string,
-    heure_debut: string,
+  // Affectation d'UNE SEULE épreuve — nécessaire pour le dédoublement de jury : avec
+  // plusieurs salles en parallèle sur le même créneau, chaque salle doit pouvoir recevoir
+  // une salle physique différente, pas la même pour toutes (l'affectation groupée reste
+  // possible en sélectionnant le créneau puis en utilisant la barre "Modifications
+  // ponctuelles" plus haut, qui vise elle toutes les épreuves du groupe à la fois).
+  async function assignSalleSingle(
+    epreuveId: number,
     field: "salle_id" | "salle_preparation_id" | "surveillant_id",
     value: number | null
   ) {
-    const targets = epreuves.filter((e) => e.date === date && e.matiere === matiere && e.heure_debut === heure_debut);
-    setSaving(-1);
+    setSaving(epreuveId);
     try {
-      await Promise.all(
-        targets.map((e) => patch(`plannings/${planningId}/epreuves/${e.id}`, { [field]: value }))
-      );
+      await patch(`plannings/${planningId}/epreuves/${epreuveId}`, { [field]: value });
       setEpreuves((prev) =>
         prev.map((e) => {
-          if (e.date !== date || e.matiere !== matiere || e.heure_debut !== heure_debut) return e;
+          if (e.id !== epreuveId) return e;
           if (field === "surveillant_id") {
             const surv = surveillants.find((s) => s.id === value) ?? null;
             return { ...e, surveillant_id: value, surveillant_nom: surv?.nom ?? null, surveillant_prenom: surv?.prenom ?? null };
@@ -11268,16 +11268,13 @@ function SallesSection() {
                         </tr>
                       </thead>
                       <tbody>
-                        {dayGroups.map((g) => {
+                        {dayGroups.flatMap((g) => {
                           const key = `${g.date}||${g.matiere}||${g.heure_debut}`;
                           const isSelected = selected.has(key);
-                          const salleId = g.epreuves[0]?.salle_id ?? null;
-                          const sallesPrepId = g.epreuves[0]?.salle_preparation_id ?? null;
-                          const surveillantId = g.epreuves[0]?.surveillant_id ?? null;
-                          // salles_par_matiere > 1 : plusieurs épreuves parallèles partagent ce
-                          // même créneau (même matière, même heure) — l'affectation groupée leur
-                          // donne à toutes la même salle ; distinguer chacune individuellement
-                          // irait au-delà de la granularité "à l'heure" demandée ici.
+                          // salles_par_matiere / dédoublement sélectif > 1 : plusieurs épreuves
+                          // parallèles partagent ce même créneau (même matière, même heure) —
+                          // chacune doit pouvoir recevoir SA PROPRE salle (jury 1 → salle 203,
+                          // jury 2 → salle 204, etc.), pas la même pour toutes.
                           const hasDoublons = g.epreuves.length > 1;
                           // Heure de préparation = heure_debut - preparation_minutes (même
                           // formule que la vue Candidats), "—" si pas de prépa configurée.
@@ -11289,37 +11286,47 @@ function SallesSection() {
                                 return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
                               })()
                             : "—";
-                          return (
-                            <tr key={key} className={`border-b border-black/[0.04] last:border-0 ${isSelected ? "bg-amber-50/60" : "hover:bg-black/[0.01]"}`}>
+                          const rowSpan = g.epreuves.length;
+
+                          return g.epreuves.map((ep, epIdx) => (
+                            <tr key={ep.id} className={`border-b border-black/[0.04] last:border-0 ${isSelected ? "bg-amber-50/60" : "hover:bg-black/[0.01]"}`}>
+                              {epIdx === 0 && (
+                                <>
+                                  <td className="px-4 py-2.5 align-top" rowSpan={rowSpan}>
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={(e) => {
+                                        setSelected((prev) => {
+                                          const next = new Set(prev);
+                                          e.target.checked ? next.add(key) : next.delete(key);
+                                          return next;
+                                        });
+                                      }}
+                                      title={hasDoublons ? "Sélectionne les 2 salles parallèles pour une affectation groupée" : undefined}
+                                      className="cursor-pointer"
+                                    />
+                                  </td>
+                                  <td className="px-4 py-2.5 align-top font-medium text-black/70" rowSpan={rowSpan}>{g.matiere}</td>
+                                  <td className="px-4 py-2.5 align-top font-mono text-xs whitespace-nowrap" rowSpan={rowSpan}>
+                                    <span className="text-black/35">{heurePrepa}</span>
+                                    <span className="text-black/20 mx-1">→</span>
+                                    <span className="text-black/80 font-semibold">{g.heure_debut?.slice(0, 5)}</span>
+                                    <span className="text-black/20 mx-1">→</span>
+                                    <span className="text-black/50">{ep.heure_fin?.slice(0, 5) ?? "—"}</span>
+                                  </td>
+                                  <td className="px-4 py-2.5 align-top text-black/40" rowSpan={rowSpan} title={hasDoublons ? "Plusieurs salles en parallèle pour ce créneau — une salle par ligne ci-dessous" : ""}>
+                                    {g.epreuves.length}
+                                  </td>
+                                </>
+                              )}
                               <td className="px-4 py-2.5">
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={(e) => {
-                                    setSelected((prev) => {
-                                      const next = new Set(prev);
-                                      e.target.checked ? next.add(key) : next.delete(key);
-                                      return next;
-                                    });
-                                  }}
-                                  className="cursor-pointer"
-                                />
-                              </td>
-                              <td className="px-4 py-2.5 font-medium text-black/70">{g.matiere}</td>
-                              <td className="px-4 py-2.5 font-mono text-xs whitespace-nowrap">
-                                <span className="text-black/35">{heurePrepa}</span>
-                                <span className="text-black/20 mx-1">→</span>
-                                <span className="text-black/80 font-semibold">{g.heure_debut?.slice(0, 5)}</span>
-                                <span className="text-black/20 mx-1">→</span>
-                                <span className="text-black/50">{g.epreuves[0]?.heure_fin?.slice(0, 5) ?? "—"}</span>
-                              </td>
-                              <td className="px-4 py-2.5 text-black/40" title={hasDoublons ? "Plusieurs salles en parallèle pour ce créneau (salles_par_matiere > 1)" : ""}>
-                                {g.epreuves.length}
-                              </td>
-                              <td className="px-4 py-2.5">
+                                {hasDoublons && (
+                                  <span className="text-[9px] text-black/30 font-mono mr-1.5 align-middle">#{epIdx + 1}</span>
+                                )}
                                 <select
-                                  value={salleId ?? ""}
-                                  onChange={(ev) => assignSalleBulk(g.date, g.matiere, g.heure_debut, "salle_id", ev.target.value ? Number(ev.target.value) : null)}
+                                  value={ep.salle_id ?? ""}
+                                  onChange={(ev) => assignSalleSingle(ep.id, "salle_id", ev.target.value ? Number(ev.target.value) : null)}
                                   disabled={saving === -1}
                                   className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[120px]"
                                 >
@@ -11331,8 +11338,8 @@ function SallesSection() {
                               </td>
                               <td className="px-4 py-2.5">
                                 <select
-                                  value={sallesPrepId ?? ""}
-                                  onChange={(ev) => assignSalleBulk(g.date, g.matiere, g.heure_debut, "salle_preparation_id", ev.target.value ? Number(ev.target.value) : null)}
+                                  value={ep.salle_preparation_id ?? ""}
+                                  onChange={(ev) => assignSalleSingle(ep.id, "salle_preparation_id", ev.target.value ? Number(ev.target.value) : null)}
                                   disabled={saving === -1}
                                   className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[120px]"
                                 >
@@ -11344,8 +11351,8 @@ function SallesSection() {
                               </td>
                               <td className="px-4 py-2.5">
                                 <select
-                                  value={surveillantId ?? ""}
-                                  onChange={(ev) => assignSalleBulk(g.date, g.matiere, g.heure_debut, "surveillant_id", ev.target.value ? Number(ev.target.value) : null)}
+                                  value={ep.surveillant_id ?? ""}
+                                  onChange={(ev) => assignSalleSingle(ep.id, "surveillant_id", ev.target.value ? Number(ev.target.value) : null)}
                                   disabled={saving === -1}
                                   className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[140px]"
                                 >
@@ -11356,7 +11363,7 @@ function SallesSection() {
                                 </select>
                               </td>
                             </tr>
-                          );
+                          ));
                         })}
                       </tbody>
                     </table>
