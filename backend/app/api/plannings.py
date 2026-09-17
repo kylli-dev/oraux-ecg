@@ -479,6 +479,33 @@ def day_view(planning_id: int, date: Date = Query(...), db: Session = Depends(ge
     return DayViewOut(planning_id=planning_id, date=date, demi_journees=djs_out)
 
 
+@router.delete("/{planning_id}/day")
+def delete_day(planning_id: int, date: Date = Query(...), db: Session = Depends(get_db)):
+    """
+    Supprime toutes les demi-journées (et leurs épreuves — cascade FK) d'une date donnée
+    dans ce planning. Les épreuves déjà attribuées à un candidat sont supprimées avec le
+    reste : leur inscription au triplet perd cette épreuve (mais pas les 2 autres, ni les
+    notes déjà saisies, qui ne dépendent pas de l'épreuve). L'appelant est responsable
+    d'avoir prévenu l'admin de cet impact avant d'appeler cette route.
+    """
+    p = db.get(Planning, planning_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Planning not found")
+
+    demi_journees = db.query(DemiJournee).filter_by(planning_id=planning_id, date=date).all()
+    epreuves_supprimees = sum(
+        db.query(Epreuve).filter_by(demi_journee_id=dj.id).count() for dj in demi_journees
+    )
+    for dj in demi_journees:
+        db.delete(dj)
+    db.commit()
+    return {
+        "date": str(date),
+        "demi_journees_supprimees": len(demi_journees),
+        "epreuves_supprimees": epreuves_supprimees,
+    }
+
+
 # ── Tableau de bord ────────────────────────────────────────────────────────────
 
 @router.get("/{planning_id}/dashboard")

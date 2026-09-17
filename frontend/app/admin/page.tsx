@@ -1391,18 +1391,55 @@ function rowStatut(byMat: Record<string, EpreuveFlat[]>): string {
 }
 
 function PlanningTableauView({ planningId, planning }: { planningId: number; planning: Planning }) {
+  const toast = useToast();
+  const confirm = useConfirm();
   const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterDate, setFilterDate] = useState<string>("");
   const [filterStatut, setFilterStatut] = useState<string>("");
+  const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set());
+  const [deletingDays, setDeletingDays] = useState(false);
 
-  useEffect(() => {
+  const loadEpreuves = useCallback(() => {
     setLoading(true);
-    get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`)
+    return get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`)
       .then(setEpreuves)
       .catch(() => setEpreuves([]))
       .finally(() => setLoading(false));
   }, [planningId]);
+
+  useEffect(() => { loadEpreuves(); }, [loadEpreuves]);
+
+  // Suppression d'une ou plusieurs journées déjà affectées (démi-journées + épreuves en
+  // cascade côté backend) — avertit explicitement si des candidats sont déjà inscrits sur
+  // ces créneaux avant de confirmer, cette inscription (triplet) serait alors incomplète.
+  const deleteSelectedDays = async () => {
+    if (selectedDates.size === 0) return;
+    const concerned = epreuves.filter((e) => selectedDates.has(e.date));
+    const avecCandidat = concerned.filter((e) => e.candidat_id != null).length;
+    const dateList = Array.from(selectedDates).sort().map((d) => formatDate(d)).join(", ");
+    const warning = avecCandidat > 0
+      ? ` ⚠ ${avecCandidat} épreuve(s) déjà attribuée(s) à un candidat seront perdues (leur inscription au triplet restera incomplète sur les 2 autres matières).`
+      : "";
+    const ok = await confirm(
+      `Supprimer ${selectedDates.size} journée(s) (${dateList}) — ${concerned.length} épreuve(s) au total ?${warning}`,
+      { confirmLabel: "Supprimer", danger: true }
+    );
+    if (!ok) return;
+    setDeletingDays(true);
+    try {
+      await Promise.all(
+        Array.from(selectedDates).map((d) => del(`plannings/${planningId}/day?date=${d}`))
+      );
+      toast.success(`${selectedDates.size} journée(s) supprimée(s)`);
+      setSelectedDates(new Set());
+      await loadEpreuves();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setDeletingDays(false);
+    }
+  };
 
   if (loading) return <div className="flex justify-center py-16 text-black/30"><Spinner /></div>;
   if (epreuves.length === 0)
@@ -1491,6 +1528,24 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
         <span className="text-xs text-black/30 ml-auto">{filtered.length} créneau(x)</span>
       </div>
 
+      {/* Barre de suppression de journées sélectionnées */}
+      {selectedDates.size > 0 && (
+        <div className="flex items-center gap-3 mb-4 px-4 py-2.5 rounded-xl border border-red-200 bg-red-50">
+          <span className="text-xs font-semibold text-red-700">{selectedDates.size} journée(x) sélectionnée(s)</span>
+          <button
+            onClick={deleteSelectedDays}
+            disabled={deletingDays}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-red-600 text-white font-medium hover:bg-red-700 transition disabled:opacity-50"
+          >
+            {deletingDays ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+            Supprimer
+          </button>
+          <button onClick={() => setSelectedDates(new Set())} className="text-xs text-black/40 hover:text-black/60 transition ml-auto">
+            Annuler
+          </button>
+        </div>
+      )}
+
       {/* Tableau croisé */}
       <div className="overflow-x-auto rounded-xl border bg-white shadow-sm max-h-[72vh] overflow-y-auto">
         <table className="text-sm border-collapse min-w-max">
@@ -1535,7 +1590,22 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                     colSpan={4 + matieres.length * 3}
                     className="px-4 py-2 bg-black/[0.05] font-semibold text-black/60 text-xs uppercase tracking-widest sticky left-0 z-10"
                   >
-                    {formatDate(date)}
+                    <label className="inline-flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedDates.has(date)}
+                        onChange={(e) => {
+                          setSelectedDates((prev) => {
+                            const next = new Set(prev);
+                            e.target.checked ? next.add(date) : next.delete(date);
+                            return next;
+                          });
+                        }}
+                        title="Sélectionner cette journée pour suppression"
+                        className="cursor-pointer normal-case"
+                      />
+                      {formatDate(date)}
+                    </label>
                   </td>
                 </tr>
                 {dateRows.map((row) => {
