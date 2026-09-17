@@ -1562,7 +1562,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
               {matieres.map((m) => (
                 <th
                   key={m}
-                  colSpan={3}
+                  colSpan={4}
                   className="px-3 py-2.5 text-center text-xs font-semibold whitespace-nowrap border-l border-black/10"
                 >
                   {m}
@@ -1580,6 +1580,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                   <th className="px-3 py-1.5 text-left font-normal border-l border-black/10">Candidat</th>
                   <th className="px-3 py-1.5 text-left font-normal">Examinateur</th>
                   <th className="px-3 py-1.5 text-left font-normal">Salle</th>
+                  <th className="px-3 py-1.5 text-left font-normal">Surveillant</th>
                 </React.Fragment>
               ))}
             </tr>
@@ -1590,7 +1591,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                 {/* En-tête de date */}
                 <tr>
                   <td
-                    colSpan={4 + matieres.length * 3}
+                    colSpan={4 + matieres.length * 4}
                     className="px-4 py-2 bg-black/[0.05] font-semibold text-black/60 text-xs uppercase tracking-widest sticky left-0 z-10"
                   >
                     <label className="inline-flex items-center gap-2 cursor-pointer">
@@ -1649,7 +1650,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                         if (eps.length === 0) {
                           return (
                             <React.Fragment key={m}>
-                              <td className="px-3 py-2 text-black/20 text-xs border-l border-black/[0.06]" colSpan={3}>—</td>
+                              <td className="px-3 py-2 text-black/20 text-xs border-l border-black/[0.06]" colSpan={4}>—</td>
                             </React.Fragment>
                           );
                         }
@@ -1692,6 +1693,21 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                                     </>
                                   ) : (
                                     <span className="text-black/20 italic">—</span>
+                                  )}
+                                </div>
+                              ))}
+                            </td>
+                            {/* Surveillant(s) */}
+                            <td className="px-3 py-2">
+                              {eps.map((e) => (
+                                <div key={e.id} className="text-xs text-black/50">
+                                  {e.surveillant_nom ? (
+                                    <div>{e.surveillant_nom}{e.surveillant_prenom ? " " + e.surveillant_prenom[0] + "." : ""}</div>
+                                  ) : (
+                                    <span className="text-black/20 italic">—</span>
+                                  )}
+                                  {e.surveillant2_nom && (
+                                    <div>{e.surveillant2_nom}{e.surveillant2_prenom ? " " + e.surveillant2_prenom[0] + "." : ""}</div>
                                   )}
                                 </div>
                               ))}
