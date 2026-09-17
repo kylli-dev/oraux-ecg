@@ -8837,10 +8837,22 @@ function ParametragesSection() {
     if (tab === "comptes" && myRole !== null && !isSuperAdmin) setTab("matieres");
   }, [tab, myRole, isSuperAdmin]);
 
+  const doExportParametrages = () => {
+    const a = document.createElement("a");
+    a.href = "/api/backend/excel/parametrages/export";
+    a.download = "parametrages.xlsx";
+    a.click();
+  };
+
   return (
     <div>
-      <h1 className="text-xl font-bold text-gray-900 mb-1">Paramétrages</h1>
-      <p className="text-sm text-gray-500 mb-6">Configuration des messages automatiques et gestion des accès.</p>
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900 mb-1">Paramétrages</h1>
+          <p className="text-sm text-gray-500">Configuration des messages automatiques et gestion des accès.</p>
+        </div>
+        <Btn label="Exporter Excel" icon={Download} variant="ghost" onClick={doExportParametrages} />
+      </div>
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-6 w-fit">

@@ -25,6 +25,8 @@ from app.models.examinateur import Examinateur
 from app.models.examinateur_planning import ExaminateurPlanning
 from app.models.planning import Planning
 from app.models.etablissement import Etablissement
+from app.models.matiere import Matiere
+from app.models.salle import Salle
 
 RED_HEX = "C62828"
 GREY_HEX = "F5F5F5"
@@ -865,3 +867,33 @@ def import_etablissements(db: Session, file_bytes: bytes) -> dict:
 
     db.commit()
     return {"created": created, "updated": updated, "errors": errors}
+
+
+# ── Paramétrages (export global) ────────────────────────────────────────────────
+
+def export_parametrages(db: Session) -> bytes:
+    """Exporte les référentiels de paramétrage (matières, salles, établissements) en un seul classeur."""
+    wb = openpyxl.Workbook()
+
+    ws_mat = wb.active
+    ws_mat.title = "Matières"
+    _header_row(ws_mat, ["Intitulé", "Statut"])
+    for m in db.query(Matiere).order_by(Matiere.intitule).all():
+        ws_mat.append([m.intitule, "Actif" if m.active else "Inactif"])
+    _autosize(ws_mat)
+
+    ws_salle = wb.create_sheet("Salles")
+    _header_row(ws_salle, ["Intitulé", "Statut"])
+    for s in db.query(Salle).order_by(Salle.intitule).all():
+        ws_salle.append([s.intitule, "Actif" if s.active else "Inactif"])
+    _autosize(ws_salle)
+
+    ws_etab = wb.create_sheet("Établissements")
+    _header_row(ws_etab, ["Code UAI", "Nom", "Ville", "Département", "Académie"])
+    for e in db.query(Etablissement).order_by(Etablissement.nom).all():
+        ws_etab.append([e.code_uai, e.nom, e.ville, e.departement, e.academie])
+    _autosize(ws_etab)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

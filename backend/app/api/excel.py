@@ -13,6 +13,7 @@ from app.services.excel import (
     import_candidats_complet, export_template_candidats_complet,
     import_examinateurs, export_template_examinateurs,
     import_etablissements, export_template_etablissements,
+    export_parametrages,
 )
 
 router = APIRouter(
@@ -151,6 +152,17 @@ def import_etablissements_excel(file: UploadFile = File(...), db: Session = Depe
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     return result
+
+
+@router.get("/parametrages/export")
+def export_parametrages_excel(db: Session = Depends(get_db)):
+    """Exporte les référentiels de paramétrage (matières, salles, établissements) en Excel."""
+    data = export_parametrages(db)
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=parametrages.xlsx"},
+    )
 
 
 @router.post("/plannings/{planning_id}/examinateurs/import")
