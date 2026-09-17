@@ -193,6 +193,8 @@ def _run_migrations():
         "ALTER TABLE admin_user ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'admin'",
         # Changement de mot de passe obligatoire à la prochaine connexion
         "ALTER TABLE admin_user ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT TRUE",
+        # Nature explicite (MATIN/APRES_MIDI) d'un bloc de gabarit — NULL = déduite de l'heure
+        "ALTER TABLE journee_type_bloc ADD COLUMN type_demi_journee VARCHAR(20)",
     ]
     with engine.connect() as conn:
         for sql in migrations:

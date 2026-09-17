@@ -88,6 +88,7 @@ type Bloc = {
   salles_par_matiere: number;
   nb_slots: number | null;
   bonus_slots: number;
+  type_demi_journee: "MATIN" | "APRES_MIDI" | null;
 };
 
 type Epreuve = {
@@ -3410,6 +3411,9 @@ type BlocWizard = {
   matieres_config: MatiereConfig[];
   pause_midi_minutes: number;     // durée réelle de la pause déjeuner en minutes (0 = pas de pause)
   pause_midi_after: number | null; // null = auto (moitié des créneaux oraux)
+  // Nature explicite (MATIN/APRES_MIDI) — null = déduite de heure_debut (comportement historique),
+  // utile pour forcer la nature d'un bloc "jury" en dédoublement même s'il déborde sur midi.
+  type_demi_journee?: "MATIN" | "APRES_MIDI" | null;
 };
 
 type WizardParams = {
@@ -3596,7 +3600,15 @@ function blocToWizard(b: Bloc): BlocWizard {
     matieres_config: configs,
     pause_midi_minutes: 0,
     pause_midi_after: null,
+    type_demi_journee: b.type_demi_journee ?? null,
   };
+}
+
+// Nature effective d'un bloc du wizard : la valeur explicite si définie (override admin),
+// sinon déduite de heure_debut (comportement historique, cohérent avec le backend).
+function effectiveDjType(bloc: BlocWizard): "MATIN" | "APRES_MIDI" {
+  if (bloc.type_demi_journee === "MATIN" || bloc.type_demi_journee === "APRES_MIDI") return bloc.type_demi_journee;
+  return parseInt(bloc.heure_debut) < 12 ? "MATIN" : "APRES_MIDI";
 }
 
 function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; editJt?: { jt: JourneeType; blocs: Bloc[] } }) {
@@ -3729,6 +3741,9 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
         preparation_minutes: bMaxPrep,
         salles_par_matiere: p.salles_par_matiere,
         bonus_slots: bloc.bonus_slots ?? 0,
+        // Override explicite pertinent seulement en mode "demi-journee" (le mode "journée
+        // complète" scinde déjà lui-même son unique bloc en avant/après pause plus bas).
+        type_demi_journee: p.mode === "demi-journee" ? (bloc.type_demi_journee ?? null) : null,
       };
       if (p.mode === "journee-complete" && (bloc.pause_midi_minutes ?? 0) > 0) {
         // Découpe autour de la ligne isPause réellement insérée par buildBlocRows, plutôt que
@@ -3906,7 +3921,27 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
               <div key={idx} className="rounded-xl border border-black/10 bg-gray-50/60 p-4 space-y-3">
                 {/* En-tête du bloc */}
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold text-black/70">Bloc {idx + 1} — {blocLabel(bloc.heure_debut, bloc.heure_fin)}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-black/70">Bloc {idx + 1}</span>
+                    {p.mode === "demi-journee" ? (
+                      <div className="flex items-center gap-1" title="Nature de la demi-journée — déduite de l'heure de début par défaut, forçable pour un bloc « jury » parallèle qui déborde sur midi">
+                        {(["MATIN", "APRES_MIDI"] as const).map((t) => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => setBloc(idx, "type_demi_journee", t)}
+                            className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border transition ${
+                              effectiveDjType(bloc) === t ? "bg-black text-white border-black" : "bg-white text-black/40 border-black/15 hover:border-black/30"
+                            }`}
+                          >
+                            {t === "MATIN" ? "Matin" : "Après-midi"}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-black/40 font-medium">— {blocLabel(bloc.heure_debut, bloc.heure_fin)}</span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-3">
                     {N > 0 && (
                       <span className="text-xs text-green-700 font-medium">

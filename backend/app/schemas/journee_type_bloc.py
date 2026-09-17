@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 ALLOWED_BLOC_TYPE = {"GENERATION", "PAUSE"}
+ALLOWED_DJ_TYPE = {"MATIN", "APRES_MIDI"}
 
 
 class MatiereConfigItem(BaseModel):
@@ -35,12 +36,21 @@ class JourneeTypeBlocCreate(BaseModel):
     salles_par_matiere: int = Field(default=1, ge=1, le=50)
     nb_slots: Optional[int] = Field(default=None, ge=1, le=10000)
     bonus_slots: int = Field(default=0, ge=0, le=1000)
+    # Nature explicite (MATIN/APRES_MIDI) — None = déduite de heure_debut (comportement historique)
+    type_demi_journee: Optional[str] = None
 
     @field_validator("type_bloc")
     @classmethod
     def validate_type(cls, v: str) -> str:
         if v not in ALLOWED_BLOC_TYPE:
             raise ValueError(f"type_bloc must be one of {sorted(ALLOWED_BLOC_TYPE)}")
+        return v
+
+    @field_validator("type_demi_journee")
+    @classmethod
+    def validate_dj_type(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in ALLOWED_DJ_TYPE:
+            raise ValueError(f"type_demi_journee must be one of {sorted(ALLOWED_DJ_TYPE)} or None")
         return v
 
     @field_validator("heure_fin")
@@ -76,6 +86,8 @@ class JourneeTypeBlocUpdate(BaseModel):
     bonus_slots: int = Field(default=0, ge=0, le=1000)
     # Disposition personnalisée des triplets : None = réinitialiser à la formule N²
     custom_matrix: Optional[List[List[int]]] = None
+    # Nature explicite (MATIN/APRES_MIDI) — None = déduite de heure_debut (comportement historique)
+    type_demi_journee: Optional[str] = None
 
     @field_validator("heure_fin")
     @classmethod
@@ -91,6 +103,13 @@ class JourneeTypeBlocUpdate(BaseModel):
         if v is None:
             return []
         return [m.strip() for m in v if m and m.strip()]
+
+    @field_validator("type_demi_journee")
+    @classmethod
+    def validate_dj_type(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in ALLOWED_DJ_TYPE:
+            raise ValueError(f"type_demi_journee must be one of {sorted(ALLOWED_DJ_TYPE)} or None")
+        return v
 
 
 class JourneeTypeBlocOut(BaseModel):
@@ -109,6 +128,7 @@ class JourneeTypeBlocOut(BaseModel):
     nb_slots: Optional[int] = None
     bonus_slots: int = 0
     custom_matrix: Optional[List[List[int]]] = None
+    type_demi_journee: Optional[str] = None
 
     class Config:
         from_attributes = True

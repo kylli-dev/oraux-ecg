@@ -17,6 +17,12 @@ class JourneeTypeBloc(Base):
     heure_debut: Mapped[str] = mapped_column(Time, nullable=False)
     heure_fin: Mapped[str] = mapped_column(Time, nullable=False)
 
+    # Nature explicite de la demi-journée (MATIN / APRES_MIDI) — si NULL, déduite de
+    # heure_debut par rapport à HEURE_PIVOT_MIDI (voir generation.py::_split_blocs_by_periode).
+    # Permet de forcer la nature d'un bloc (ex. 2 jurys parallèles au même horaire, dont l'un
+    # devrait rester rattaché au Matin même s'il chevauche légèrement midi).
+    type_demi_journee: Mapped[str] = mapped_column(String(20), nullable=True)
+
     # JSON (liste de matières) seulement pour GENERATION
     matieres_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
 

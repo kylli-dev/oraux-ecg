@@ -125,18 +125,31 @@ class PeriodePlan:
 
 # ── Phase 1 : Planification (pure, sans DB) ───────────────────────────────────
 
+def _periode_of(bloc: JourneeTypeBloc) -> str:
+    """
+    Nature (MATIN/APRES_MIDI) d'un bloc : la valeur explicite du bloc si définie
+    (type_demi_journee), sinon déduite de heure_debut par rapport à HEURE_PIVOT_MIDI.
+    L'override explicite permet par exemple de garder 2 blocs "jury" parallèles
+    rattachés à la même demi-journée même si l'un d'eux déborde légèrement sur midi.
+    """
+    explicit = getattr(bloc, "type_demi_journee", None)
+    if explicit in ("MATIN", "APRES_MIDI"):
+        return explicit
+    return "MATIN" if bloc.heure_debut < HEURE_PIVOT_MIDI else "APRES_MIDI"
+
+
 def _split_blocs_by_periode(
     blocs: List[JourneeTypeBloc],
 ) -> dict[str, List[JourneeTypeBloc]]:
     """
-    Trie les blocs par heure de début et les répartit en deux groupes :
-      - MATIN      : blocs dont heure_debut < 12h00
-      - APRES_MIDI : blocs dont heure_debut >= 12h00
+    Trie les blocs par heure de début et les répartit en deux groupes (MATIN /
+    APRES_MIDI) selon _periode_of : nature explicite du bloc si définie, sinon
+    heure_debut par rapport à HEURE_PIVOT_MIDI (12h00).
     """
     sorted_blocs = sorted(blocs, key=lambda b: b.heure_debut)
     return {
-        "MATIN":      [b for b in sorted_blocs if b.heure_debut < HEURE_PIVOT_MIDI],
-        "APRES_MIDI": [b for b in sorted_blocs if b.heure_debut >= HEURE_PIVOT_MIDI],
+        "MATIN":      [b for b in sorted_blocs if _periode_of(b) == "MATIN"],
+        "APRES_MIDI": [b for b in sorted_blocs if _periode_of(b) == "APRES_MIDI"],
     }
 
 
