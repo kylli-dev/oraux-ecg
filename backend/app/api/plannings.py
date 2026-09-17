@@ -164,7 +164,8 @@ def list_epreuves_planning(
     salle_ids       = {e.salle_id for e, _ in rows if e.salle_id} | \
                       {e.salle_preparation_id for e, _ in rows if e.salle_preparation_id}
     planche_ids     = {e.planche_id for e, _ in rows if e.planche_id}
-    surveillant_ids = {e.surveillant_id for e, _ in rows if e.surveillant_id}
+    surveillant_ids = {e.surveillant_id for e, _ in rows if e.surveillant_id} | \
+                       {e.surveillant2_id for e, _ in rows if e.surveillant2_id}
 
     candidats    = {c.id: c for c in db.query(Candidat).filter(Candidat.id.in_(candidat_ids)).all()} if candidat_ids else {}
     examinateurs = {e.id: e for e in db.query(ExaminateurModel).filter(ExaminateurModel.id.in_(examinateur_ids)).all()} if examinateur_ids else {}
@@ -181,6 +182,7 @@ def list_epreuves_planning(
         salle_prep   = salles.get(epreuve.salle_preparation_id)
         planche      = planches.get(epreuve.planche_id)
         surveillant  = surveillants.get(epreuve.surveillant_id)
+        surveillant2 = surveillants.get(epreuve.surveillant2_id)
         result.append({
             "id": epreuve.id,
             "date": str(dj.date),
@@ -206,6 +208,9 @@ def list_epreuves_planning(
             "surveillant_id": surveillant.id if surveillant else None,
             "surveillant_nom": surveillant.nom if surveillant else None,
             "surveillant_prenom": surveillant.prenom if surveillant else None,
+            "surveillant2_id": surveillant2.id if surveillant2 else None,
+            "surveillant2_nom": surveillant2.nom if surveillant2 else None,
+            "surveillant2_prenom": surveillant2.prenom if surveillant2 else None,
             "planche_id": planche.id if planche else None,
             "planche_nom": planche.nom if planche else None,
         })
@@ -297,6 +302,7 @@ class SalleDefautIn(BaseModel):
     salle_id: Optional[int] = None
     salle_preparation_id: Optional[int] = None
     surveillant_id: Optional[int] = None
+    surveillant2_id: Optional[int] = None
 
 class SalleDefautOut(BaseModel):
     matiere: str
@@ -307,6 +313,9 @@ class SalleDefautOut(BaseModel):
     surveillant_id: Optional[int] = None
     surveillant_nom: Optional[str] = None
     surveillant_prenom: Optional[str] = None
+    surveillant2_id: Optional[int] = None
+    surveillant2_nom: Optional[str] = None
+    surveillant2_prenom: Optional[str] = None
 
 
 @router.get("/{planning_id}/salle-defaults", response_model=List[SalleDefautOut])
@@ -322,6 +331,9 @@ def get_salle_defaults(planning_id: int, db: Session = Depends(get_db)):
             surveillant_id=r.surveillant_id,
             surveillant_nom=r.surveillant.nom if r.surveillant else None,
             surveillant_prenom=r.surveillant.prenom if r.surveillant else None,
+            surveillant2_id=r.surveillant2_id,
+            surveillant2_nom=r.surveillant2.nom if r.surveillant2 else None,
+            surveillant2_prenom=r.surveillant2.prenom if r.surveillant2 else None,
         )
         for r in rows
     ]
@@ -343,6 +355,7 @@ def upsert_salle_defaults(
                 salle_id=item.salle_id,
                 salle_preparation_id=item.salle_preparation_id,
                 surveillant_id=item.surveillant_id,
+                surveillant2_id=item.surveillant2_id,
             ))
     db.commit()
     return get_salle_defaults(planning_id, db)
@@ -374,6 +387,8 @@ def apply_salle_defaults(planning_id: int, db: Session = Depends(get_db)):
             e.salle_preparation_id = d.salle_preparation_id
         if d.surveillant_id is not None:
             e.surveillant_id = d.surveillant_id
+        if d.surveillant2_id is not None:
+            e.surveillant2_id = d.surveillant2_id
         count += 1
 
     db.commit()

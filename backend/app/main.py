@@ -195,6 +195,9 @@ def _run_migrations():
         "ALTER TABLE admin_user ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT TRUE",
         # Nature explicite (MATIN/APRES_MIDI) d'un bloc de gabarit — NULL = déduite de l'heure
         "ALTER TABLE journee_type_bloc ADD COLUMN type_demi_journee VARCHAR(20)",
+        # Deuxième surveillant par salle (en plus du premier)
+        "ALTER TABLE epreuve ADD COLUMN surveillant2_id INTEGER REFERENCES surveillant(id) ON DELETE SET NULL",
+        "ALTER TABLE planning_matiere_salle_defaut ADD COLUMN surveillant2_id INTEGER REFERENCES surveillant(id) ON DELETE SET NULL",
     ]
     with engine.connect() as conn:
         for sql in migrations:

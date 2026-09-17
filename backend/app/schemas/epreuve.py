@@ -45,6 +45,7 @@ class EpreuveUpdate(BaseModel):
     salle_id: Optional[int] = None
     salle_preparation_id: Optional[int] = None
     surveillant_id: Optional[int] = None
+    surveillant2_id: Optional[int] = None
     preparation_minutes: Optional[int] = None
     examinateur_id: Optional[int] = None
     examinateur2_id: Optional[int] = None
@@ -94,6 +95,9 @@ class EpreuveOut(BaseModel):
     surveillant_id: Optional[int] = None
     surveillant_nom: Optional[str] = None
     surveillant_prenom: Optional[str] = None
+    surveillant2_id: Optional[int] = None
+    surveillant2_nom: Optional[str] = None
+    surveillant2_prenom: Optional[str] = None
 
     class Config:
         from_attributes = True

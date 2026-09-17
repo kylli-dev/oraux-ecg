@@ -44,6 +44,8 @@ def create_epreuve(body: EpreuveCreate, db: Session = Depends(get_db)):
                 e.salle_preparation_id = defaut.salle_preparation_id
             if defaut.surveillant_id is not None:
                 e.surveillant_id = defaut.surveillant_id
+            if defaut.surveillant2_id is not None:
+                e.surveillant2_id = defaut.surveillant2_id
 
     db.commit()
     db.refresh(e)

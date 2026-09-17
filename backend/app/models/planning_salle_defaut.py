@@ -22,10 +22,14 @@ class PlanningMatiereSalleDefaut(Base):
     surveillant_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("surveillant.id", ondelete="SET NULL"), nullable=True
     )
+    surveillant2_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("surveillant.id", ondelete="SET NULL"), nullable=True
+    )
 
     salle = relationship("Salle", foreign_keys=[salle_id])
     salle_preparation = relationship("Salle", foreign_keys=[salle_preparation_id])
     surveillant = relationship("Surveillant", foreign_keys=[surveillant_id])
+    surveillant2 = relationship("Surveillant", foreign_keys=[surveillant2_id])
 
     __table_args__ = (
         UniqueConstraint("planning_id", "matiere", name="uq_planning_matiere_salle"),

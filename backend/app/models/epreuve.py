@@ -63,6 +63,12 @@ class Epreuve(Base):
     )
     surveillant = relationship("Surveillant", foreign_keys=[surveillant_id])
 
+    surveillant2_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("surveillant.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    surveillant2 = relationship("Surveillant", foreign_keys=[surveillant2_id])
+
     planche_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("planche.id", ondelete="SET NULL"),
         nullable=True,

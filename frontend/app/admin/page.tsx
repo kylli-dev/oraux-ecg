@@ -154,6 +154,9 @@ type EpreuveFlat = {
   surveillant_id: number | null;
   surveillant_nom: string | null;
   surveillant_prenom: string | null;
+  surveillant2_id: number | null;
+  surveillant2_nom: string | null;
+  surveillant2_prenom: string | null;
   planche_id: number | null;
   planche_nom: string | null;
 };
@@ -10900,7 +10903,7 @@ function SallesSection() {
   const [bulkSalleId, setBulkSalleId] = useState<string>("");
   const [bulkSallePrepId, setBulkSallePrepId] = useState<string>("");
   // Salles par défaut
-  type SalleDefaut = { matiere: string; salle_id: number | null; salle_preparation_id: number | null; surveillant_id: number | null };
+  type SalleDefaut = { matiere: string; salle_id: number | null; salle_preparation_id: number | null; surveillant_id: number | null; surveillant2_id: number | null };
   type SurveillantItem = { id: number; nom: string; prenom: string; actif: boolean };
   const [defaults, setDefaults] = useState<SalleDefaut[]>([]);
   const [savingDefaults, setSavingDefaults] = useState(false);
@@ -10959,7 +10962,7 @@ function SallesSection() {
   // ponctuelles" plus haut, qui vise elle toutes les épreuves du groupe à la fois).
   async function assignSalleSingle(
     epreuveId: number,
-    field: "salle_id" | "salle_preparation_id" | "surveillant_id",
+    field: "salle_id" | "salle_preparation_id" | "surveillant_id" | "surveillant2_id",
     value: number | null
   ) {
     setSaving(epreuveId);
@@ -10968,9 +10971,11 @@ function SallesSection() {
       setEpreuves((prev) =>
         prev.map((e) => {
           if (e.id !== epreuveId) return e;
-          if (field === "surveillant_id") {
+          if (field === "surveillant_id" || field === "surveillant2_id") {
             const surv = surveillants.find((s) => s.id === value) ?? null;
-            return { ...e, surveillant_id: value, surveillant_nom: surv?.nom ?? null, surveillant_prenom: surv?.prenom ?? null };
+            const nomField = field === "surveillant_id" ? "surveillant_nom" : "surveillant2_nom";
+            const prenomField = field === "surveillant_id" ? "surveillant_prenom" : "surveillant2_prenom";
+            return { ...e, [field]: value, [nomField]: surv?.nom ?? null, [prenomField]: surv?.prenom ?? null };
           }
           const intituleField = field === "salle_id" ? "salle_intitule" : "salle_preparation_intitule";
           const salle = salles.find((s) => s.id === value) ?? null;
@@ -11181,6 +11186,7 @@ function SallesSection() {
                       <th className="text-left py-1.5 text-black/60 font-semibold">Salle d'examen</th>
                       <th className="text-left py-1.5 text-black/40 font-medium">Salle de préparation</th>
                       <th className="text-left py-1.5 text-black/40 font-medium">Surveillant</th>
+                      <th className="text-left py-1.5 text-black/40 font-medium">Surveillant 2</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -11189,7 +11195,7 @@ function SallesSection() {
                       const setD = (patch: Partial<SalleDefaut>) =>
                         setDefaults((prev) => {
                           const next = prev.filter((x) => x.matiere !== m);
-                          return [...next, { matiere: m, salle_id: d?.salle_id ?? null, salle_preparation_id: d?.salle_preparation_id ?? null, surveillant_id: d?.surveillant_id ?? null, ...patch }];
+                          return [...next, { matiere: m, salle_id: d?.salle_id ?? null, salle_preparation_id: d?.salle_preparation_id ?? null, surveillant_id: d?.surveillant_id ?? null, surveillant2_id: d?.surveillant2_id ?? null, ...patch }];
                         });
                       return (
                         <tr key={m} className="border-b border-black/[0.04] last:border-0">
@@ -11214,10 +11220,22 @@ function SallesSection() {
                               {activeSalles.map((s) => <option key={s.id} value={s.id}>{s.intitule}</option>)}
                             </select>
                           </td>
-                          <td className="py-2">
+                          <td className="py-2 pr-3">
                             <select
                               value={d?.surveillant_id ?? ""}
                               onChange={(e) => setD({ surveillant_id: e.target.value ? Number(e.target.value) : null })}
+                              className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[140px]"
+                            >
+                              <option value="">— Aucun —</option>
+                              {surveillants.filter((s) => s.actif).map((s) => (
+                                <option key={s.id} value={s.id}>{s.nom} {s.prenom}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="py-2">
+                            <select
+                              value={d?.surveillant2_id ?? ""}
+                              onChange={(e) => setD({ surveillant2_id: e.target.value ? Number(e.target.value) : null })}
                               className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[140px]"
                             >
                               <option value="">— Aucun —</option>
@@ -11412,6 +11430,7 @@ function SallesSection() {
                           <th className="text-left px-4 py-2 text-black/60 font-semibold">Salle d'examen</th>
                           <th className="text-left px-4 py-2 text-black/40 font-medium">Salle de préparation</th>
                           <th className="text-left px-4 py-2 text-black/40 font-medium">Surveillant</th>
+                          <th className="text-left px-4 py-2 text-black/40 font-medium">Surveillant 2</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -11419,7 +11438,7 @@ function SallesSection() {
                         const heureGroups = dayGroups.filter((g) => g.heure_debut === h);
                         return [
                           <tr key={`h-${h}`} className={hIdx > 0 ? "border-t-2 border-black/10" : undefined}>
-                            <td colSpan={7} className="px-4 py-1.5 bg-black/[0.035] text-[11px] font-bold text-black/60 tracking-wide sticky top-0">
+                            <td colSpan={8} className="px-4 py-1.5 bg-black/[0.035] text-[11px] font-bold text-black/60 tracking-wide sticky top-0">
                               {h.slice(0, 5)} <span className="font-normal text-black/35">— {heureGroups.reduce((n, g) => n + g.epreuves.length, 0)} créneau(x)</span>
                             </td>
                           </tr>,
@@ -11508,6 +11527,19 @@ function SallesSection() {
                                 <select
                                   value={ep.surveillant_id ?? ""}
                                   onChange={(ev) => assignSalleSingle(ep.id, "surveillant_id", ev.target.value ? Number(ev.target.value) : null)}
+                                  disabled={saving === -1}
+                                  className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[140px]"
+                                >
+                                  <option value="">— Aucun —</option>
+                                  {surveillants.filter((s) => s.actif).map((s) => (
+                                    <option key={s.id} value={s.id}>{s.nom} {s.prenom}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="px-4 py-2.5">
+                                <select
+                                  value={ep.surveillant2_id ?? ""}
+                                  onChange={(ev) => assignSalleSingle(ep.id, "surveillant2_id", ev.target.value ? Number(ev.target.value) : null)}
                                   disabled={saving === -1}
                                   className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[140px]"
                                 >

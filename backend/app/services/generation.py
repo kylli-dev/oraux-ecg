@@ -446,6 +446,8 @@ def _apply_salle_defaults(db: Session, planning_id: int, demi_journee_ids: List[
             e.salle_preparation_id = d.salle_preparation_id
         if d.surveillant_id is not None:
             e.surveillant_id = d.surveillant_id
+        if d.surveillant2_id is not None:
+            e.surveillant2_id = d.surveillant2_id
 
 
 # ── API publique ──────────────────────────────────────────────────────────────
