@@ -262,17 +262,17 @@ def get_fiche(candidat_id: int, db: Session = Depends(get_db)):
 _PROFIL_EXCLUSION_ADMIN: dict = {"HGG": "ESH", "ESH": "HGG"}
 
 
-def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set, tous: bool = False) -> list:
+def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set) -> list:
     """
-    Calcule les triplets N² pour un groupe d'épreuves (un profil ou la journée entière).
+    Calcule les triplets N² DISPONIBLES (LIBRE/PRERESERVEE) pour un groupe d'épreuves
+    (un profil ou la journée entière) — comportement historique, inchangé.
 
-    tous=False (défaut) : seuls les triplets entièrement disponibles (LIBRE/PRERESERVEE)
-    sont retournés — comportement historique, utilisé par les écrans d'inscription (on ne
-    doit jamais y proposer un créneau déjà occupé).
-    tous=True : retourne aussi les triplets déjà ATTRIBUES (avec le candidat concerné) et
-    les triplets INCOMPLET (certaines épreuves attribuées, pas toutes au même candidat —
-    triplet cassé par une action individuelle) — pour la Vue triplets côté admin, qui doit
-    montrer l'état réel de chaque triplet, pas seulement les places libres.
+    Ne considère jamais les épreuves ATTRIBUEE : avec du dédoublement (plusieurs épreuves
+    en parallèle sur la même matière + heure), la formule de rotation ne sait pas quelle
+    salle parallèle correspond à quel candidat — mélanger une salle ATTRIBUEE à une autre
+    salle LIBRE de la même case (matière, heure) produirait un faux triplet. Les triplets
+    déjà attribués sont donc reconstruits séparément, à partir des vraies inscriptions
+    (voir get_triplets_admin) plutôt que devinés par cette formule.
     """
     if not all_epreuves:
         return []
@@ -283,10 +283,10 @@ def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set, tous: bool
     total_slots = len(all_slots)
     offset = total_slots // N_rooms if N_rooms else 1
 
-    par_matiere_heure: dict = defaultdict(list)
+    disponibles: dict = defaultdict(list)
     for e in all_epreuves:
-        if tous or e.statut in ("LIBRE", "PRERESERVEE"):
-            par_matiere_heure[(e.matiere, e.heure_debut)].append(e)
+        if e.statut in ("LIBRE", "PRERESERVEE"):
+            disponibles[(e.matiere, e.heure_debut)].append(e)
 
     result = []
     for k in range(total_slots):
@@ -294,7 +294,7 @@ def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set, tous: bool
         valid = True
         for i, matiere in enumerate(matieres_sorted):
             slot_idx = (k + i * offset) % total_slots
-            ep_list = par_matiere_heure.get((matiere, all_slots[slot_idx]), [])
+            ep_list = disponibles.get((matiere, all_slots[slot_idx]), [])
             if not ep_list:
                 valid = False
                 break
@@ -308,23 +308,7 @@ def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set, tous: bool
             continue
         seen_global.add(key)
 
-        candidat_ids = {e.candidat_id for e in assigned}
-        candidat = None
-        if len(candidat_ids) == 1 and next(iter(candidat_ids)) is not None:
-            type_slot = "ATTRIBUEE"
-            candidat = assigned[0].candidat
-        elif any(cid is not None for cid in candidat_ids):
-            # Triplet cassé : certaines épreuves attribuées, pas toutes au même candidat
-            # (ex. casser-triplet partiel, ou assignation individuelle hors rotation).
-            type_slot = "INCOMPLET"
-        elif any(e.statut == "PRERESERVEE" for e in assigned):
-            type_slot = "PRERESERVEE"
-        elif all(e.statut == "LIBRE" for e in assigned):
-            type_slot = "LIBRE"
-        else:
-            # Ex. ABSENT/ANNULEE sans candidat — état résiduel, affiché tel quel.
-            type_slot = "INCOMPLET"
-
+        type_slot = "PRERESERVEE" if any(e.statut == "PRERESERVEE" for e in assigned) else "LIBRE"
         epreuves_out = sorted([
             TripletEpreuveOut(
                 id=e.id,
@@ -341,9 +325,74 @@ def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set, tous: bool
             heure_debut=str(all_slots[k])[:5],
             epreuves=epreuves_out,
             type_slot=type_slot,
-            candidat_id=candidat.id if candidat else None,
-            candidat_nom=candidat.nom if candidat else None,
-            candidat_prenom=candidat.prenom if candidat else None,
+        ))
+    return result
+
+
+def _triplets_attribues(planning_id: int, db: Session) -> list:
+    """
+    Reconstruit les triplets déjà ATTRIBUES à partir des vraies inscriptions (Inscription +
+    InscriptionEpreuve) plutôt que de les redeviner via la formule de rotation — seule
+    source fiable en présence de dédoublement (la formule de rotation seule ne peut pas
+    savoir quelle salle parallèle appartient à quel candidat).
+
+    Une épreuve ATTRIBUEE (candidat_id renseigné) sans InscriptionEpreuve correspondante —
+    forcément affectée individuellement, hors du flux normal d'inscription — ressort seule,
+    en INCOMPLET, plutôt que d'être associée à 2 autres épreuves au hasard.
+    """
+    result = []
+    inscriptions = (
+        db.query(Inscription)
+        .join(Candidat, Inscription.candidat_id == Candidat.id)
+        .filter(Candidat.planning_id == planning_id, Inscription.statut == "ACTIVE")
+        .all()
+    )
+    covered_epreuve_ids: set = set()
+    for insc in inscriptions:
+        eps = [ie.epreuve for ie in insc.epreuves]
+        if not eps:
+            continue
+        covered_epreuve_ids.update(e.id for e in eps)
+        eps_sorted = sorted(eps, key=lambda e: e.heure_debut)
+        dj = db.get(DemiJournee, eps_sorted[0].demi_journee_id)
+        result.append(TripletOut(
+            date=dj.date,
+            heure_debut=str(eps_sorted[0].heure_debut)[:5],
+            epreuves=[
+                TripletEpreuveOut(id=e.id, matiere=e.matiere, heure_debut=str(e.heure_debut)[:5], heure_fin=str(e.heure_fin)[:5], statut=e.statut)
+                for e in eps_sorted
+            ],
+            type_slot="ATTRIBUEE",
+            candidat_id=insc.candidat_id,
+            candidat_nom=insc.candidat.nom,
+            candidat_prenom=insc.candidat.prenom,
+        ))
+
+    # Épreuves attribuées hors de toute inscription active (affectation individuelle) —
+    # affichées une par une en INCOMPLET plutôt que groupées au hasard avec 2 autres.
+    djs = db.query(DemiJournee).filter_by(planning_id=planning_id).all()
+    dj_by_id = {dj.id: dj for dj in djs}
+    if not dj_by_id:
+        return result
+    orphelines_q = db.query(Epreuve).filter(
+        Epreuve.demi_journee_id.in_(list(dj_by_id.keys())),
+        Epreuve.candidat_id.isnot(None),
+    )
+    if covered_epreuve_ids:
+        orphelines_q = orphelines_q.filter(~Epreuve.id.in_(covered_epreuve_ids))
+    orphelines = orphelines_q.all()
+    for e in orphelines:
+        dj = dj_by_id.get(e.demi_journee_id)
+        if not dj:
+            continue
+        result.append(TripletOut(
+            date=dj.date,
+            heure_debut=str(e.heure_debut)[:5],
+            epreuves=[TripletEpreuveOut(id=e.id, matiere=e.matiere, heure_debut=str(e.heure_debut)[:5], heure_fin=str(e.heure_fin)[:5], statut=e.statut)],
+            type_slot="INCOMPLET",
+            candidat_id=e.candidat_id,
+            candidat_nom=e.candidat.nom if e.candidat else None,
+            candidat_prenom=e.candidat.prenom if e.candidat else None,
         ))
     return result
 
@@ -355,8 +404,10 @@ def get_triplets_admin(planning_id: int, tous: bool = False, db: Session = Depen
 
     Par défaut (tous=False), seuls les triplets disponibles (LIBRE/PRERESERVEE) — c'est
     ce que consomment les écrans d'inscription, qui ne doivent proposer que des places
-    libres. Avec tous=True, retourne aussi les triplets ATTRIBUES/INCOMPLET, pour la Vue
-    triplets qui doit montrer l'état réel de chaque triplet.
+    libres. Avec tous=True, ajoute aussi les triplets déjà ATTRIBUES (reconstruits à partir
+    des vraies inscriptions, pas devinés) et les épreuves attribuées individuellement hors
+    inscription (INCOMPLET) — pour la Vue triplets qui doit montrer l'état réel de chaque
+    triplet.
 
     Si la journée contient ESH et HGG, génère des triplets séparés par profil
     (sans combiner les deux) pour correspondre à ce que voit chaque candidat.
@@ -396,9 +447,12 @@ def get_triplets_admin(planning_id: int, tous: bool = False, db: Session = Depen
             # Générer deux groupes séparés : un pour les candidats ESH, un pour HGG
             for exclu in ("HGG", "ESH"):
                 groupe = [e for e in all_epreuves_raw if e.matiere.upper() != exclu]
-                result.extend(_triplets_pour_groupe(groupe, date, seen_global, tous))
+                result.extend(_triplets_pour_groupe(groupe, date, seen_global))
         else:
-            result.extend(_triplets_pour_groupe(all_epreuves_raw, date, seen_global, tous))
+            result.extend(_triplets_pour_groupe(all_epreuves_raw, date, seen_global))
+
+    if tous:
+        result.extend(_triplets_attribues(planning_id, db))
 
     return result
 
