@@ -413,6 +413,48 @@ def _triplets_attribues(planning_id: int, db: Session) -> list:
     return result
 
 
+def _partition_par_profil(all_epreuves: list) -> tuple:
+    """
+    Répartit les épreuves d'une journée mixte ESH/HGG en 2 groupes indépendants (vue ESH,
+    vue HGG). ESH et HGG vont chacune exclusivement dans leur groupe. Les matières
+    COMMUNES aux deux profils (Maths, Anglais...) sont réparties une par une entre les 2
+    groupes quand plusieurs épreuves parallèles existent à la même heure (dédoublement /
+    salles différentes) : chaque profil obtient alors SA PROPRE salle plutôt que de forcer
+    les deux vues à se disputer la même — préréserver l'une n'a plus à rendre l'autre
+    "Indisponible" si une 2e salle existe réellement pour cette matière à cette heure.
+    S'il n'existe qu'une seule épreuve à cette (matière, heure) — pas de salle en
+    parallèle —, les deux groupes la partagent comme avant : c'est alors une vraie
+    contrainte physique (une seule salle), pas un choix arbitraire de l'algorithme.
+    """
+    esh_groupe: list = []
+    hgg_groupe: list = []
+    partage: dict = defaultdict(list)
+    for e in all_epreuves:
+        m = e.matiere.upper()
+        if m == "ESH":
+            esh_groupe.append(e)
+        elif m == "HGG":
+            hgg_groupe.append(e)
+        else:
+            partage[(e.matiere, e.heure_debut)].append(e)
+
+    for eps in partage.values():
+        eps_sorted = sorted(eps, key=lambda e: e.id)
+        if len(eps_sorted) >= 2:
+            esh_groupe.append(eps_sorted[0])
+            hgg_groupe.append(eps_sorted[1])
+            # Dédoublement à >2 salles parallèles (rare) : le surplus reste partagé entre
+            # les 2 vues plutôt que d'inventer une 3e vue.
+            for extra in eps_sorted[2:]:
+                esh_groupe.append(extra)
+                hgg_groupe.append(extra)
+        else:
+            esh_groupe.extend(eps_sorted)
+            hgg_groupe.extend(eps_sorted)
+
+    return esh_groupe, hgg_groupe
+
+
 @router.get("/{planning_id}/triplets", response_model=List[TripletOut])
 def get_triplets_admin(planning_id: int, tous: bool = False, db: Session = Depends(get_db)):
     """
@@ -460,10 +502,12 @@ def get_triplets_admin(planning_id: int, tous: bool = False, db: Session = Depen
         seen_global: set = set()
 
         if has_esh and has_hgg:
-            # Générer deux groupes séparés : un pour les candidats ESH, un pour HGG
-            for exclu in ("HGG", "ESH"):
-                groupe = [e for e in all_epreuves_raw if e.matiere.upper() != exclu]
-                result.extend(_triplets_pour_groupe(groupe, date, seen_global))
+            # Générer deux groupes séparés : un pour les candidats ESH, un pour HGG — en
+            # répartissant les salles parallèles des matières communes entre les deux
+            # quand elles existent (voir _partition_par_profil).
+            esh_groupe, hgg_groupe = _partition_par_profil(all_epreuves_raw)
+            result.extend(_triplets_pour_groupe(esh_groupe, date, seen_global))
+            result.extend(_triplets_pour_groupe(hgg_groupe, date, seen_global))
         else:
             result.extend(_triplets_pour_groupe(all_epreuves_raw, date, seen_global))
 
