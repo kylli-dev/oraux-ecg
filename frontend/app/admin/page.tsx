@@ -1407,6 +1407,32 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
   const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set());
   const [deletingDays, setDeletingDays] = useState(false);
 
+  // Cliquer-glisser pour défiler horizontalement (curseur "main") — même logique que
+  // SyncedScrollX (seuil de 3px pour ne pas interférer avec un simple clic sur une case à
+  // cocher / un menu déroulant), appliquée directement au conteneur existant plutôt qu'un
+  // wrapper séparé : ce tableau gère déjà son propre défilement vertical au même endroit.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const drag = useRef({ active: false, startX: 0, startScrollLeft: 0, moved: 0 });
+  const onScrollPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.closest("select, input, button, option, a")) return;
+    if (!scrollRef.current) return;
+    drag.current = { active: true, startX: e.clientX, startScrollLeft: scrollRef.current.scrollLeft, moved: 0 };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onScrollPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!drag.current.active || !scrollRef.current) return;
+    const dx = e.clientX - drag.current.startX;
+    drag.current.moved = Math.max(drag.current.moved, Math.abs(dx));
+    if (drag.current.moved > 3) setDragging(true);
+    scrollRef.current.scrollLeft = drag.current.startScrollLeft - dx;
+  };
+  const endScrollDrag = () => {
+    drag.current.active = false;
+    setDragging(false);
+  };
+
   const loadEpreuves = useCallback(() => {
     setLoading(true);
     return get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`)
@@ -1554,7 +1580,14 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
       )}
 
       {/* Tableau croisé */}
-      <div className="overflow-x-auto rounded-xl border bg-white shadow-sm max-h-[72vh] overflow-y-auto">
+      <div
+        ref={scrollRef}
+        onPointerDown={onScrollPointerDown}
+        onPointerMove={onScrollPointerMove}
+        onPointerUp={endScrollDrag}
+        onPointerLeave={endScrollDrag}
+        className={`overflow-x-auto rounded-xl border bg-white shadow-sm max-h-[72vh] overflow-y-auto ${dragging ? "cursor-grabbing select-none" : "cursor-grab"}`}
+      >
         <table className="text-sm border-collapse min-w-max">
           <thead className="sticky top-0 z-20">
             {/* Ligne 1 : en-têtes matières */}
