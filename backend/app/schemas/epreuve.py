@@ -44,6 +44,7 @@ class EpreuveUpdate(BaseModel):
     heure_fin: Optional[time] = None
     salle_id: Optional[int] = None
     salle_preparation_id: Optional[int] = None
+    salle_verifiee: Optional[bool] = None
     surveillant_id: Optional[int] = None
     surveillant2_id: Optional[int] = None
     preparation_minutes: Optional[int] = None
@@ -90,6 +91,7 @@ class EpreuveOut(BaseModel):
     examinateur2_prenom: Optional[str] = None
     salle_id: Optional[int] = None
     salle_intitule: Optional[str] = None
+    salle_verifiee: bool = False
     salle_preparation_id: Optional[int] = None
     salle_preparation_intitule: Optional[str] = None
     surveillant_id: Optional[int] = None

@@ -1,5 +1,5 @@
 from typing import Optional
-from sqlalchemy import Time, String, Integer, ForeignKey, CheckConstraint
+from sqlalchemy import Time, String, Integer, Boolean, ForeignKey, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -50,6 +50,11 @@ class Epreuve(Base):
         nullable=True,
     )
     salle = relationship("Salle", foreign_keys=[salle_id])
+
+    # Validation explicite par l'admin qu'un doublon (salle_id) a bien été vérifié — ne se
+    # coche jamais tout seul au choix d'une salle dans la liste déroulante, seulement via
+    # l'action "Valider". Remis à False dès que salle_id change (voir patch_epreuve).
+    salle_verifiee: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     salle_preparation_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("salle.id", ondelete="SET NULL"),

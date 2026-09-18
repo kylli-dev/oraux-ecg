@@ -149,6 +149,7 @@ type EpreuveFlat = {
   examinateur2_prenom: string | null;
   salle_id: number | null;
   salle_intitule: string | null;
+  salle_verifiee: boolean;
   salle_preparation_id: number | null;
   salle_preparation_intitule: string | null;
   surveillant_id: number | null;
@@ -11153,9 +11154,29 @@ function SallesSection() {
           }
           const intituleField = field === "salle_id" ? "salle_intitule" : "salle_preparation_intitule";
           const salle = salles.find((s) => s.id === value) ?? null;
-          return { ...e, [field]: value, [intituleField]: salle?.intitule ?? null };
+          // Changer la salle d'examen annule une éventuelle validation de doublon
+          // antérieure — jamais l'inverse (voir estAVerifier / patch_epreuve).
+          const verifieePatch = field === "salle_id" ? { salle_verifiee: false } : {};
+          return { ...e, [field]: value, [intituleField]: salle?.intitule ?? null, ...verifieePatch };
         })
       );
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  // Validation explicite d'un doublon : seule action qui fait disparaître le groupe du
+  // filtre "Doublons à vérifier" — jamais un simple choix de salle dans la liste.
+  async function validerGroupe(epreuveIds: number[]) {
+    setSaving(-1);
+    try {
+      await Promise.all(
+        epreuveIds.map((id) => patch(`plannings/${planningId}/epreuves/${id}`, { salle_verifiee: true }))
+      );
+      setEpreuves((prev) => prev.map((e) => (epreuveIds.includes(e.id) ? { ...e, salle_verifiee: true } : e)));
+      toast.success("Doublon validé");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur");
     } finally {
       setSaving(null);
     }
@@ -11260,14 +11281,14 @@ function SallesSection() {
     // avant d'atteindre la suivante à la même heure.
     .sort((a, b) => a.date.localeCompare(b.date) || a.heure_debut.localeCompare(b.heure_debut) || a.matiere.localeCompare(b.matiere));
 
-  // "À vérifier" : doublon (plusieurs épreuves en parallèle sur ce créneau) dont les
-  // salles ne sont pas toutes distinctes — soit non affectées, soit affectées à la même
-  // salle physique. C'est justement ce cas qui, laissé tel quel, peut faire se retrouver
-  // 2 candidats dans la même salle en même temps.
+  // "À vérifier" : doublon (plusieurs épreuves en parallèle sur ce créneau) pas encore
+  // explicitement validé par l'admin. Ne se résout JAMAIS tout seul en choisissant une
+  // salle dans la liste déroulante — seul le bouton "Valider" (qui coche salle_verifiee)
+  // fait disparaître le groupe du filtre ; changer à nouveau la salle après coup annule la
+  // validation (voir patch_epreuve côté backend).
   const estAVerifier = (g: { epreuves: EpreuveFlat[] }) => {
     if (g.epreuves.length < 2) return false;
-    const salleIds = new Set(g.epreuves.map((e) => e.salle_id).filter((id): id is number => id != null));
-    return salleIds.size < g.epreuves.length;
+    return !g.epreuves.every((e) => e.salle_verifiee);
   };
   const groupsAffiches = filterAVerifier ? groups.filter(estAVerifier) : groups;
 
@@ -11688,7 +11709,25 @@ function SallesSection() {
                                     <span className="text-black/50">{ep.heure_fin?.slice(0, 5) ?? "—"}</span>
                                   </td>
                                   <td className="px-4 py-2.5 align-top text-black/40" rowSpan={rowSpan} title={hasDoublons ? "Plusieurs salles en parallèle pour ce créneau — une salle par ligne ci-dessous" : ""}>
-                                    {g.epreuves.length}
+                                    <div className="flex items-center gap-1.5">
+                                      <span>{g.epreuves.length}</span>
+                                      {hasDoublons && (
+                                        g.epreuves.every((e) => e.salle_verifiee) ? (
+                                          <span className="text-emerald-600" title="Doublon validé">
+                                            <CheckCircle2 className="h-3.5 w-3.5" />
+                                          </span>
+                                        ) : (
+                                          <button
+                                            onClick={() => validerGroupe(g.epreuves.map((e) => e.id))}
+                                            disabled={saving === -1}
+                                            title="Confirmer que les salles de ce doublon ont bien été vérifiées"
+                                            className="text-[10px] px-1.5 py-0.5 rounded border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 transition font-medium disabled:opacity-50"
+                                          >
+                                            Valider
+                                          </button>
+                                        )
+                                      )}
+                                    </div>
                                   </td>
                                 </>
                               )}

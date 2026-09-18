@@ -203,6 +203,7 @@ def list_epreuves_planning(
             "examinateur2_prenom": examinateur2.prenom if examinateur2 else None,
             "salle_id": salle.id if salle else None,
             "salle_intitule": salle.intitule if salle else None,
+            "salle_verifiee": epreuve.salle_verifiee,
             "salle_preparation_id": salle_prep.id if salle_prep else None,
             "salle_preparation_intitule": salle_prep.intitule if salle_prep else None,
             "surveillant_id": surveillant.id if surveillant else None,
@@ -289,7 +290,13 @@ def patch_epreuve(
     e = db.get(Epreuve, epreuve_id)
     if not e:
         raise HTTPException(status_code=404, detail="Epreuve not found")
-    for field, value in body.model_dump(exclude_none=True).items():
+    data = body.model_dump(exclude_none=True)
+    # Changer la salle d'examen invalide toute validation antérieure du doublon — la
+    # remise à True ne peut venir que d'une action "Valider" explicite (qui la passe elle-
+    # même dans le payload), jamais implicitement au choix d'une salle dans la liste.
+    if "salle_id" in data and "salle_verifiee" not in data:
+        data["salle_verifiee"] = False
+    for field, value in data.items():
         setattr(e, field, value)
     db.commit()
     return {"epreuve_id": e.id, "statut": e.statut, "matiere": e.matiere}
