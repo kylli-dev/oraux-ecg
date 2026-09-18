@@ -365,6 +365,58 @@ def get_triplets_admin(planning_id: int, db: Session = Depends(get_db)):
     return result
 
 
+class TripletEpreuveIdsIn(BaseModel):
+    epreuve_ids: List[int]
+
+
+def _load_triplet_epreuves(planning_id: int, epreuve_ids: List[int], db: Session) -> List[Epreuve]:
+    if not epreuve_ids:
+        raise HTTPException(status_code=400, detail="Aucune épreuve fournie")
+    eps = db.query(Epreuve).filter(Epreuve.id.in_(epreuve_ids)).all()
+    if len(eps) != len(set(epreuve_ids)):
+        raise HTTPException(status_code=404, detail="Une ou plusieurs épreuves introuvables")
+    for e in eps:
+        dj = db.get(DemiJournee, e.demi_journee_id)
+        if not dj or dj.planning_id != planning_id:
+            raise HTTPException(status_code=403, detail=f"Épreuve {e.id} n'appartient pas à ce planning")
+    return eps
+
+
+@router.post("/{planning_id}/triplets/prereserver")
+def prereserver_triplet(planning_id: int, body: TripletEpreuveIdsIn, db: Session = Depends(get_db)):
+    """
+    Marque un triplet LIBRE comme PRERESERVEE, sans lui assigner de candidat — pour le
+    réserver (ex. en vue d'un candidat précis) sans le laisser réattribuable librement.
+    """
+    eps = _load_triplet_epreuves(planning_id, body.epreuve_ids, db)
+    non_libres = [e for e in eps if e.statut != "LIBRE"]
+    if non_libres:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Épreuve(s) non LIBRE : {', '.join(f'{e.matiere} ({e.statut})' for e in non_libres)}",
+        )
+    for e in eps:
+        e.statut = "PRERESERVEE"
+    db.commit()
+    return {"updated": len(eps), "statut": "PRERESERVEE"}
+
+
+@router.post("/{planning_id}/triplets/liberer")
+def liberer_triplet(planning_id: int, body: TripletEpreuveIdsIn, db: Session = Depends(get_db)):
+    """Repasse un triplet PRERESERVEE en LIBRE (annule la pré-réservation)."""
+    eps = _load_triplet_epreuves(planning_id, body.epreuve_ids, db)
+    non_prereservees = [e for e in eps if e.statut != "PRERESERVEE"]
+    if non_prereservees:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Épreuve(s) non PRERESERVEE : {', '.join(f'{e.matiere} ({e.statut})' for e in non_prereservees)}",
+        )
+    for e in eps:
+        e.statut = "LIBRE"
+    db.commit()
+    return {"updated": len(eps), "statut": "LIBRE"}
+
+
 @router.get("/{planning_id}/journee", response_model=List[JourneeInscritItem])
 def get_inscrits_journee(
     planning_id: int,
