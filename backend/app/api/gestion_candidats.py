@@ -54,7 +54,7 @@ class TripletOut(BaseModel):
     date: Date
     heure_debut: str        # "HH:MM"
     epreuves: List[TripletEpreuveOut]
-    type_slot: str          # "LIBRE" | "PRERESERVEE" | "ATTRIBUEE" | "INCOMPLET"
+    type_slot: str          # "LIBRE" | "PRERESERVEE" | "ATTRIBUEE" | "INCOMPLET" | "INDISPONIBLE"
     candidat_id: Optional[int] = None
     candidat_nom: Optional[str] = None
     candidat_prenom: Optional[str] = None
@@ -308,7 +308,23 @@ def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set) -> list:
             continue
         seen_global.add(key)
 
-        type_slot = "PRERESERVEE" if any(e.statut == "PRERESERVEE" for e in assigned) else "LIBRE"
+        # Quand une journée mélange ESH et HGG, Maths et Anglais sont partagés entre le
+        # triplet "vue ESH" et le triplet "vue HGG" au même horaire (seule la 3e matière
+        # change) — les deux ne sont pas 2 ressources indépendantes, mais 2 complétions
+        # possibles des MÊMES créneaux Maths/Anglais. Préréserver l'un des deux marque donc
+        # Maths/Anglais PRERESERVEE, ce qui rendrait l'AUTRE faussement "Préréservé" en
+        # entier si on se contentait de tester "au moins un créneau PRERESERVEE" : son
+        # propre créneau (ESH ou HGG) resterait pourtant réellement libre. On distingue donc
+        # 3 cas : entièrement LIBRE, entièrement PRERESERVEE (c'est CE triplet qui a été
+        # préréservé), ou mélange (INDISPONIBLE — bloqué par le triplet jumeau, mais pas
+        # préréservé lui-même — ni "Préréserver" ni "Libérer" n'ont de sens dessus).
+        statuts = {e.statut for e in assigned}
+        if statuts == {"LIBRE"}:
+            type_slot = "LIBRE"
+        elif statuts == {"PRERESERVEE"}:
+            type_slot = "PRERESERVEE"
+        else:
+            type_slot = "INDISPONIBLE"
         epreuves_out = sorted([
             TripletEpreuveOut(
                 id=e.id,

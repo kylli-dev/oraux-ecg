@@ -264,7 +264,7 @@ type TripletDisponible = {
   date: string;
   heure_debut: string;
   epreuves: TripletEpreuveGestion[];
-  type_slot: "LIBRE" | "PRERESERVEE" | "ATTRIBUEE" | "INCOMPLET";
+  type_slot: "LIBRE" | "PRERESERVEE" | "ATTRIBUEE" | "INCOMPLET" | "INDISPONIBLE";
   candidat_id?: number | null;
   candidat_nom?: string | null;
   candidat_prenom?: string | null;
@@ -2297,11 +2297,15 @@ function TripletAssociationView({ dayData }: { dayData: DayViewData }) {
 // (Libre, Préréservé, Attribué à un candidat, ou Incomplet) et permet de préréserver /
 // libérer ceux qui sont disponibles.
 
-const TRIPLET_ETAT: Record<string, { label: string; cls: string }> = {
-  LIBRE:       { label: "Libre",       cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  PRERESERVEE: { label: "Préréservé",  cls: "bg-amber-50 text-amber-700 border-amber-200" },
-  ATTRIBUEE:   { label: "Attribué",    cls: "bg-blue-50 text-blue-700 border-blue-200" },
-  INCOMPLET:   { label: "Incomplet",   cls: "bg-red-50 text-red-600 border-red-200" },
+const TRIPLET_ETAT: Record<string, { label: string; cls: string; title?: string }> = {
+  LIBRE:        { label: "Libre",         cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  PRERESERVEE:  { label: "Préréservé",    cls: "bg-amber-50 text-amber-700 border-amber-200" },
+  ATTRIBUEE:    { label: "Attribué",      cls: "bg-blue-50 text-blue-700 border-blue-200" },
+  INCOMPLET:    { label: "Incomplet",     cls: "bg-red-50 text-red-600 border-red-200" },
+  INDISPONIBLE: {
+    label: "Indisponible", cls: "bg-gray-100 text-gray-500 border-gray-200",
+    title: "Un créneau partagé (ex. Maths/Anglais commun ESH/HGG) a été préréservé via le triplet jumeau à cette heure — celui-ci n'est plus complétable tel quel, mais n'a pas été préréservé lui-même.",
+  },
 };
 
 function TripletsAdminView({ planningId }: { planningId: number }) {
@@ -2410,7 +2414,7 @@ function TripletsAdminView({ planningId }: { planningId: number }) {
                           {t.candidat_nom} {t.candidat_prenom}
                         </span>
                       )}
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold border ${etat.cls}`}>
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold border ${etat.cls}`} title={etat.title}>
                         {etat.label}
                       </span>
                       {editable && (
