@@ -43,6 +43,12 @@ import {
   FileText,
   Save,
   Pencil,
+  Bold,
+  Italic,
+  Underline,
+  List,
+  ListOrdered,
+  Eraser,
 } from "lucide-react";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -8707,6 +8713,99 @@ function NotesSection() {
   );
 }
 
+// ── Éditeur WYSIWYG (messages-type) ─────────────────────────────────────────────
+// Bouton de la barre d'outils — composant à part (pas défini dans RichTextEditor) : un
+// composant recréé à chaque rendu perdrait son identité React à chaque frappe.
+function ToolbarBtn({
+  command, arg, icon: Icon, title, onExec, className = "",
+}: { command: string; arg?: string; icon: typeof Bold; title: string; onExec: (command: string, arg?: string) => void; className?: string }) {
+  return (
+    <button
+      type="button"
+      onMouseDown={(e) => e.preventDefault()} // garde la sélection de texte active dans l'éditeur
+      onClick={() => onExec(command, arg)}
+      title={title}
+      className={`p-1.5 rounded hover:bg-black/5 text-black/60 hover:text-black/90 transition ${className}`}
+    >
+      <Icon className="h-3.5 w-3.5" />
+    </button>
+  );
+}
+
+// Remplace l'édition du HTML brut par un contentEditable + barre d'outils classique
+// (gras/italique/souligné/listes/lien) — l'admin voit le rendu mis en forme, pas les
+// balises. `value` ne réinjecte le HTML dans le DOM que quand il change depuis
+// L'EXTÉRIEUR (changement de message sélectionné) — jamais pendant la frappe, sinon le
+// curseur sauterait à chaque caractère saisi.
+function RichTextEditor({ value, onChange }: { value: string; onChange: (html: string) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const lastValue = useRef(value);
+
+  useEffect(() => {
+    if (ref.current && value !== lastValue.current) {
+      ref.current.innerHTML = value;
+      lastValue.current = value;
+    }
+  }, [value]);
+
+  const emit = () => {
+    if (!ref.current) return;
+    const html = ref.current.innerHTML;
+    lastValue.current = html;
+    onChange(html);
+  };
+
+  const exec = (command: string, arg?: string) => {
+    ref.current?.focus();
+    document.execCommand(command, false, arg);
+    emit();
+  };
+
+  const insertLink = () => {
+    const url = window.prompt("URL du lien :", "https://");
+    if (url) exec("createLink", url);
+  };
+
+  return (
+    <div className="rounded-lg border border-black/10 bg-white overflow-hidden focus-within:ring-2 focus-within:ring-black/10">
+      <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-black/10 bg-gray-50">
+        <ToolbarBtn command="bold" icon={Bold} title="Gras" onExec={exec} />
+        <ToolbarBtn command="italic" icon={Italic} title="Italique" onExec={exec} />
+        <ToolbarBtn command="underline" icon={Underline} title="Souligné" onExec={exec} />
+        <div className="w-px h-4 bg-black/10 mx-1" />
+        <ToolbarBtn command="insertUnorderedList" icon={List} title="Liste à puces" onExec={exec} />
+        <ToolbarBtn command="insertOrderedList" icon={ListOrdered} title="Liste numérotée" onExec={exec} />
+        <div className="w-px h-4 bg-black/10 mx-1" />
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={insertLink}
+          title="Insérer un lien"
+          className="p-1.5 rounded hover:bg-black/5 text-black/60 hover:text-black/90 transition"
+        >
+          <Link2 className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => exec("removeFormat")}
+          title="Effacer la mise en forme"
+          className="p-1.5 rounded hover:bg-black/5 text-black/60 hover:text-black/90 transition ml-auto"
+        >
+          <Eraser className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <div
+        ref={ref}
+        contentEditable
+        suppressContentEditableWarning
+        onInput={emit}
+        className="w-full min-h-[220px] max-h-[420px] overflow-y-auto px-3 py-2.5 text-sm leading-relaxed focus:outline-none [&_a]:text-blue-600 [&_a]:underline [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
+      />
+    </div>
+  );
+}
+
 // ── ParametragesSection ────────────────────────────────────────────────────────
 const MESSAGE_LABELS: Record<string, string> = {
   ADMISSIBILITE:     "Admissibilité (identifiants de connexion)",
@@ -9256,12 +9355,10 @@ function ParametragesSection() {
                 <Input value={sujet} onChange={(e) => { setSujet(e.target.value); setSaveOk(false); }} />
               </Field>
 
-              <Field label="Corps du message (HTML)">
-                <textarea
+              <Field label="Corps du message">
+                <RichTextEditor
                   value={corps}
-                  onChange={(e) => { setCorps(e.target.value); setSaveOk(false); }}
-                  rows={12}
-                  className="w-full px-3 py-2 rounded-lg border border-black/10 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-black/10 bg-white resize-y"
+                  onChange={(html) => { setCorps(html); setSaveOk(false); }}
                 />
               </Field>
 
