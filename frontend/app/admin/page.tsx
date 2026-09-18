@@ -2311,41 +2311,20 @@ const TRIPLET_ETAT: Record<string, { label: string; cls: string; title?: string 
 function TripletsAdminView({ planningId }: { planningId: number }) {
   const toast = useToast();
   const [triplets, setTriplets] = useState<TripletDisponible[]>([]);
-  const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterDate, setFilterDate] = useState("");
   const [filterEtat, setFilterEtat] = useState("");
-  const [doublonsOnly, setDoublonsOnly] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
-    Promise.all([
-      get<TripletDisponible[]>(`gestion-candidats/${planningId}/triplets?tous=1`),
-      get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`),
-    ])
-      .then(([t, eps]) => { setTriplets(t); setEpreuves(eps); })
-      .catch(() => { setTriplets([]); setEpreuves([]); })
+    get<TripletDisponible[]>(`gestion-candidats/${planningId}/triplets?tous=1`)
+      .then(setTriplets)
+      .catch(() => setTriplets([]))
       .finally(() => setLoading(false));
   }, [planningId]);
 
   useEffect(() => { load(); }, [load]);
-
-  // Journées où au moins une (matière, heure) a plusieurs épreuves en parallèle
-  // (dédoublement) — indépendamment de ESH/HGG, juste "cette matière a plusieurs salles
-  // à cette heure". Calculé à partir des épreuves brutes, pas des triplets déjà résolus.
-  const doublonDates = useMemo(() => {
-    const parMatiereHeure = new Map<string, number>();
-    for (const e of epreuves) {
-      const k = `${e.date}|${e.matiere}|${e.heure_debut}`;
-      parMatiereHeure.set(k, (parMatiereHeure.get(k) ?? 0) + 1);
-    }
-    const dates = new Set<string>();
-    for (const [k, count] of parMatiereHeure) {
-      if (count > 1) dates.add(k.split("|")[0]);
-    }
-    return dates;
-  }, [epreuves]);
 
   const tripletKey = (t: TripletDisponible) => `${t.date}|${t.heure_debut}|${t.epreuves.map((e) => e.id).join(",")}`;
 
@@ -2367,8 +2346,7 @@ function TripletsAdminView({ planningId }: { planningId: number }) {
   const dates = [...new Set(triplets.map((t) => t.date))].sort();
   const filtered = triplets
     .filter((t) => !filterDate || t.date === filterDate)
-    .filter((t) => !filterEtat || t.type_slot === filterEtat)
-    .filter((t) => !doublonsOnly || doublonDates.has(t.date));
+    .filter((t) => !filterEtat || t.type_slot === filterEtat);
   const byDate = new Map<string, TripletDisponible[]>();
   for (const t of filtered) {
     if (!byDate.has(t.date)) byDate.set(t.date, []);
@@ -2384,10 +2362,6 @@ function TripletsAdminView({ planningId }: { planningId: number }) {
           État de chaque triplet du planning — préréservez un triplet Libre pour le mettre de côté sans lui assigner de candidat, ou libérez une pré-réservation.
         </p>
         <div className="flex items-center gap-2 ml-auto">
-          <label className="flex items-center gap-1.5 text-sm text-black/60 px-3 py-1.5 rounded-lg border bg-white cursor-pointer" title="Ne montrer que les journées où au moins une matière a plusieurs épreuves en parallèle à la même heure (dédoublement)">
-            <input type="checkbox" checked={doublonsOnly} onChange={(e) => setDoublonsOnly(e.target.checked)} className="cursor-pointer" />
-            Journées avec doublons
-          </label>
           {dates.length > 0 && (
             <select
               value={filterDate}
@@ -2395,9 +2369,7 @@ function TripletsAdminView({ planningId }: { planningId: number }) {
               className="px-3 py-1.5 rounded-lg border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
             >
               <option value="">Toutes les dates</option>
-              {dates
-                .filter((d) => !doublonsOnly || doublonDates.has(d))
-                .map((d) => <option key={d} value={d}>{formatDate(d)}{doublonDates.has(d) ? " •" : ""}</option>)}
+              {dates.map((d) => <option key={d} value={d}>{formatDate(d)}</option>)}
             </select>
           )}
           <select
@@ -11097,6 +11069,10 @@ function SallesSection() {
   const [filterHeure, setFilterHeure] = useState("");
   // "" = toutes, "none" = non affectée, sinon l'id de la salle (en string)
   const [filterSalle, setFilterSalle] = useState("");
+  // Ne montrer que les doublons (créneau avec plusieurs épreuves en parallèle) dont les
+  // salles ne sont pas toutes distinctes — pas encore vérifiés/différenciés, donc à risque
+  // (2 candidats pourraient se retrouver affectés à la même salle physique).
+  const [filterAVerifier, setFilterAVerifier] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkSalleId, setBulkSalleId] = useState<string>("");
   const [bulkSallePrepId, setBulkSallePrepId] = useState<string>("");
@@ -11284,7 +11260,18 @@ function SallesSection() {
     // avant d'atteindre la suivante à la même heure.
     .sort((a, b) => a.date.localeCompare(b.date) || a.heure_debut.localeCompare(b.heure_debut) || a.matiere.localeCompare(b.matiere));
 
-  const dates = Array.from(new Set(groups.map((g) => g.date))).sort();
+  // "À vérifier" : doublon (plusieurs épreuves en parallèle sur ce créneau) dont les
+  // salles ne sont pas toutes distinctes — soit non affectées, soit affectées à la même
+  // salle physique. C'est justement ce cas qui, laissé tel quel, peut faire se retrouver
+  // 2 candidats dans la même salle en même temps.
+  const estAVerifier = (g: { epreuves: EpreuveFlat[] }) => {
+    if (g.epreuves.length < 2) return false;
+    const salleIds = new Set(g.epreuves.map((e) => e.salle_id).filter((id): id is number => id != null));
+    return salleIds.size < g.epreuves.length;
+  };
+  const groupsAffiches = filterAVerifier ? groups.filter(estAVerifier) : groups;
+
+  const dates = Array.from(new Set(groupsAffiches.map((g) => g.date))).sort();
 
   const activeSalles = salles.filter((s) => s.active);
 
@@ -11528,6 +11515,17 @@ function SallesSection() {
                 </select>
               </div>
             )}
+            {epreuves.length > 0 && (
+              <div className="flex items-end pb-0.5">
+                <label
+                  className="flex items-center gap-1.5 text-sm text-black/60 px-3 py-2 rounded-lg border bg-white cursor-pointer whitespace-nowrap"
+                  title="Doublons (plusieurs salles en parallèle sur le même créneau) dont les salles ne sont pas toutes distinctes — non affectées ou affectées à la même salle physique, donc à risque de conflit"
+                >
+                  <input type="checkbox" checked={filterAVerifier} onChange={(e) => setFilterAVerifier(e.target.checked)} className="cursor-pointer" />
+                  Doublons à vérifier
+                </label>
+              </div>
+            )}
           </div>
 
           {/* Barre de sélection groupée */}
@@ -11586,12 +11584,14 @@ function SallesSection() {
             </div>
           ) : dates.length === 0 ? (
             <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-12 text-center">
-              <p className="text-sm text-black/30">Aucun créneau trouvé pour ce planning.</p>
+              <p className="text-sm text-black/30">
+                {filterAVerifier ? "Aucun doublon à vérifier — toutes les salles en parallèle sont bien distinctes." : "Aucun créneau trouvé pour ce planning."}
+              </p>
             </div>
           ) : (
             <div className="space-y-4">
               {dates.map((date) => {
-                const dayGroups = groups.filter((g) => g.date === date);
+                const dayGroups = groupsAffiches.filter((g) => g.date === date);
                 return (
                   <div key={date} className="bg-white rounded-2xl border border-black/5 shadow-sm overflow-hidden">
                     <div className="px-4 py-2.5 bg-black/[0.02] border-b border-black/5">
