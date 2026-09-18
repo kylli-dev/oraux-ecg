@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import PlanificationView from "./planification/PlanificationView";
 import InterfaceAdminENSAEPlanning from "../InterfaceAdminENSAEPlanning";
@@ -2311,20 +2311,41 @@ const TRIPLET_ETAT: Record<string, { label: string; cls: string; title?: string 
 function TripletsAdminView({ planningId }: { planningId: number }) {
   const toast = useToast();
   const [triplets, setTriplets] = useState<TripletDisponible[]>([]);
+  const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterDate, setFilterDate] = useState("");
   const [filterEtat, setFilterEtat] = useState("");
+  const [doublonsOnly, setDoublonsOnly] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
-    get<TripletDisponible[]>(`gestion-candidats/${planningId}/triplets?tous=1`)
-      .then(setTriplets)
-      .catch(() => setTriplets([]))
+    Promise.all([
+      get<TripletDisponible[]>(`gestion-candidats/${planningId}/triplets?tous=1`),
+      get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`),
+    ])
+      .then(([t, eps]) => { setTriplets(t); setEpreuves(eps); })
+      .catch(() => { setTriplets([]); setEpreuves([]); })
       .finally(() => setLoading(false));
   }, [planningId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Journées où au moins une (matière, heure) a plusieurs épreuves en parallèle
+  // (dédoublement) — indépendamment de ESH/HGG, juste "cette matière a plusieurs salles
+  // à cette heure". Calculé à partir des épreuves brutes, pas des triplets déjà résolus.
+  const doublonDates = useMemo(() => {
+    const parMatiereHeure = new Map<string, number>();
+    for (const e of epreuves) {
+      const k = `${e.date}|${e.matiere}|${e.heure_debut}`;
+      parMatiereHeure.set(k, (parMatiereHeure.get(k) ?? 0) + 1);
+    }
+    const dates = new Set<string>();
+    for (const [k, count] of parMatiereHeure) {
+      if (count > 1) dates.add(k.split("|")[0]);
+    }
+    return dates;
+  }, [epreuves]);
 
   const tripletKey = (t: TripletDisponible) => `${t.date}|${t.heure_debut}|${t.epreuves.map((e) => e.id).join(",")}`;
 
@@ -2346,7 +2367,8 @@ function TripletsAdminView({ planningId }: { planningId: number }) {
   const dates = [...new Set(triplets.map((t) => t.date))].sort();
   const filtered = triplets
     .filter((t) => !filterDate || t.date === filterDate)
-    .filter((t) => !filterEtat || t.type_slot === filterEtat);
+    .filter((t) => !filterEtat || t.type_slot === filterEtat)
+    .filter((t) => !doublonsOnly || doublonDates.has(t.date));
   const byDate = new Map<string, TripletDisponible[]>();
   for (const t of filtered) {
     if (!byDate.has(t.date)) byDate.set(t.date, []);
@@ -2362,6 +2384,10 @@ function TripletsAdminView({ planningId }: { planningId: number }) {
           État de chaque triplet du planning — préréservez un triplet Libre pour le mettre de côté sans lui assigner de candidat, ou libérez une pré-réservation.
         </p>
         <div className="flex items-center gap-2 ml-auto">
+          <label className="flex items-center gap-1.5 text-sm text-black/60 px-3 py-1.5 rounded-lg border bg-white cursor-pointer" title="Ne montrer que les journées où au moins une matière a plusieurs épreuves en parallèle à la même heure (dédoublement)">
+            <input type="checkbox" checked={doublonsOnly} onChange={(e) => setDoublonsOnly(e.target.checked)} className="cursor-pointer" />
+            Journées avec doublons
+          </label>
           {dates.length > 0 && (
             <select
               value={filterDate}
@@ -2369,7 +2395,9 @@ function TripletsAdminView({ planningId }: { planningId: number }) {
               className="px-3 py-1.5 rounded-lg border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
             >
               <option value="">Toutes les dates</option>
-              {dates.map((d) => <option key={d} value={d}>{formatDate(d)}</option>)}
+              {dates
+                .filter((d) => !doublonsOnly || doublonDates.has(d))
+                .map((d) => <option key={d} value={d}>{formatDate(d)}{doublonDates.has(d) ? " •" : ""}</option>)}
             </select>
           )}
           <select
