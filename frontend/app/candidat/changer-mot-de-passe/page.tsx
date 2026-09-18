@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, CheckCircle } from "lucide-react";
+import { Loader2, CheckCircle, Eye, EyeOff } from "lucide-react";
 
 const RED = "#C62828";
 const API_BASE = process.env.NEXT_PUBLIC_PORTAL_API_URL ?? "http://localhost:8000";
@@ -15,6 +15,15 @@ export default function ChangerMotDePassePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  // Un champ visible en clair à la fois n'a pas de sens ici : chacun se montre/masque
+  // indépendamment des autres.
+  const [visible, setVisible] = useState<Set<number>>(new Set());
+  const toggleVisible = (i: number) =>
+    setVisible((prev) => {
+      const next = new Set(prev);
+      next.has(i) ? next.delete(i) : next.add(i);
+      return next;
+    });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,20 +98,31 @@ export default function ChangerMotDePassePage() {
             { label: "Mot de passe actuel", value: current, set: setCurrent, auto: "current-password" },
             { label: "Nouveau mot de passe", value: next, set: setNext, auto: "new-password" },
             { label: "Confirmer le nouveau mot de passe", value: confirm, set: setConfirm, auto: "new-password" },
-          ].map(({ label, value, set, auto }) => (
+          ].map(({ label, value, set, auto }, i) => (
             <div key={label} className="space-y-1">
               <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">
                 {label}
               </label>
-              <input
-                type="password"
-                value={value}
-                onChange={(e) => set(e.target.value)}
-                autoComplete={auto}
-                placeholder="••••••••"
-                className="w-full px-4 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
-                style={{ "--tw-ring-color": RED } as React.CSSProperties}
-              />
+              <div className="relative">
+                <input
+                  type={visible.has(i) ? "text" : "password"}
+                  value={value}
+                  onChange={(e) => set(e.target.value)}
+                  autoComplete={auto}
+                  placeholder="••••••••"
+                  className="w-full px-4 py-2.5 pr-11 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
+                  style={{ "--tw-ring-color": RED } as React.CSSProperties}
+                />
+                <button
+                  type="button"
+                  onClick={() => toggleVisible(i)}
+                  tabIndex={-1}
+                  title={visible.has(i) ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+                  className="absolute right-0 top-0 h-full px-3 flex items-center text-gray-400 hover:text-gray-600 transition"
+                >
+                  {visible.has(i) ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
           ))}
 
