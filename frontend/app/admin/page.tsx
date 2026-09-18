@@ -264,7 +264,10 @@ type TripletDisponible = {
   date: string;
   heure_debut: string;
   epreuves: TripletEpreuveGestion[];
-  type_slot: "LIBRE" | "PRERESERVEE";
+  type_slot: "LIBRE" | "PRERESERVEE" | "ATTRIBUEE" | "INCOMPLET";
+  candidat_id?: number | null;
+  candidat_nom?: string | null;
+  candidat_prenom?: string | null;
 };
 
 type InscriptionGestion = {
@@ -2290,19 +2293,28 @@ function TripletAssociationView({ dayData }: { dayData: DayViewData }) {
 
 // ── Vue triplets (édition — préréserver / libérer) ─────────────────────────────
 // Distincte de TripletAssociationView (qui montre les triplets déjà ASSIGNÉS d'une
-// journée) : celle-ci liste les triplets DISPONIBLES (LIBRE/PRERESERVEE) de tout le
-// planning et permet de faire basculer leur statut, sans passer par une inscription.
+// journée) : celle-ci liste TOUS les triplets de tout le planning avec leur état réel
+// (Libre, Préréservé, Attribué à un candidat, ou Incomplet) et permet de préréserver /
+// libérer ceux qui sont disponibles.
+
+const TRIPLET_ETAT: Record<string, { label: string; cls: string }> = {
+  LIBRE:       { label: "Libre",       cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  PRERESERVEE: { label: "Préréservé",  cls: "bg-amber-50 text-amber-700 border-amber-200" },
+  ATTRIBUEE:   { label: "Attribué",    cls: "bg-blue-50 text-blue-700 border-blue-200" },
+  INCOMPLET:   { label: "Incomplet",   cls: "bg-red-50 text-red-600 border-red-200" },
+};
 
 function TripletsAdminView({ planningId }: { planningId: number }) {
   const toast = useToast();
   const [triplets, setTriplets] = useState<TripletDisponible[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterDate, setFilterDate] = useState("");
+  const [filterEtat, setFilterEtat] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
-    get<TripletDisponible[]>(`gestion-candidats/${planningId}/triplets`)
+    get<TripletDisponible[]>(`gestion-candidats/${planningId}/triplets?tous=1`)
       .then(setTriplets)
       .catch(() => setTriplets([]))
       .finally(() => setLoading(false));
@@ -2328,7 +2340,9 @@ function TripletsAdminView({ planningId }: { planningId: number }) {
   };
 
   const dates = [...new Set(triplets.map((t) => t.date))].sort();
-  const filtered = filterDate ? triplets.filter((t) => t.date === filterDate) : triplets;
+  const filtered = triplets
+    .filter((t) => !filterDate || t.date === filterDate)
+    .filter((t) => !filterEtat || t.type_slot === filterEtat);
   const byDate = new Map<string, TripletDisponible[]>();
   for (const t of filtered) {
     if (!byDate.has(t.date)) byDate.set(t.date, []);
@@ -2341,22 +2355,32 @@ function TripletsAdminView({ planningId }: { planningId: number }) {
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
         <p className="text-sm text-black/50">
-          Triplets disponibles (Libre ou Préréservé) — préréservez-en un pour le mettre de côté sans lui assigner de candidat, ou libérez une pré-réservation.
+          État de chaque triplet du planning — préréservez un triplet Libre pour le mettre de côté sans lui assigner de candidat, ou libérez une pré-réservation.
         </p>
-        {dates.length > 0 && (
+        <div className="flex items-center gap-2 ml-auto">
+          {dates.length > 0 && (
+            <select
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              className="px-3 py-1.5 rounded-lg border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
+            >
+              <option value="">Toutes les dates</option>
+              {dates.map((d) => <option key={d} value={d}>{formatDate(d)}</option>)}
+            </select>
+          )}
           <select
-            value={filterDate}
-            onChange={(e) => setFilterDate(e.target.value)}
-            className="ml-auto px-3 py-1.5 rounded-lg border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
+            value={filterEtat}
+            onChange={(e) => setFilterEtat(e.target.value)}
+            className="px-3 py-1.5 rounded-lg border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
           >
-            <option value="">Toutes les dates</option>
-            {dates.map((d) => <option key={d} value={d}>{formatDate(d)}</option>)}
+            <option value="">Tous les états</option>
+            {Object.entries(TRIPLET_ETAT).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
-        )}
+        </div>
       </div>
 
       {filtered.length === 0 ? (
-        <Empty message="Aucun triplet disponible" sub="Tous les créneaux sont soit attribués, soit inexistants pour cette date." />
+        <Empty message="Aucun triplet" sub="Aucun créneau généré pour cette date, ou filtre trop restrictif." />
       ) : (
         [...byDate.entries()].map(([date, trips]) => (
           <div key={date} className="bg-white rounded-2xl border border-black/5 shadow-sm overflow-hidden">
@@ -2369,6 +2393,8 @@ function TripletsAdminView({ planningId }: { planningId: number }) {
                 .sort((a, b) => a.heure_debut.localeCompare(b.heure_debut))
                 .map((t) => {
                   const key = tripletKey(t);
+                  const etat = TRIPLET_ETAT[t.type_slot] ?? TRIPLET_ETAT.INCOMPLET;
+                  const editable = t.type_slot === "LIBRE" || t.type_slot === "PRERESERVEE";
                   return (
                     <div key={key} className="flex items-center gap-4 px-4 py-2.5">
                       <span className="font-mono text-sm text-black/70 w-14">{t.heure_debut}</span>
@@ -2379,23 +2405,26 @@ function TripletsAdminView({ planningId }: { planningId: number }) {
                           </span>
                         ))}
                       </div>
-                      <span
-                        className={`text-[11px] px-2 py-0.5 rounded-full font-semibold border ${
-                          t.type_slot === "PRERESERVEE" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                        }`}
-                      >
-                        {t.type_slot === "PRERESERVEE" ? "Préréservé" : "Libre"}
+                      {t.type_slot === "ATTRIBUEE" && t.candidat_nom && (
+                        <span className="text-xs text-black/60 font-medium w-40 truncate" title={`${t.candidat_nom} ${t.candidat_prenom ?? ""}`}>
+                          {t.candidat_nom} {t.candidat_prenom}
+                        </span>
+                      )}
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold border ${etat.cls}`}>
+                        {etat.label}
                       </span>
-                      <button
-                        onClick={() => toggle(t)}
-                        disabled={busy === key}
-                        className={`text-xs px-3 py-1.5 rounded-lg font-medium transition disabled:opacity-50 ${
-                          t.type_slot === "LIBRE" ? "text-white hover:opacity-90" : "border border-black/15 text-black/60 hover:bg-black/[0.03]"
-                        }`}
-                        style={t.type_slot === "LIBRE" ? { backgroundColor: RED } : undefined}
-                      >
-                        {busy === key ? "…" : t.type_slot === "LIBRE" ? "Préréserver" : "Libérer"}
-                      </button>
+                      {editable && (
+                        <button
+                          onClick={() => toggle(t)}
+                          disabled={busy === key}
+                          className={`text-xs px-3 py-1.5 rounded-lg font-medium transition disabled:opacity-50 ${
+                            t.type_slot === "LIBRE" ? "text-white hover:opacity-90" : "border border-black/15 text-black/60 hover:bg-black/[0.03]"
+                          }`}
+                          style={t.type_slot === "LIBRE" ? { backgroundColor: RED } : undefined}
+                        >
+                          {busy === key ? "…" : t.type_slot === "LIBRE" ? "Préréserver" : "Libérer"}
+                        </button>
+                      )}
                     </div>
                   );
                 })}

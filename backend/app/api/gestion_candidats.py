@@ -54,7 +54,10 @@ class TripletOut(BaseModel):
     date: Date
     heure_debut: str        # "HH:MM"
     epreuves: List[TripletEpreuveOut]
-    type_slot: str          # "LIBRE" | "PRERESERVEE"
+    type_slot: str          # "LIBRE" | "PRERESERVEE" | "ATTRIBUEE" | "INCOMPLET"
+    candidat_id: Optional[int] = None
+    candidat_nom: Optional[str] = None
+    candidat_prenom: Optional[str] = None
 
 
 class InscriptionOut(BaseModel):
@@ -259,8 +262,18 @@ def get_fiche(candidat_id: int, db: Session = Depends(get_db)):
 _PROFIL_EXCLUSION_ADMIN: dict = {"HGG": "ESH", "ESH": "HGG"}
 
 
-def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set) -> list:
-    """Calcule les triplets N² pour un groupe d'épreuves (un profil ou la journée entière)."""
+def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set, tous: bool = False) -> list:
+    """
+    Calcule les triplets N² pour un groupe d'épreuves (un profil ou la journée entière).
+
+    tous=False (défaut) : seuls les triplets entièrement disponibles (LIBRE/PRERESERVEE)
+    sont retournés — comportement historique, utilisé par les écrans d'inscription (on ne
+    doit jamais y proposer un créneau déjà occupé).
+    tous=True : retourne aussi les triplets déjà ATTRIBUES (avec le candidat concerné) et
+    les triplets INCOMPLET (certaines épreuves attribuées, pas toutes au même candidat —
+    triplet cassé par une action individuelle) — pour la Vue triplets côté admin, qui doit
+    montrer l'état réel de chaque triplet, pas seulement les places libres.
+    """
     if not all_epreuves:
         return []
 
@@ -270,10 +283,10 @@ def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set) -> list:
     total_slots = len(all_slots)
     offset = total_slots // N_rooms if N_rooms else 1
 
-    disponibles: dict = defaultdict(list)
+    par_matiere_heure: dict = defaultdict(list)
     for e in all_epreuves:
-        if e.statut in ("LIBRE", "PRERESERVEE"):
-            disponibles[(e.matiere, e.heure_debut)].append(e)
+        if tous or e.statut in ("LIBRE", "PRERESERVEE"):
+            par_matiere_heure[(e.matiere, e.heure_debut)].append(e)
 
     result = []
     for k in range(total_slots):
@@ -281,7 +294,7 @@ def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set) -> list:
         valid = True
         for i, matiere in enumerate(matieres_sorted):
             slot_idx = (k + i * offset) % total_slots
-            ep_list = disponibles.get((matiere, all_slots[slot_idx]), [])
+            ep_list = par_matiere_heure.get((matiere, all_slots[slot_idx]), [])
             if not ep_list:
                 valid = False
                 break
@@ -295,13 +308,30 @@ def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set) -> list:
             continue
         seen_global.add(key)
 
-        type_slot = "PRERESERVEE" if any(e.statut == "PRERESERVEE" for e in assigned) else "LIBRE"
+        candidat_ids = {e.candidat_id for e in assigned}
+        candidat = None
+        if len(candidat_ids) == 1 and next(iter(candidat_ids)) is not None:
+            type_slot = "ATTRIBUEE"
+            candidat = assigned[0].candidat
+        elif any(cid is not None for cid in candidat_ids):
+            # Triplet cassé : certaines épreuves attribuées, pas toutes au même candidat
+            # (ex. casser-triplet partiel, ou assignation individuelle hors rotation).
+            type_slot = "INCOMPLET"
+        elif any(e.statut == "PRERESERVEE" for e in assigned):
+            type_slot = "PRERESERVEE"
+        elif all(e.statut == "LIBRE" for e in assigned):
+            type_slot = "LIBRE"
+        else:
+            # Ex. ABSENT/ANNULEE sans candidat — état résiduel, affiché tel quel.
+            type_slot = "INCOMPLET"
+
         epreuves_out = sorted([
             TripletEpreuveOut(
                 id=e.id,
                 matiere=e.matiere,
                 heure_debut=str(e.heure_debut)[:5],
                 heure_fin=str(e.heure_fin)[:5],
+                statut=e.statut,
             )
             for e in assigned
         ], key=lambda x: x.heure_debut)
@@ -311,15 +341,23 @@ def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set) -> list:
             heure_debut=str(all_slots[k])[:5],
             epreuves=epreuves_out,
             type_slot=type_slot,
+            candidat_id=candidat.id if candidat else None,
+            candidat_nom=candidat.nom if candidat else None,
+            candidat_prenom=candidat.prenom if candidat else None,
         ))
     return result
 
 
 @router.get("/{planning_id}/triplets", response_model=List[TripletOut])
-def get_triplets_admin(planning_id: int, db: Session = Depends(get_db)):
+def get_triplets_admin(planning_id: int, tous: bool = False, db: Session = Depends(get_db)):
     """
-    Retourne tous les triplets disponibles (admin : sans cutoff de date).
-    Inclut les créneaux LIBRE et PRERESERVEE.
+    Retourne les triplets du planning (admin : sans cutoff de date).
+
+    Par défaut (tous=False), seuls les triplets disponibles (LIBRE/PRERESERVEE) — c'est
+    ce que consomment les écrans d'inscription, qui ne doivent proposer que des places
+    libres. Avec tous=True, retourne aussi les triplets ATTRIBUES/INCOMPLET, pour la Vue
+    triplets qui doit montrer l'état réel de chaque triplet.
+
     Si la journée contient ESH et HGG, génère des triplets séparés par profil
     (sans combiner les deux) pour correspondre à ce que voit chaque candidat.
     """
@@ -358,9 +396,9 @@ def get_triplets_admin(planning_id: int, db: Session = Depends(get_db)):
             # Générer deux groupes séparés : un pour les candidats ESH, un pour HGG
             for exclu in ("HGG", "ESH"):
                 groupe = [e for e in all_epreuves_raw if e.matiere.upper() != exclu]
-                result.extend(_triplets_pour_groupe(groupe, date, seen_global))
+                result.extend(_triplets_pour_groupe(groupe, date, seen_global, tous))
         else:
-            result.extend(_triplets_pour_groupe(all_epreuves_raw, date, seen_global))
+            result.extend(_triplets_pour_groupe(all_epreuves_raw, date, seen_global, tous))
 
     return result
 
