@@ -1559,10 +1559,10 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
           <thead className="sticky top-0 z-20">
             {/* Ligne 1 : en-têtes matières */}
             <tr className="bg-gray-100 border-b">
-              <th className="sticky left-0 z-30 bg-gray-100 px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap border-r border-black/10">Statut</th>
-              <th className="sticky left-[88px] z-30 bg-gray-100 px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap">Dép. prépa</th>
-              <th className="sticky left-[172px] z-30 bg-gray-100 px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap">Dép. exam</th>
-              <th className="sticky left-[256px] z-30 bg-gray-100 px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap border-r border-black/10">Fin exam</th>
+              <th className="sticky left-0 z-30 bg-gray-100 w-[100px] min-w-[100px] max-w-[100px] overflow-hidden px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap border-r border-black/10">Statut</th>
+              <th className="sticky left-[100px] z-30 bg-gray-100 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap">Dép. prépa</th>
+              <th className="sticky left-[190px] z-30 bg-gray-100 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap">Dép. exam</th>
+              <th className="sticky left-[280px] z-30 bg-gray-100 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap border-r border-black/10">Fin exam</th>
               {matieres.map((m) => (
                 <th
                   key={m}
@@ -1575,10 +1575,10 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
             </tr>
             {/* Ligne 2 : sous-colonnes par matière */}
             <tr className="bg-gray-50 border-b text-[11px] text-black/40">
-              <th className="sticky left-0 z-30 bg-gray-50 border-r border-black/10" colSpan={1} />
-              <th className="sticky left-[88px] z-30 bg-gray-50" />
-              <th className="sticky left-[172px] z-30 bg-gray-50" />
-              <th className="sticky left-[256px] z-30 bg-gray-50 border-r border-black/10" />
+              <th className="sticky left-0 z-30 bg-gray-50 w-[100px] min-w-[100px] max-w-[100px] border-r border-black/10" colSpan={1} />
+              <th className="sticky left-[100px] z-30 bg-gray-50 w-[90px] min-w-[90px] max-w-[90px]" />
+              <th className="sticky left-[190px] z-30 bg-gray-50 w-[90px] min-w-[90px] max-w-[90px]" />
+              <th className="sticky left-[280px] z-30 bg-gray-50 w-[90px] min-w-[90px] max-w-[90px] border-r border-black/10" />
               {matieres.map((m) => (
                 <React.Fragment key={m}>
                   <th className="px-3 py-1.5 text-left font-normal border-l border-black/10">Candidat</th>
@@ -1633,19 +1633,19 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                   return (
                     <tr key={key} className={`border-b border-black/[0.06] hover:bg-black/[0.02] transition ${rowBg}`}>
                       {/* Statut — sticky */}
-                      <td className={`sticky left-0 z-10 px-3 py-2 whitespace-nowrap border-r border-black/[0.06] ${stickyBg}`}>
+                      <td className={`sticky left-0 z-10 w-[100px] min-w-[100px] max-w-[100px] overflow-hidden px-3 py-2 whitespace-nowrap border-r border-black/[0.06] ${stickyBg}`}>
                         {statutBadgeCell(rs)}
                       </td>
                       {/* Dép. prépa — sticky */}
-                      <td className={`sticky left-[88px] z-10 px-3 py-2 text-black/40 font-mono text-xs whitespace-nowrap ${stickyBg}`}>
+                      <td className={`sticky left-[100px] z-10 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2 text-black/40 font-mono text-xs whitespace-nowrap ${stickyBg}`}>
                         {debPrepaMap.get(key) ?? "—"}
                       </td>
                       {/* Dép. exam — sticky */}
-                      <td className={`sticky left-[172px] z-10 px-3 py-2 font-mono text-xs whitespace-nowrap ${stickyBg}`}>
+                      <td className={`sticky left-[190px] z-10 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2 font-mono text-xs whitespace-nowrap ${stickyBg}`}>
                         {row.heure_debut}
                       </td>
                       {/* Fin exam — sticky */}
-                      <td className={`sticky left-[256px] z-10 px-3 py-2 text-black/40 font-mono text-xs whitespace-nowrap border-r border-black/[0.06] ${stickyBg}`}>
+                      <td className={`sticky left-[280px] z-10 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2 text-black/40 font-mono text-xs whitespace-nowrap border-r border-black/[0.06] ${stickyBg}`}>
                         {row.heure_fin}
                       </td>
                       {/* Par matière */}
