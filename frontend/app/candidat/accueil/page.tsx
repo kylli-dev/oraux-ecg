@@ -47,6 +47,7 @@ const actions = [
 export default function AccueilCandidatPage() {
   const router = useRouter();
   const [me, setMe] = useState<CandidatMe | null>(null);
+  const [consignes, setConsignes] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -68,6 +69,16 @@ export default function AccueilCandidatPage() {
       })
       .then((data) => data && setMe(data))
       .finally(() => setLoading(false));
+
+    // Encadré "Consignes importantes" — éditable côté admin (Paramétrages > Messages-type,
+    // code CONSIGNES_ACCUEIL). Chargé indépendamment : si ça échoue, l'encadré ne s'affiche
+    // simplement pas, sans bloquer le reste de la page.
+    fetch(`${API_BASE}/portal/consignes-accueil`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => setConsignes(data?.corps_html?.trim() || null))
+      .catch(() => {});
   }, [router]);
 
   if (loading) {
@@ -97,14 +108,15 @@ export default function AccueilCandidatPage() {
         )}
       </div>
 
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-8 text-sm text-amber-800">
-        <p className="font-semibold mb-1">Consignes importantes</p>
-        <ul className="list-disc list-inside space-y-1 text-amber-700">
-          <li>Les inscriptions sont ouvertes jusqu'à 16h pour le lendemain.</li>
-          <li>Vous ne pouvez être inscrit qu'à un seul triplet de créneaux à la fois.</li>
-          <li>Pensez à changer votre mot de passe provisoire dès votre première connexion.</li>
-        </ul>
-      </div>
+      {consignes && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-8 text-sm text-amber-800">
+          <p className="font-semibold mb-1">Consignes importantes</p>
+          <div
+            className="text-amber-700 [&_ul]:list-disc [&_ul]:list-inside [&_ul]:space-y-1 [&_ol]:list-decimal [&_ol]:list-inside [&_ol]:space-y-1 [&_a]:underline [&_p+p]:mt-2"
+            dangerouslySetInnerHTML={{ __html: consignes }}
+          />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {actions.map((a) => (

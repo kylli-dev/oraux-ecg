@@ -29,6 +29,7 @@ from app.models.planning import Planning
 from app.models.inscription import Inscription, InscriptionEpreuve
 from app.models.liste_attente import ListeAttente
 from app.models.note import Note
+from app.models.message_type import MessageType
 from app.core.auth import (
     verify_password,
     hash_password,
@@ -185,6 +186,16 @@ def get_me(candidat_id: int = Depends(require_candidat), db: Session = Depends(g
     if not c:
         raise HTTPException(status_code=404, detail="Candidat introuvable")
     return c
+
+
+@router.get("/consignes-accueil")
+def get_consignes_accueil(candidat_id: int = Depends(require_candidat), db: Session = Depends(get_db)):
+    """
+    Contenu de l'encadré "Consignes importantes" de la page d'accueil candidat —
+    éditable côté admin dans Paramétrages > Messages-type (code CONSIGNES_ACCUEIL).
+    """
+    mt = db.query(MessageType).filter_by(code="CONSIGNES_ACCUEIL").first()
+    return {"corps_html": mt.corps_html if mt else ""}
 
 
 @router.post("/me/change-password", status_code=204)

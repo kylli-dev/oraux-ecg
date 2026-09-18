@@ -8814,7 +8814,12 @@ const MESSAGE_LABELS: Record<string, string> = {
   DESINSCRIPTION:    "Confirmation de désinscription",
   LISTE_ATTENTE:     "Enregistrement liste d'attente",
   PUBLICATION_NOTES: "Publication des notes",
+  CONSIGNES_ACCUEIL: "Consignes importantes (page d'accueil candidat)",
 };
+
+// Codes qui ne sont pas des emails (pas de "Sujet") — juste du contenu affiché tel quel
+// sur une page du portail candidat.
+const MESSAGE_NON_EMAIL_CODES = new Set(["CONSIGNES_ACCUEIL"]);
 
 // ── ReferentielSection : générique Matières / Salles ──────────────────────────
 type ReferentielItem = { id: number; intitule: string; active: boolean };
@@ -9351,9 +9356,15 @@ function ParametragesSection() {
                 </h2>
               </div>
 
-              <Field label="Sujet de l'email">
-                <Input value={sujet} onChange={(e) => { setSujet(e.target.value); setSaveOk(false); }} />
-              </Field>
+              {MESSAGE_NON_EMAIL_CODES.has(selected.code) ? (
+                <div className="rounded-lg bg-blue-50 border border-blue-100 px-4 py-3 text-xs text-blue-700">
+                  Ce n&apos;est pas un email : ce contenu s&apos;affiche tel quel dans un encadré du portail candidat — pas de sujet ni de variables ici.
+                </div>
+              ) : (
+                <Field label="Sujet de l'email">
+                  <Input value={sujet} onChange={(e) => { setSujet(e.target.value); setSaveOk(false); }} />
+                </Field>
+              )}
 
               <Field label="Corps du message">
                 <RichTextEditor
@@ -9367,10 +9378,12 @@ function ParametragesSection() {
                 {saveOk && <span className="text-sm text-green-600 flex items-center gap-1"><CheckCircle2 className="h-4 w-4" />Enregistré</span>}
               </div>
 
-              <div className="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3 text-xs text-gray-500">
-                <p className="font-medium mb-1">Variables disponibles :</p>
-                <p className="font-mono">{"{prenom}"} {"{nom}"} {"{login}"} {"{password}"} {"{date}"} {"{epreuves}"} {"{journees}"} {"{url}"} {"{jours}"}</p>
-              </div>
+              {!MESSAGE_NON_EMAIL_CODES.has(selected.code) && (
+                <div className="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3 text-xs text-gray-500">
+                  <p className="font-medium mb-1">Variables disponibles :</p>
+                  <p className="font-mono">{"{prenom}"} {"{nom}"} {"{login}"} {"{password}"} {"{date}"} {"{epreuves}"} {"{journees}"} {"{url}"} {"{jours}"}</p>
+                </div>
+              )}
             </div>
           )}
         </div>

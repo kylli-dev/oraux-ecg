@@ -97,6 +97,19 @@ MESSAGE_TYPE_DEFAULTS = {
             "<p>Cordialement,<br>Le service des admissions</p>"
         ),
     },
+    # Pas un email — affiché tel quel dans l'encadré "Consignes importantes" de la page
+    # d'accueil du portail candidat (voir /portal/consignes-accueil et
+    # frontend/app/candidat/accueil/page.tsx). "sujet" n'est pas utilisé pour ce code.
+    "CONSIGNES_ACCUEIL": {
+        "sujet": "",
+        "corps_html": (
+            "<ul>"
+            "<li>Les inscriptions sont ouvertes jusqu'à 16h pour le lendemain.</li>"
+            "<li>Vous ne pouvez être inscrit qu'à un seul triplet de créneaux à la fois.</li>"
+            "<li>Pensez à changer votre mot de passe provisoire dès votre première connexion.</li>"
+            "</ul>"
+        ),
+    },
 }
 
 
