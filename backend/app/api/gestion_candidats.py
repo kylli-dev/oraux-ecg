@@ -418,13 +418,15 @@ def _partition_par_profil(all_epreuves: list) -> tuple:
     Répartit les épreuves d'une journée mixte ESH/HGG en 2 groupes indépendants (vue ESH,
     vue HGG). ESH et HGG vont chacune exclusivement dans leur groupe. Les matières
     COMMUNES aux deux profils (Maths, Anglais...) sont réparties une par une entre les 2
-    groupes quand plusieurs épreuves parallèles existent à la même heure (dédoublement /
-    salles différentes) : chaque profil obtient alors SA PROPRE salle plutôt que de forcer
-    les deux vues à se disputer la même — préréserver l'une n'a plus à rendre l'autre
-    "Indisponible" si une 2e salle existe réellement pour cette matière à cette heure.
-    S'il n'existe qu'une seule épreuve à cette (matière, heure) — pas de salle en
-    parallèle —, les deux groupes la partagent comme avant : c'est alors une vraie
-    contrainte physique (une seule salle), pas un choix arbitraire de l'algorithme.
+    groupes quand plusieurs épreuves parallèles existent à la même heure ET ont chacune une
+    salle PHYSIQUE explicitement différente assignée : chaque profil obtient alors sa
+    propre salle plutôt que de forcer les deux vues à se disputer la même.
+
+    Si les épreuves parallèles partagent la MÊME salle (ou n'en ont pas encore) — impossible
+    de garantir qu'il s'agit réellement de 2 ressources distinctes —, les deux groupes se
+    rabattent sur un partage comme s'il n'y avait qu'une seule salle : proposer 2 places
+    indépendantes pour ce qui pourrait être la même pièce physique permettrait de préréserver
+    "en même temps" 2 candidats dans une seule salle.
     """
     esh_groupe: list = []
     hgg_groupe: list = []
@@ -440,12 +442,21 @@ def _partition_par_profil(all_epreuves: list) -> tuple:
 
     for eps in partage.values():
         eps_sorted = sorted(eps, key=lambda e: e.id)
-        if len(eps_sorted) >= 2:
-            esh_groupe.append(eps_sorted[0])
-            hgg_groupe.append(eps_sorted[1])
-            # Dédoublement à >2 salles parallèles (rare) : le surplus reste partagé entre
-            # les 2 vues plutôt que d'inventer une 3e vue.
-            for extra in eps_sorted[2:]:
+        # Une seule épreuve retenue par salle physique distincte (salle_id non nul) — les
+        # doublons partageant déjà une salle retenue, ou sans salle assignée, n'en font pas
+        # partie : on ne peut pas prouver qu'ils représentent une pièce différente.
+        par_salle: dict = {}
+        for e in eps_sorted:
+            if e.salle_id is not None and e.salle_id not in par_salle:
+                par_salle[e.salle_id] = e
+        distinctes = list(par_salle.values())
+
+        if len(distinctes) >= 2:
+            esh_groupe.append(distinctes[0])
+            hgg_groupe.append(distinctes[1])
+            # Dédoublement à >2 salles vraiment distinctes (rare) : le surplus reste
+            # partagé entre les 2 vues plutôt que d'inventer une 3e vue.
+            for extra in distinctes[2:]:
                 esh_groupe.append(extra)
                 hgg_groupe.append(extra)
         else:
