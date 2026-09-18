@@ -1596,7 +1596,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                 <tr>
                   <td
                     colSpan={4 + matieres.length * 4}
-                    className="px-4 py-2 bg-black/[0.05] font-semibold text-black/60 text-xs uppercase tracking-widest sticky left-0 z-10"
+                    className="px-4 py-2 bg-gray-100 font-semibold text-black/60 text-xs uppercase tracking-widest sticky left-0 z-10"
                   >
                     <label className="inline-flex items-center gap-2 cursor-pointer">
                       <input
