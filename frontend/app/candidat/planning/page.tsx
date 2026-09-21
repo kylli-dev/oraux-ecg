@@ -55,7 +55,7 @@ function EpreuveRow({ ep }: { ep: EpreuveOut }) {
       </span>
       <span className="text-sm text-gray-700">{ep.matiere}</span>
       {ep.salle_intitule && (
-        <span className="ml-auto text-xs font-mono text-gray-400">{ep.salle_intitule}</span>
+        <span className="ml-auto text-xs font-mono text-gray-400">Salle n° {ep.salle_intitule}</span>
       )}
     </div>
   );
@@ -244,6 +244,8 @@ export default function CandidatPlanningPage() {
     );
   }
 
+  const availableDates = Array.from(new Set(triplets.map((t) => t.date))).sort();
+
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
       <button
@@ -305,22 +307,24 @@ export default function CandidatPlanningPage() {
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
           Triplets disponibles
         </h2>
-        <div className="flex items-center gap-2">
-          <input
-            type="date"
+        {/* Liste déroulante plutôt qu'un <input type="date"> : celui-ci laissait choisir
+            n'importe quel jour du calendrier, y compris ceux sans aucun triplet — la
+            plupart des sélections retombaient donc sur "Aucun triplet pour cette date",
+            ce qui donnait l'impression que le filtre ne s'appliquait pas. Ici, seules les
+            dates ayant réellement des triplets sont proposées, et "Toutes les dates"
+            remplace le bouton ✕ pour défiltrer. */}
+        {availableDates.length > 0 && (
+          <select
             value={filterDate}
             onChange={(e) => setFilterDate(e.target.value)}
             className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-100 focus:border-red-300"
-          />
-          {filterDate && (
-            <button
-              onClick={() => setFilterDate("")}
-              className="text-xs text-gray-400 hover:text-gray-600 transition"
-            >
-              ✕
-            </button>
-          )}
-        </div>
+          >
+            <option value="">Toutes les dates</option>
+            {availableDates.map((d) => (
+              <option key={d} value={d}>{formatDate(d)}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {triplets.length === 0 ? (
