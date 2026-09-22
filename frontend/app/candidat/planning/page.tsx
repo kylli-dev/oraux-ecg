@@ -312,8 +312,13 @@ export default function CandidatPlanningPage() {
             plupart des sélections retombaient donc sur "Aucun triplet pour cette date",
             ce qui donnait l'impression que le filtre ne s'appliquait pas. Ici, seules les
             dates ayant réellement des triplets sont proposées, et "Toutes les dates"
-            remplace le bouton ✕ pour défiltrer. */}
-        {availableDates.length > 0 && (
+            remplace le bouton ✕ pour défiltrer.
+            N'affiche le filtre que s'il y a au moins 2 dates : avec une seule date
+            disponible (le cas courant — un seul jour ouvert à l'inscription à la fois),
+            la sélectionner produirait exactement la même liste que "Toutes les dates" —
+            aucun changement visible, ce qui donnait l'impression à tort que le filtre ne
+            fonctionnait pas alors qu'il n'avait simplement rien à filtrer. */}
+        {availableDates.length > 1 && (
           <select
             value={filterDate}
             onChange={(e) => setFilterDate(e.target.value)}
