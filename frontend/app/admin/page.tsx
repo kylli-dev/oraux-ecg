@@ -275,6 +275,7 @@ type TripletDisponible = {
   candidat_id?: number | null;
   candidat_nom?: string | null;
   candidat_prenom?: string | null;
+  motif?: string | null;
 };
 
 type InscriptionGestion = {
@@ -2337,15 +2338,12 @@ function TripletAssociationView({ dayData }: { dayData: DayViewData }) {
 // (Libre, Préréservé, Attribué à un candidat, ou Incomplet) et permet de préréserver /
 // libérer ceux qui sont disponibles.
 
-const TRIPLET_ETAT: Record<string, { label: string; cls: string; title?: string }> = {
+const TRIPLET_ETAT: Record<string, { label: string; cls: string }> = {
   LIBRE:        { label: "Libre",         cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
   PRERESERVEE:  { label: "Préréservé",    cls: "bg-amber-50 text-amber-700 border-amber-200" },
   ATTRIBUEE:    { label: "Attribué",      cls: "bg-blue-50 text-blue-700 border-blue-200" },
   INCOMPLET:    { label: "Incomplet",     cls: "bg-red-50 text-red-600 border-red-200" },
-  INDISPONIBLE: {
-    label: "Indisponible", cls: "bg-gray-100 text-gray-500 border-gray-200",
-    title: "Un créneau partagé (ex. Maths/Anglais commun ESH/HGG) a été préréservé via le triplet jumeau à cette heure — celui-ci n'est plus complétable tel quel, mais n'a pas été préréservé lui-même.",
-  },
+  INDISPONIBLE: { label: "Indisponible",  cls: "bg-gray-100 text-gray-500 border-gray-200" },
 };
 
 function TripletsAdminView({ planningId }: { planningId: number }) {
@@ -2439,35 +2437,43 @@ function TripletsAdminView({ planningId }: { planningId: number }) {
                   const key = tripletKey(t);
                   const etat = TRIPLET_ETAT[t.type_slot] ?? TRIPLET_ETAT.INCOMPLET;
                   const editable = t.type_slot === "LIBRE" || t.type_slot === "PRERESERVEE";
+                  const showCandidat = (t.type_slot === "ATTRIBUEE" || t.type_slot === "INCOMPLET") && t.candidat_nom;
                   return (
-                    <div key={key} className="flex items-center gap-4 px-4 py-2.5">
-                      <span className="font-mono text-sm text-black/70 w-14">{t.heure_debut}</span>
-                      <div className="flex-1 flex flex-wrap gap-2">
-                        {t.epreuves.map((e) => (
-                          <span key={e.id} className="text-xs px-2 py-0.5 rounded-full bg-black/[0.03] border border-black/10 text-black/60">
-                            {e.matiere} <span className="text-black/30">{e.heure_debut}</span>
+                    <div key={key} className="px-4 py-2.5">
+                      <div className="flex items-center gap-4">
+                        <span className="font-mono text-sm text-black/70 w-14">{t.heure_debut}</span>
+                        <div className="flex-1 flex flex-wrap gap-2">
+                          {t.epreuves.map((e) => (
+                            <span key={e.id} className="text-xs px-2 py-0.5 rounded-full bg-black/[0.03] border border-black/10 text-black/60">
+                              {e.matiere} <span className="text-black/30">{e.heure_debut}</span>
+                            </span>
+                          ))}
+                        </div>
+                        {showCandidat && (
+                          <span className="text-xs text-black/60 font-medium w-40 truncate" title={`${t.candidat_nom} ${t.candidat_prenom ?? ""}`}>
+                            {t.candidat_nom} {t.candidat_prenom}
                           </span>
-                        ))}
-                      </div>
-                      {t.type_slot === "ATTRIBUEE" && t.candidat_nom && (
-                        <span className="text-xs text-black/60 font-medium w-40 truncate" title={`${t.candidat_nom} ${t.candidat_prenom ?? ""}`}>
-                          {t.candidat_nom} {t.candidat_prenom}
+                        )}
+                        <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold border ${etat.cls}`}>
+                          {etat.label}
                         </span>
-                      )}
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold border ${etat.cls}`} title={etat.title}>
-                        {etat.label}
-                      </span>
-                      {editable && (
-                        <button
-                          onClick={() => toggle(t)}
-                          disabled={busy === key}
-                          className={`text-xs px-3 py-1.5 rounded-lg font-medium transition disabled:opacity-50 ${
-                            t.type_slot === "LIBRE" ? "text-white hover:opacity-90" : "border border-black/15 text-black/60 hover:bg-black/[0.03]"
-                          }`}
-                          style={t.type_slot === "LIBRE" ? { backgroundColor: RED } : undefined}
-                        >
-                          {busy === key ? "…" : t.type_slot === "LIBRE" ? "Préréserver" : "Libérer"}
-                        </button>
+                        {editable && (
+                          <button
+                            onClick={() => toggle(t)}
+                            disabled={busy === key}
+                            className={`text-xs px-3 py-1.5 rounded-lg font-medium transition disabled:opacity-50 ${
+                              t.type_slot === "LIBRE" ? "text-white hover:opacity-90" : "border border-black/15 text-black/60 hover:bg-black/[0.03]"
+                            }`}
+                            style={t.type_slot === "LIBRE" ? { backgroundColor: RED } : undefined}
+                          >
+                            {busy === key ? "…" : t.type_slot === "LIBRE" ? "Préréserver" : "Libérer"}
+                          </button>
+                        )}
+                      </div>
+                      {t.motif && (
+                        <p className="text-xs text-black/40 mt-1.5 pl-[4.5rem] pr-2 leading-snug">
+                          {t.motif}
+                        </p>
                       )}
                     </div>
                   );

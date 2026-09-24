@@ -58,6 +58,7 @@ class TripletOut(BaseModel):
     candidat_id: Optional[int] = None
     candidat_nom: Optional[str] = None
     candidat_prenom: Optional[str] = None
+    motif: Optional[str] = None  # explication lisible du statut, surtout utile pour INCOMPLET/INDISPONIBLE
 
 
 class InscriptionOut(BaseModel):
@@ -319,12 +320,19 @@ def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set) -> list:
         # préréservé), ou mélange (INDISPONIBLE — bloqué par le triplet jumeau, mais pas
         # préréservé lui-même — ni "Préréserver" ni "Libérer" n'ont de sens dessus).
         statuts = {e.statut for e in assigned}
+        motif = None
         if statuts == {"LIBRE"}:
             type_slot = "LIBRE"
         elif statuts == {"PRERESERVEE"}:
             type_slot = "PRERESERVEE"
         else:
             type_slot = "INDISPONIBLE"
+            matieres_partagees = sorted({e.matiere for e in assigned if e.statut == "PRERESERVEE"})
+            motif = (
+                f"{', '.join(matieres_partagees)} déjà préréservé{'e' if len(matieres_partagees) == 1 else 's'} "
+                "via le triplet jumeau à cette heure (créneau partagé entre profils ESH/HGG) — "
+                "ce triplet-ci n'est plus complétable tel quel, mais n'a pas été préréservé lui-même."
+            )
         epreuves_out = sorted([
             TripletEpreuveOut(
                 id=e.id,
@@ -341,6 +349,7 @@ def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set) -> list:
             heure_debut=str(all_slots[k])[:5],
             epreuves=epreuves_out,
             type_slot=type_slot,
+            motif=motif,
         ))
     return result
 
@@ -401,6 +410,9 @@ def _triplets_attribues(planning_id: int, db: Session) -> list:
         dj = dj_by_id.get(e.demi_journee_id)
         if not dj:
             continue
+        candidat_label = (
+            f"{e.candidat.nom} {e.candidat.prenom}".strip() if e.candidat else "un candidat"
+        )
         result.append(TripletOut(
             date=dj.date,
             heure_debut=str(e.heure_debut)[:5],
@@ -409,6 +421,11 @@ def _triplets_attribues(planning_id: int, db: Session) -> list:
             candidat_id=e.candidat_id,
             candidat_nom=e.candidat.nom if e.candidat else None,
             candidat_prenom=e.candidat.prenom if e.candidat else None,
+            motif=(
+                f"Épreuve de {e.matiere} attribuée individuellement à {candidat_label}, "
+                "en dehors du flux d'inscription normal (pas de triplet complet enregistré) — "
+                "seule cette épreuve est rattachée, les 2 autres du triplet n'ont pas pu être retrouvées."
+            ),
         ))
     return result
 

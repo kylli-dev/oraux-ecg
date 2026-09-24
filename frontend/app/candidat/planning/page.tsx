@@ -360,7 +360,7 @@ export default function CandidatPlanningPage() {
               : triplet.heure_fin.slice(0, 5);
             return (
               <div
-                key={`${triplet.date}-${triplet.heure_debut}`}
+                key={`${triplet.date}-${triplet.heure_debut}-${triplet.epreuves.map((e) => e.id).join(",")}`}
                 className="rounded-xl border bg-white shadow-sm overflow-hidden"
               >
                 <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
