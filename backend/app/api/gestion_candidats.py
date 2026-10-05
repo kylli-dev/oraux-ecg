@@ -327,11 +327,25 @@ def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set) -> list:
             type_slot = "PRERESERVEE"
         else:
             type_slot = "INDISPONIBLE"
-            matieres_partagees = sorted({e.matiere for e in assigned if e.statut == "PRERESERVEE"})
+            matieres_bloquantes = sorted({e.matiere for e in assigned if e.statut == "PRERESERVEE"})
+            # Une matière EXCLUSIVE (ESH/HGG) ne peut par construction jamais être partagée
+            # entre profils (voir _partition_par_profil) : si elle apparaît ici, le blocage
+            # vient d'une AUTRE rotation du même groupe qui réutilise la même salle/épreuve à
+            # un autre horaire (souvent parce que cette matière a moins de créneaux/salles que
+            # les autres ce jour-là) — pas du partage ESH/HGG habituel (Maths/Anglais communs).
+            if any(m.upper() in ("ESH", "HGG") for m in matieres_bloquantes):
+                raison = (
+                    "via une autre rotation qui réutilise la même salle à un autre horaire — "
+                    "probablement pas assez de créneaux/salles pour cette matière ce jour-là "
+                    "par rapport aux autres"
+                )
+            else:
+                raison = (
+                    "via le triplet jumeau à cette heure (créneau partagé entre profils ESH/HGG)"
+                )
             motif = (
-                f"{', '.join(matieres_partagees)} déjà préréservé{'e' if len(matieres_partagees) == 1 else 's'} "
-                "via le triplet jumeau à cette heure (créneau partagé entre profils ESH/HGG) — "
-                "ce triplet-ci n'est plus complétable tel quel, mais n'a pas été préréservé lui-même."
+                f"{', '.join(matieres_bloquantes)} déjà préréservé{'e' if len(matieres_bloquantes) == 1 else 's'} "
+                f"{raison} — ce triplet-ci n'est plus complétable tel quel, mais n'a pas été préréservé lui-même."
             )
         epreuves_out = sorted([
             TripletEpreuveOut(
