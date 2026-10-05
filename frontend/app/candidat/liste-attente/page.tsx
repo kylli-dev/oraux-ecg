@@ -120,7 +120,7 @@ export default function ListeAttentePage() {
           <h1 className="text-base font-semibold text-gray-900 mb-2">
             Vous êtes déjà inscrit aux oraux
           </h1>
-          <p className="text-sm text-gray-600 mb-5">
+          <p className="text-sm text-gray-700 mb-5">
             La liste d&apos;attente est réservée aux candidats non encore inscrits à un
             triplet de créneaux.
           </p>
@@ -135,7 +135,7 @@ export default function ListeAttentePage() {
         <div className="mt-6 text-center">
           <button
             onClick={() => router.push("/candidat/accueil")}
-            className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2"
+            className="text-xs text-gray-700 hover:text-black underline underline-offset-2"
           >
             ← Retour à l&apos;accueil
           </button>
@@ -147,7 +147,7 @@ export default function ListeAttentePage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-65px)]">
-        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+        <Loader2 className="h-6 w-6 animate-spin text-gray-700" />
       </div>
     );
   }
@@ -158,7 +158,7 @@ export default function ListeAttentePage() {
         <ListChecks className="h-6 w-6" style={{ color: RED }} />
         <h1 className="text-xl font-bold text-gray-900">Liste d&apos;attente</h1>
       </div>
-      <p className="text-sm text-gray-500 mb-6">
+      <p className="text-sm text-gray-700 mb-6">
         Cochez les journées où vous êtes disponible. Vous serez contacté si une
         place se libère.
       </p>
@@ -178,7 +178,7 @@ export default function ListeAttentePage() {
 
       {!data || data.journees_disponibles.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-200 p-12 text-center">
-          <p className="text-sm text-gray-400">Aucune journée disponible pour l&apos;instant.</p>
+          <p className="text-sm text-gray-700">Aucune journée disponible pour l&apos;instant.</p>
         </div>
       ) : (
         <>
@@ -202,7 +202,7 @@ export default function ListeAttentePage() {
                     <p className="text-sm font-medium text-gray-800 capitalize">
                       {formatDate(j.date)}
                     </p>
-                    <p className="text-xs text-gray-400">
+                    <p className="text-xs text-gray-700">
                       {j.nb_epreuves} créneau{j.nb_epreuves > 1 ? "x" : ""} disponible{j.nb_epreuves > 1 ? "s" : ""}
                     </p>
                   </div>
@@ -215,7 +215,7 @@ export default function ListeAttentePage() {
           </div>
 
           <div className="flex items-center justify-between gap-4">
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-gray-700">
               {selected.size} journée{selected.size !== 1 ? "s" : ""} sélectionnée{selected.size !== 1 ? "s" : ""}
             </p>
             <button
@@ -234,7 +234,7 @@ export default function ListeAttentePage() {
       <div className="mt-8 pt-6 border-t border-gray-100 text-center">
         <button
           onClick={() => router.push("/candidat/accueil")}
-          className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2"
+          className="text-xs text-gray-700 hover:text-black underline underline-offset-2"
         >
           ← Retour à l&apos;accueil
         </button>

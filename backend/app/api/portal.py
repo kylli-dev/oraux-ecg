@@ -17,8 +17,9 @@ def _ensure_naive(dt: datetime) -> datetime:
     return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.db.deps import get_db
@@ -36,8 +37,10 @@ from app.core.auth import (
     create_access_token,
     generate_reset_token,
     reset_token_expiry,
+    RESET_TOKEN_EXPIRE_MINUTES,
 )
 from app.core.portal_guard import require_candidat
+from app.services.email import build_reset_password_candidat, send_reset_password_candidat
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 
@@ -220,18 +223,37 @@ def change_password(
 
 
 @router.post("/forgot-password", status_code=204)
-def forgot_password(body: ForgotPasswordIn, db: Session = Depends(get_db)):
+def forgot_password(body: ForgotPasswordIn, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """
-    Génère un token de réinitialisation.
-    En production, envoyer le token par email (Message-type Réinitialisation).
-    Retourne 204 même si le login est inconnu (pas d'énumération d'utilisateurs).
+    Génère un token de réinitialisation et envoie automatiquement au candidat un email
+    contenant le lien pour choisir un nouveau mot de passe (Message-type REINITIALISATION_MDP).
+
+    Accepte le login OU l'adresse email (insensible à la casse) — un candidat qui a oublié
+    son mot de passe a souvent aussi oublié son login. Une même adresse email peut
+    correspondre à plusieurs comptes (plusieurs plannings) : chacun reçoit son propre lien.
+
+    Retourne toujours 204, que le compte existe ou non (pas d'énumération d'utilisateurs),
+    et l'envoi SMTP part en tâche de fond : le temps de réponse ne trahit pas non plus
+    l'existence du compte.
     """
-    c = db.query(Candidat).filter_by(login=body.login.strip()).first()
-    if c:
+    saisie = body.login.strip().lower()
+    if not saisie:
+        return
+    candidats = (
+        db.query(Candidat)
+        .filter(or_(func.lower(Candidat.login) == saisie, func.lower(Candidat.email) == saisie))
+        .all()
+    )
+    for c in candidats:
+        if not c.email:
+            continue
         c.reset_token = generate_reset_token()
         c.reset_token_expires_at = reset_token_expiry()
-        db.commit()
-        # TODO: envoyer l'email avec le lien contenant c.reset_token
+        sujet, corps, url = build_reset_password_candidat(
+            c.prenom, c.nom, c.login, c.reset_token, RESET_TOKEN_EXPIRE_MINUTES, db=db,
+        )
+        background_tasks.add_task(send_reset_password_candidat, c.email, c.login, sujet, corps, url)
+    db.commit()
 
 
 @router.post("/reset-password", status_code=204)
@@ -769,6 +791,11 @@ def s_inscrire_triplet(
         )
 
     c.statut = "INSCRIT"
+    # Un candidat inscrit (ou qui vient de changer de créneau) sort de la liste d'attente —
+    # comme lors d'une inscription faite par l'admin (gestion_candidats.admin_inscrire). Sans
+    # ça, il restait affiché « en liste d'attente » côté admin alors qu'il était déjà inscrit,
+    # et la liste d'attente ne peut de toute façon plus être modifiée tant qu'il l'est.
+    db.query(ListeAttente).filter_by(candidat_id=candidat_id).delete()
     db.commit()
     if planning.envoyer_convocations:
         pass  # TODO: envoyer Message-type Convocation par email

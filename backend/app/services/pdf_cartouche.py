@@ -27,6 +27,7 @@ def _build_cartouche_pdf(
     candidat_prenom: str,
     matiere: str,
     examinateur: str,
+    examinateur2: Optional[str] = None,
     date_epreuve: date,
     heure_preparation: Optional[time],
     heure_passage: time,
@@ -105,6 +106,8 @@ def _build_cartouche_pdf(
 
     label_value(right_x, row1, "DATE :", date_str)
     label_value(right_x, row2, "HORAIRES :", horaires_str)
+    if examinateur2:
+        label_value(right_x, row3, "EXAMINATEUR 2 :", examinateur2)
 
     c.save()
     return buf.getvalue()
@@ -117,6 +120,7 @@ def generate_planche_with_cartouche(
     candidat_prenom: str,
     matiere: str,
     examinateur: str,
+    examinateur2: Optional[str] = None,
     date_epreuve: date,
     heure_preparation: Optional[time],
     heure_passage: time,
@@ -157,6 +161,7 @@ def generate_planche_with_cartouche(
         candidat_prenom=candidat_prenom,
         matiere=matiere,
         examinateur=examinateur,
+        examinateur2=examinateur2,
         date_epreuve=date_epreuve,
         heure_preparation=heure_preparation,
         heure_passage=heure_passage,

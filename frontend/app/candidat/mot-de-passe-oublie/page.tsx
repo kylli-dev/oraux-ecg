@@ -38,10 +38,14 @@ export default function MotDePasseOublePage() {
       <div className="flex items-center justify-center min-h-[calc(100vh-65px)] px-4">
         <div className="w-full max-w-sm bg-white rounded-2xl shadow-md border border-gray-100 p-8 text-center">
           <CheckCircle className="h-10 w-10 mx-auto mb-4" style={{ color: "#16a34a" }} />
-          <h1 className="text-lg font-semibold text-gray-900 mb-2">Email envoyé</h1>
-          <p className="text-sm text-gray-500 mb-6">
-            Si votre login est reconnu, vous recevrez un email contenant un lien
-            pour réinitialiser votre mot de passe.
+          <h1 className="text-lg font-semibold text-gray-900 mb-2">Demande prise en compte</h1>
+          <p className="text-sm text-gray-700 mb-3">
+            Si un compte correspond à <strong className="text-gray-900">{login.trim()}</strong>, un email
+            contenant un lien pour choisir un nouveau mot de passe vient d&apos;être envoyé à
+            l&apos;adresse enregistrée. Le lien est valable 30 minutes.
+          </p>
+          <p className="text-sm text-gray-700 mb-6">
+            Pensez à vérifier vos courriers indésirables (spam).
           </p>
           <Link
             href="/candidat"
@@ -59,20 +63,21 @@ export default function MotDePasseOublePage() {
     <div className="flex items-center justify-center min-h-[calc(100vh-65px)] px-4">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-md border border-gray-100 p-8">
         <h1 className="text-xl font-semibold text-gray-900 mb-1">Mot de passe oublié</h1>
-        <p className="text-sm text-gray-500 mb-6">
-          Entrez votre login. Vous recevrez un email avec un lien de réinitialisation.
+        <p className="text-sm text-gray-700 mb-6">
+          Saisissez votre login ou votre adresse email. Vous recevrez automatiquement un email
+          avec un lien pour choisir un nouveau mot de passe.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
-            <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">
-              Login
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wide">
+              Login ou adresse email
             </label>
             <input
               type="text"
               value={login}
               onChange={(e) => setLogin(e.target.value)}
-              placeholder="Votre identifiant"
+              placeholder="Ex. : jdupont ou jean.dupont@mail.fr"
               autoFocus
               autoComplete="username"
               className="w-full px-4 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
@@ -98,7 +103,7 @@ export default function MotDePasseOublePage() {
         <div className="mt-5 text-center">
           <Link
             href="/candidat"
-            className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2"
+            className="text-xs text-gray-700 hover:text-black underline underline-offset-2"
           >
             Retour à la connexion
           </Link>

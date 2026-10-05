@@ -133,3 +133,67 @@ def send_credentials_surveillant(
         body = _SURVEILLANT_BODY
         subject = _SURVEILLANT_SUBJECT
     return send_email(to_email, subject, body)
+
+
+# ── Mot de passe oublié (candidat) ────────────────────────────────────────────
+
+_RESET_MDP_SUBJECT = "Réinitialisation de votre mot de passe — oraux ECG"
+
+_RESET_MDP_BODY = """\
+<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#111">
+  <h2 style="color:#C62828">Oraux ECG — Mot de passe oublié</h2>
+  <p>Bonjour <strong>{prenom} {nom}</strong>,</p>
+  <p>Vous avez demandé la réinitialisation du mot de passe de votre compte
+     (login&nbsp;: <strong>{login}</strong>).</p>
+  <p>Cliquez sur le bouton ci-dessous pour choisir un nouveau mot de passe.
+     Ce lien est valable <strong>{minutes} minutes</strong> et ne peut servir qu'une fois.</p>
+  <p style="margin:24px 0">
+    <a href="{url}" style="background:#C62828;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold">
+      Choisir un nouveau mot de passe
+    </a>
+  </p>
+  <p style="font-size:13px">Si le bouton ne fonctionne pas, copiez ce lien dans votre navigateur&nbsp;:<br>
+     <a href="{url}">{url}</a></p>
+  <p style="font-size:13px;margin-top:24px">
+    Si vous n'êtes pas à l'origine de cette demande, ignorez cet email : votre mot de passe actuel reste inchangé.
+  </p>
+</div>
+"""
+
+
+def build_reset_password_candidat(
+    prenom: str,
+    nom: str,
+    login: str,
+    token: str,
+    minutes: int,
+    db=None,
+) -> tuple:
+    """
+    Construit (sujet, corps_html, url) de l'email « mot de passe oublié » — à partir du
+    template REINITIALISATION_MDP éditable par l'admin s'il existe, sinon du template intégré.
+    Séparé de l'envoi pour que l'envoi SMTP (lent) puisse partir en tâche de fond, après
+    la réponse HTTP, sans garder la session DB ouverte.
+    """
+    url = f"{SITE_URL.rstrip('/')}/candidat/reinitialiser-mot-de-passe?token={token}"
+    variables = {"prenom": prenom, "nom": nom, "login": login, "url": url, "minutes": minutes}
+    subject, body = _RESET_MDP_SUBJECT, _RESET_MDP_BODY
+    if db is not None:
+        from app.models.message_type import MessageType
+        tpl = db.query(MessageType).filter_by(code="REINITIALISATION_MDP").first()
+        if tpl and tpl.sujet and tpl.corps_html:
+            subject, body = tpl.sujet, tpl.corps_html
+    try:
+        return subject.format(**variables), body.format(**variables), url
+    except (KeyError, IndexError, ValueError):
+        return _RESET_MDP_SUBJECT, _RESET_MDP_BODY.format(**variables), url
+
+
+def send_reset_password_candidat(to_email: str, login: str, subject: str, body: str, url: str) -> bool:
+    """Envoie l'email de réinitialisation construit par build_reset_password_candidat."""
+    sent = send_email(to_email, subject, body)
+    if not sent and not SMTP_SERVER:
+        # Mode dev uniquement (SMTP non configuré) : le lien est affiché dans la console
+        # du backend pour pouvoir tester le parcours sans serveur mail.
+        print(f"[email][dev] Lien de réinitialisation pour {login} : {url}", flush=True)
+    return sent

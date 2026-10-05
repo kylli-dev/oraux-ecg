@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError
 from pydantic import BaseModel
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.auth import create_examinateur_token, decode_examinateur_token
@@ -80,6 +81,9 @@ class EpreuveExaminateur(BaseModel):
     planche_nom: Optional[str]
     conflit_etablissement: bool = False
     note_commentaire: Optional[str] = None
+    # True si l'examinateur connecté est le 2e examinateur de l'épreuve : il la voit et
+    # consulte le sujet, mais la saisie de la note reste réservée à l'examinateur principal.
+    est_second_examinateur: bool = False
 
 
 class NoterIn(BaseModel):
@@ -143,7 +147,7 @@ def mes_epreuves(
     rows = (
         db.query(Epreuve, DemiJournee)
         .join(DemiJournee, Epreuve.demi_journee_id == DemiJournee.id)
-        .filter(Epreuve.examinateur_id == ex.id)
+        .filter(or_(Epreuve.examinateur_id == ex.id, Epreuve.examinateur2_id == ex.id))
         .order_by(DemiJournee.date, Epreuve.heure_debut)
         .all()
     )
@@ -182,6 +186,7 @@ def mes_epreuves(
             planche_nom=planche.nom if planche else None,
             conflit_etablissement=conflit,
             note_commentaire=note.commentaire if note else None,
+            est_second_examinateur=epreuve.examinateur_id != ex.id,
         ))
     return result
 
@@ -210,51 +215,80 @@ def voir_planche(
     )
 
 
+_JOURS_FR = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
+_MOIS_FR = ["", "janvier", "février", "mars", "avril", "mai", "juin",
+            "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+
+
+def _planning_examinateur(ex: Examinateur, db: Session, date: Optional[Date]) -> list:
+    """
+    Lignes du planning de l'examinateur (communes aux exports Excel et PDF), triées par
+    date puis heure — filtrées sur une journée si `date` est fourni (filtre de la page).
+    """
+    lignes = []
+    for ep in mes_epreuves(ex=ex, db=db):
+        if date and ep.date != date:
+            continue
+        heure_prep = ""
+        if ep.preparation_minutes:
+            h, m = map(int, ep.heure_debut.split(":"))
+            prep_min = ((h * 60 + m - ep.preparation_minutes) % 1440 + 1440) % 1440
+            heure_prep = f"{prep_min // 60:02d}:{prep_min % 60:02d}"
+        lignes.append({
+            "ep": ep,
+            "date_courte": ep.date.strftime("%d-%m-%Y"),
+            "date_longue": f"{_JOURS_FR[ep.date.weekday()]} {ep.date.day} {_MOIS_FR[ep.date.month]} {ep.date.year}",
+            "heure_prep": heure_prep,
+            "candidat": f"{ep.candidat_nom or ''} {ep.candidat_prenom or ''}".strip() if ep.candidat_id else "",
+            "role": "2e examinateur" if ep.est_second_examinateur else "Principal",
+        })
+    lignes.sort(key=lambda l: (l["ep"].date, l["ep"].heure_debut))
+    return lignes
+
+
+def _nom_fichier_planning(ex: Examinateur, date: Optional[Date], ext: str) -> str:
+    suffixe = f"_{date.strftime('%d-%m-%Y')}" if date else ""
+    return f"{ex.nom}_{ex.prenom}_planning{suffixe}.{ext}".replace(" ", "_")
+
+
 @router.get("/me/epreuves/export")
 def export_planning(
+    date: Optional[Date] = None,
     ex: Examinateur = Depends(get_current_examinateur),
     db: Session = Depends(get_db),
 ):
-    """Export Excel du planning + notes de l'examinateur."""
+    """Export Excel du planning + notes de l'examinateur (une journée si `date` est fourni)."""
     import io as _io
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment
     from fastapi.responses import Response as _Response
 
-    epreuves = mes_epreuves(ex=ex, db=db)
+    lignes = _planning_examinateur(ex, db, date)
 
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Planning"
 
-    headers = ["Date", "Matière", "Heure prépa", "Heure passage", "Candidat", "Salle prépa", "Salle", "Sujet", "Note /20", "Statut note", "⚠ Conflit établ."]
+    headers = [
+        "Date", "Matière", "Heure prépa", "Début passage", "Fin passage", "Candidat",
+        "Salle prépa", "Salle", "Sujet", "Rôle", "Note /20", "Statut note", "⚠ Conflit établ.",
+    ]
     ws.append(headers)
     for cell in ws[1]:
         cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = PatternFill("solid", fgColor="5B21B6")
+        cell.fill = PatternFill("solid", fgColor="C62828")
         cell.alignment = Alignment(horizontal="center")
+    ws.freeze_panes = "A2"
 
-    JOURS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
-    MOIS = ["", "jan", "fév", "mar", "avr", "mai", "jun", "jul", "aoû", "sep", "oct", "nov", "déc"]
-
-    for ep in epreuves:
-        heure_prep = ""
-        if ep.preparation_minutes:
-            from datetime import datetime as _dt, timedelta
-            h, m = map(int, ep.heure_debut.split(":"))
-            prep_min = h * 60 + m - ep.preparation_minutes
-            prep_min = ((prep_min % 1440) + 1440) % 1440
-            heure_prep = f"{prep_min // 60:02d}:{prep_min % 60:02d}"
-
-        d = ep.date
-        date_str = f"{JOURS[d.weekday()]} {d.day} {MOIS[d.month]} {d.year}"
-        candidat_str = f"{ep.candidat_prenom or ''} {ep.candidat_nom or ''}".strip() if ep.candidat_id else ""
+    for l in lignes:
+        ep = l["ep"]
         ws.append([
-            date_str, ep.matiere, heure_prep, ep.heure_debut,
-            candidat_str,
+            l["date_courte"], ep.matiere, l["heure_prep"], ep.heure_debut, ep.heure_fin,
+            l["candidat"],
             ep.salle_preparation_intitule or "",
             ep.salle_intitule or "",
             ep.planche_nom or "",
+            l["role"],
             ep.note_valeur if ep.note_valeur is not None else "",
             ep.note_statut or "",
             "OUI" if ep.conflit_etablissement else "",
@@ -266,11 +300,104 @@ def export_planning(
 
     buf = _io.BytesIO()
     wb.save(buf)
-    nom = f"{ex.nom}_{ex.prenom}_planning".replace(" ", "_")
     return _Response(
         content=buf.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{nom}.xlsx"'},
+        headers={"Content-Disposition": f'attachment; filename="{_nom_fichier_planning(ex, date, "xlsx")}"'},
+    )
+
+
+@router.get("/me/epreuves/export-pdf")
+def export_planning_pdf(
+    date: Optional[Date] = None,
+    ex: Examinateur = Depends(get_current_examinateur),
+    db: Session = Depends(get_db),
+):
+    """
+    Export PDF imprimable du planning de l'examinateur (A4 paysage, un bloc par journée).
+    Les notes n'y figurent pas : c'est un document d'organisation, à emporter le jour J —
+    elles restent dans l'export Excel.
+    """
+    import io as _io
+    from datetime import datetime as _dt
+    from fastapi.responses import Response as _Response
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    lignes = _planning_examinateur(ex, db, date)
+    rouge = colors.HexColor("#C62828")
+
+    titre_st = ParagraphStyle("titre", fontName="Helvetica-Bold", fontSize=16, leading=20, textColor=colors.black, spaceAfter=4)
+    sous_st = ParagraphStyle("sous", fontName="Helvetica", fontSize=9, leading=12, textColor=colors.HexColor("#333333"))
+    jour_st = ParagraphStyle("jour", fontName="Helvetica-Bold", fontSize=11, textColor=rouge, spaceBefore=8, spaceAfter=4)
+    cell_st = ParagraphStyle("cell", fontName="Helvetica", fontSize=8.5, leading=10.5, textColor=colors.black)
+
+    buf = _io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=landscape(A4),
+        leftMargin=12 * mm, rightMargin=12 * mm, topMargin=12 * mm, bottomMargin=12 * mm,
+        title=f"Planning — {ex.prenom} {ex.nom}", author="ENSAE — Oraux ECG",
+    )
+
+    story = [
+        Paragraph(f"Planning des oraux — {ex.prenom} {ex.nom.upper()}", titre_st),
+        Paragraph(
+            ("Journée du " + lignes[0]["date_longue"] if date and lignes else "Toutes les journées")
+            + f" · {len(lignes)} épreuve{'s' if len(lignes) > 1 else ''}"
+            + f" · généré le {_dt.now().strftime('%d-%m-%Y à %H:%M')}",
+            sous_st,
+        ),
+        Spacer(1, 6 * mm),
+    ]
+
+    if not lignes:
+        story.append(Paragraph("Aucune épreuve à afficher.", cell_st))
+
+    entetes = ["Prépa", "Passage", "Matière", "Candidat", "Salle prépa", "Salle", "Sujet", "Rôle"]
+    largeurs = [16 * mm, 26 * mm, 26 * mm, 58 * mm, 24 * mm, 22 * mm, 66 * mm, 30 * mm]
+
+    jours: dict = {}
+    for l in lignes:
+        jours.setdefault(l["ep"].date, []).append(l)
+
+    for _, lignes_jour in jours.items():
+        story.append(Paragraph(lignes_jour[0]["date_longue"], jour_st))
+        data = [entetes]
+        for l in lignes_jour:
+            ep = l["ep"]
+            data.append([
+                l["heure_prep"] or "—",
+                f"{ep.heure_debut} – {ep.heure_fin}",
+                Paragraph(ep.matiere, cell_st),
+                Paragraph(l["candidat"] or "<i>Aucun candidat</i>", cell_st),
+                ep.salle_preparation_intitule or "—",
+                ep.salle_intitule or "—",
+                Paragraph(ep.planche_nom or "<i>Non affecté</i>", cell_st),
+                l["role"],
+            ])
+        t = Table(data, colWidths=largeurs, repeatRows=1)
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), rouge),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+            ("TEXTCOLOR", (0, 1), (-1, -1), colors.black),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F5F5F5")]),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#BDBDBD")),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(t)
+
+    doc.build(story)
+    return _Response(
+        content=buf.getvalue(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{_nom_fichier_planning(ex, date, "pdf")}"'},
     )
 
 

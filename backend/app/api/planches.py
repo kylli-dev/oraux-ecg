@@ -22,6 +22,26 @@ from app.models.examinateur import Examinateur
 from app.models.matiere import Matiere
 from app.models.planche import Planche
 
+def _nom_examinateur(db: Session, exam_id: Optional[int]) -> Optional[str]:
+    if not exam_id:
+        return None
+    ex = db.get(Examinateur, exam_id)
+    if not ex:
+        return None
+    return f"{ex.prenom} {ex.nom}".strip() if ex.prenom else ex.nom
+
+
+def _noms_examinateurs(ep: Epreuve, planche: Planche, db: Session) -> tuple:
+    """
+    (examinateur principal, 2e examinateur) à imprimer sur le cartouche.
+    Le principal retombe sur l'examinateur de la planche si l'épreuve n'en a pas ;
+    le 2e n'existe que sur l'épreuve (None s'il n'y en a pas).
+    """
+    principal = _nom_examinateur(db, ep.examinateur_id or planche.examinateur_id) or "—"
+    second = _nom_examinateur(db, ep.examinateur2_id)
+    return principal, second
+
+
 router = APIRouter(
     prefix="/admin/planches",
     tags=["planches"],
@@ -243,12 +263,7 @@ def download_cartouche(epreuve_id: int, db: Session = Depends(get_db)):
 
     original_bytes = _get_pdf_bytes(planche)
 
-    examinateur_nom = "—"
-    exam_id = ep.examinateur_id or planche.examinateur_id
-    if exam_id:
-        ex = db.get(Examinateur, exam_id)
-        if ex:
-            examinateur_nom = f"{ex.prenom} {ex.nom}".strip() if ex.prenom else ex.nom
+    examinateur_nom, examinateur2_nom = _noms_examinateurs(ep, planche, db)
 
     matiere_label = ep.matiere
     if not matiere_label and planche.matiere_id:
@@ -271,6 +286,7 @@ def download_cartouche(epreuve_id: int, db: Session = Depends(get_db)):
             candidat_prenom=candidat.prenom or "",
             matiere=matiere_label or "—",
             examinateur=examinateur_nom,
+            examinateur2=examinateur2_nom,
             date_epreuve=dj.date,
             heure_preparation=heure_prep,
             heure_passage=ep.heure_debut,
@@ -328,12 +344,7 @@ def batch_cartouche(body: BatchCartoucheIn, db: Session = Depends(get_db)):
                 errors.append(f"Épreuve {epreuve_id}: fichier PDF non disponible, ignorée")
                 continue
 
-            examinateur_nom = "—"
-            exam_id = ep.examinateur_id or planche.examinateur_id
-            if exam_id:
-                ex = db.get(Examinateur, exam_id)
-                if ex:
-                    examinateur_nom = f"{ex.prenom} {ex.nom}".strip() if ex.prenom else ex.nom
+            examinateur_nom, examinateur2_nom = _noms_examinateurs(ep, planche, db)
 
             matiere_label = ep.matiere
             if not matiere_label and planche.matiere_id:
@@ -353,6 +364,7 @@ def batch_cartouche(body: BatchCartoucheIn, db: Session = Depends(get_db)):
                     candidat_prenom=candidat.prenom or "",
                     matiere=matiere_label or "—",
                     examinateur=examinateur_nom,
+                    examinateur2=examinateur2_nom,
                     date_epreuve=dj.date,
                     heure_preparation=heure_prep,
                     heure_passage=ep.heure_debut,

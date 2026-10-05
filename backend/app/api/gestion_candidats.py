@@ -58,7 +58,8 @@ class TripletOut(BaseModel):
     candidat_id: Optional[int] = None
     candidat_nom: Optional[str] = None
     candidat_prenom: Optional[str] = None
-    motif: Optional[str] = None  # explication lisible du statut, surtout utile pour INCOMPLET/INDISPONIBLE
+    motif: Optional[str] = None  # explication lisible du statut (résumé en une phrase)
+    details: List[str] = []      # une ligne par épreuve : son état et, si elle bloque, pourquoi
 
 
 class InscriptionOut(BaseModel):
@@ -220,7 +221,8 @@ def list_candidats_gestion(planning_id: int, db: Session = Depends(get_db)):
             civilite=c.civilite,
             is_inscrit=c.id in inscriptions,
             inscription_id=inscriptions[c.id].id if c.id in inscriptions else None,
-            is_liste_attente=c.id in listes_attente,
+            # Un candidat inscrit n'est plus en attente, même si une ancienne entrée subsiste
+            is_liste_attente=c.id in listes_attente and c.id not in inscriptions,
             statut=c.statut,
         )
         for c in candidats
@@ -235,7 +237,8 @@ def get_fiche(candidat_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Candidat not found")
 
     insc = _get_active_inscription(candidat_id, db)
-    la_dates = [
+    # Un candidat inscrit n'est plus en liste d'attente (cohérent avec la liste admin)
+    la_dates = [] if insc else [
         ListeAttenteDate(date=la.date)
         for la in db.query(ListeAttente).filter_by(candidat_id=candidat_id).order_by(ListeAttente.date).all()
     ]
@@ -262,8 +265,115 @@ def get_fiche(candidat_id: int, db: Session = Depends(get_db)):
 
 _PROFIL_EXCLUSION_ADMIN: dict = {"HGG": "ESH", "ESH": "HGG"}
 
+# Statut d'une épreuve MANQUANTE (aucune épreuve de cette matière n'existe à l'horaire
+# attendu par la rotation) — jamais stocké en base, uniquement renvoyé à la Vue triplets.
+STATUT_MANQUANTE = "MANQUANTE"
 
-def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set) -> list:
+
+def _libelle_epreuve(e) -> str:
+    return f"{e.matiere} {str(e.heure_debut)[:5]}–{str(e.heure_fin)[:5]}"
+
+
+def _etat_epreuve(e) -> str:
+    """Décrit en clair l'état d'une épreuve — et, si elle n'est pas libre, pourquoi."""
+    if e.statut == "LIBRE":
+        return "libre"
+    if e.statut == "PRERESERVEE":
+        return "préréservée (mise de côté sans candidat)"
+    if e.statut == "ATTRIBUEE":
+        if e.candidat:
+            return f"attribuée à {e.candidat.nom} {e.candidat.prenom}".strip()
+        return "attribuée à un candidat"
+    if e.statut == "ABSENT":
+        return "candidat marqué absent sur cette épreuve"
+    if e.statut == "CREE":
+        return "créée mais pas encore ouverte aux inscriptions"
+    if e.statut == "ANNULEE":
+        return "annulée"
+    return f"statut {e.statut}"
+
+
+def _details_epreuves(eps: list) -> List[str]:
+    return [f"{_libelle_epreuve(e)} : {_etat_epreuve(e)}" for e in sorted(eps, key=lambda e: e.heure_debut)]
+
+
+def _triplet_incomplet(
+    k: int, all_slots: list, matieres_sorted: list, offset: int,
+    disponibles: dict, toutes: dict, date,
+) -> Optional[TripletOut]:
+    """
+    Rotation k qui ne peut pas former un triplet complet : au moins une de ses matières n'a
+    aucune épreuve LIBRE/PRERESERVEE à l'horaire attendu. Renvoie un triplet INCOMPLET qui
+    détaille, matière par matière, ce qui est disponible et ce qui bloque — ou None si la
+    rotation n'a aucune épreuve disponible (rien d'exploitable à signaler : c'est alors un
+    triplet déjà attribué, reconstruit à part, ou un créneau sans aucune épreuve).
+    """
+    total_slots = len(all_slots)
+    presentes: list = []      # épreuves réelles (disponibles ou non) de la rotation
+    manquantes: list = []     # (matiere, heure) sans aucune épreuve dans le planning
+    details: List[str] = []
+    nb_dispo = 0
+    for i, matiere in enumerate(matieres_sorted):
+        heure = all_slots[(k + i * offset) % total_slots]
+        dispo = disponibles.get((matiere, heure), [])
+        if dispo:
+            presentes.append(dispo[0])
+            nb_dispo += 1
+            continue
+        existantes = toutes.get((matiere, heure), [])
+        if existantes:
+            presentes.append(existantes[0])
+            raisons = "; ".join(_etat_epreuve(e) for e in existantes)
+            pluriel = f" (les {len(existantes)} salles en parallèle)" if len(existantes) > 1 else ""
+            details.append(f"✗ {_libelle_epreuve(existantes[0])} : non disponible{pluriel} — {raisons}")
+        else:
+            manquantes.append((matiere, heure))
+            details.append(
+                f"✗ {matiere} {str(heure)[:5]} : aucune épreuve de {matiere} n'existe à cet horaire — "
+                f"la journée compte moins de créneaux de {matiere} que d'autres matières "
+                "(salle ou créneau non créé dans le planning)"
+            )
+    if nb_dispo == 0:
+        return None
+
+    for e in presentes:
+        if e.statut in ("LIBRE", "PRERESERVEE"):
+            details.append(f"✓ {_libelle_epreuve(e)} : {_etat_epreuve(e)}")
+
+    dispo_noms = [e.matiere for e in presentes if e.statut in ("LIBRE", "PRERESERVEE")]
+    bloquantes_noms = [m for m in matieres_sorted if m not in dispo_noms]
+    motif = (
+        f"Triplet incomplet : {', '.join(bloquantes_noms)} "
+        f"{'ne sont pas disponibles' if len(bloquantes_noms) > 1 else 'n’est pas disponible'} "
+        f"pour cette rotation, donc {', '.join(dispo_noms)} "
+        f"{'restent inutilisables' if len(dispo_noms) > 1 else 'reste inutilisable'} "
+        "(impossible de proposer un triplet complet à un candidat tant que le blocage n'est pas levé)."
+    )
+    epreuves_out = [
+        TripletEpreuveOut(
+            id=e.id, matiere=e.matiere,
+            heure_debut=str(e.heure_debut)[:5], heure_fin=str(e.heure_fin)[:5], statut=e.statut,
+        )
+        for e in presentes
+    ] + [
+        # id négatif : épreuve fictive, jamais envoyée aux actions préréserver/libérer
+        # (un triplet INCOMPLET n'est pas éditable).
+        TripletEpreuveOut(
+            id=-(idx + 1), matiere=m, heure_debut=str(h)[:5], heure_fin="", statut=STATUT_MANQUANTE,
+        )
+        for idx, (m, h) in enumerate(manquantes)
+    ]
+    return TripletOut(
+        date=date,
+        heure_debut=str(all_slots[k])[:5],
+        epreuves=sorted(epreuves_out, key=lambda x: x.heure_debut),
+        type_slot="INCOMPLET",
+        motif=motif,
+        details=details,
+    )
+
+
+def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set, inclure_incomplets: bool = False) -> list:
     """
     Calcule les triplets N² DISPONIBLES (LIBRE/PRERESERVEE) pour un groupe d'épreuves
     (un profil ou la journée entière) — comportement historique, inchangé.
@@ -285,7 +395,9 @@ def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set) -> list:
     offset = total_slots // N_rooms if N_rooms else 1
 
     disponibles: dict = defaultdict(list)
+    toutes: dict = defaultdict(list)
     for e in all_epreuves:
+        toutes[(e.matiere, e.heure_debut)].append(e)
         if e.statut in ("LIBRE", "PRERESERVEE"):
             disponibles[(e.matiere, e.heure_debut)].append(e)
 
@@ -302,6 +414,15 @@ def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set) -> list:
             assigned.append(ep_list[0])
 
         if not valid or not assigned:
+            if inclure_incomplets:
+                incomplet = _triplet_incomplet(
+                    k, all_slots, matieres_sorted, offset, disponibles, toutes, date,
+                )
+                if incomplet:
+                    key_inc = ("INCOMPLET", tuple((e.matiere, e.heure_debut, e.id if e.id > 0 else 0) for e in incomplet.epreuves))
+                    if key_inc not in seen_global:
+                        seen_global.add(key_inc)
+                        result.append(incomplet)
             continue
 
         key = frozenset(e.id for e in assigned)
@@ -320,11 +441,19 @@ def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set) -> list:
         # préréservé), ou mélange (INDISPONIBLE — bloqué par le triplet jumeau, mais pas
         # préréservé lui-même — ni "Préréserver" ni "Libérer" n'ont de sens dessus).
         statuts = {e.statut for e in assigned}
-        motif = None
+        details = _details_epreuves(assigned)
         if statuts == {"LIBRE"}:
             type_slot = "LIBRE"
+            motif = (
+                f"Triplet complet et libre : les {len(assigned)} épreuves sont disponibles. "
+                "Il peut être choisi par un candidat, ou préréservé pour le mettre de côté."
+            )
         elif statuts == {"PRERESERVEE"}:
             type_slot = "PRERESERVEE"
+            motif = (
+                f"Triplet préréservé : les {len(assigned)} épreuves sont mises de côté sans candidat. "
+                "Aucun candidat ne peut le choisir tant qu'il n'est pas libéré (bouton « Libérer »)."
+            )
         else:
             type_slot = "INDISPONIBLE"
             matieres_bloquantes = sorted({e.matiere for e in assigned if e.statut == "PRERESERVEE"})
@@ -343,10 +472,29 @@ def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set) -> list:
                 raison = (
                     "via le triplet jumeau à cette heure (créneau partagé entre profils ESH/HGG)"
                 )
+            matieres_libres = sorted({e.matiere for e in assigned if e.statut == "LIBRE"})
             motif = (
-                f"{', '.join(matieres_bloquantes)} déjà préréservé{'e' if len(matieres_bloquantes) == 1 else 's'} "
-                f"{raison} — ce triplet-ci n'est plus complétable tel quel, mais n'a pas été préréservé lui-même."
+                f"Triplet indisponible : {', '.join(matieres_bloquantes)} déjà "
+                f"préréservé{'e' if len(matieres_bloquantes) == 1 else 's'} {raison}. "
+                f"{', '.join(matieres_libres)} {'restent libres' if len(matieres_libres) > 1 else 'reste libre'} "
+                "mais ce triplet-ci n'est plus complétable tel quel ; il n'a pas été préréservé lui-même "
+                "(ni « Préréserver » ni « Libérer » ne s'appliquent ici — libérez le triplet qui détient la préréservation)."
             )
+            # Cas fréquent d'erreur de saisie : la matière est bien dédoublée (2 épreuves en
+            # parallèle) mais les 2 épreuves ont la même salle d'examen — _partition_par_profil
+            # les compte alors pour UNE seule place partagée. On le signale explicitement, avec
+            # la salle à changer, plutôt que de laisser croire à un vrai manque de créneaux.
+            for e in assigned:
+                if e.statut != "PRERESERVEE":
+                    continue
+                autres = [s for s in toutes[(e.matiere, e.heure_debut)] if s.id != e.id]
+                if autres and all(s.salle_id is None or s.salle_id == e.salle_id for s in autres):
+                    salle = f"salle {e.salle.intitule}" if e.salle else "aucune salle assignée"
+                    details.append(
+                        f"✗ {e.matiere} {str(e.heure_debut)[:5]} : les {len(autres) + 1} épreuves parallèles "
+                        f"sont dans la même salle ({salle}) — elles ne comptent que pour une seule place. "
+                        "Attribuez une autre salle d'examen à l'une d'elles pour la rendre indépendante."
+                    )
         epreuves_out = sorted([
             TripletEpreuveOut(
                 id=e.id,
@@ -364,6 +512,7 @@ def _triplets_pour_groupe(all_epreuves: list, date, seen_global: set) -> list:
             epreuves=epreuves_out,
             type_slot=type_slot,
             motif=motif,
+            details=details,
         ))
     return result
 
@@ -405,6 +554,12 @@ def _triplets_attribues(planning_id: int, db: Session) -> list:
             candidat_id=insc.candidat_id,
             candidat_nom=insc.candidat.nom,
             candidat_prenom=insc.candidat.prenom,
+            motif=(
+                f"Triplet attribué à {insc.candidat.nom} {insc.candidat.prenom} (inscription active) : "
+                f"{'les ' + str(len(eps_sorted)) + ' épreuves lui sont réservées' if len(eps_sorted) > 1 else 'l’épreuve lui est réservée'}. "
+                "Pour le rendre disponible, désinscrivez le candidat depuis sa fiche."
+            ),
+            details=_details_epreuves(eps_sorted),
         ))
 
     # Épreuves attribuées hors de toute inscription active (affectation individuelle) —
@@ -440,6 +595,7 @@ def _triplets_attribues(planning_id: int, db: Session) -> list:
                 "en dehors du flux d'inscription normal (pas de triplet complet enregistré) — "
                 "seule cette épreuve est rattachée, les 2 autres du triplet n'ont pas pu être retrouvées."
             ),
+            details=_details_epreuves([e]),
         ))
     return result
 
@@ -506,8 +662,9 @@ def get_triplets_admin(planning_id: int, tous: bool = False, db: Session = Depen
     ce que consomment les écrans d'inscription, qui ne doivent proposer que des places
     libres. Avec tous=True, ajoute aussi les triplets déjà ATTRIBUES (reconstruits à partir
     des vraies inscriptions, pas devinés) et les épreuves attribuées individuellement hors
-    inscription (INCOMPLET) — pour la Vue triplets qui doit montrer l'état réel de chaque
-    triplet.
+    inscription (INCOMPLET) et les rotations qui ne peuvent pas former un triplet complet
+    (INCOMPLET, avec la raison matière par matière) — pour la Vue triplets qui doit montrer
+    l'état réel de chaque triplet.
 
     Si la journée contient ESH et HGG, génère des triplets séparés par profil
     (sans combiner les deux) pour correspondre à ce que voit chaque candidat.
@@ -548,10 +705,10 @@ def get_triplets_admin(planning_id: int, tous: bool = False, db: Session = Depen
             # répartissant les salles parallèles des matières communes entre les deux
             # quand elles existent (voir _partition_par_profil).
             esh_groupe, hgg_groupe = _partition_par_profil(all_epreuves_raw)
-            result.extend(_triplets_pour_groupe(esh_groupe, date, seen_global))
-            result.extend(_triplets_pour_groupe(hgg_groupe, date, seen_global))
+            result.extend(_triplets_pour_groupe(esh_groupe, date, seen_global, inclure_incomplets=tous))
+            result.extend(_triplets_pour_groupe(hgg_groupe, date, seen_global, inclure_incomplets=tous))
         else:
-            result.extend(_triplets_pour_groupe(all_epreuves_raw, date, seen_global))
+            result.extend(_triplets_pour_groupe(all_epreuves_raw, date, seen_global, inclure_incomplets=tous))
 
     if tous:
         result.extend(_triplets_attribues(planning_id, db))
@@ -681,10 +838,18 @@ def list_liste_attente_admin(planning_id: int, db: Session = Depends(get_db)):
     Retourne tous les candidats en liste d'attente pour ce planning,
     avec les dates pour lesquelles ils ont indiqué des disponibilités.
     """
+    # Les candidats déjà inscrits (inscription ACTIVE) sont exclus : ils ne sont plus en
+    # attente. Protège aussi contre les entrées restées en base avant que l'inscription
+    # depuis le portail ne vide la liste d'attente du candidat.
+    inscrits = (
+        db.query(Inscription.candidat_id)
+        .join(Candidat, Inscription.candidat_id == Candidat.id)
+        .filter(Candidat.planning_id == planning_id, Inscription.statut == "ACTIVE")
+    )
     rows = (
         db.query(ListeAttente)
         .join(Candidat, ListeAttente.candidat_id == Candidat.id)
-        .filter(Candidat.planning_id == planning_id)
+        .filter(Candidat.planning_id == planning_id, ~ListeAttente.candidat_id.in_(inscrits))
         .order_by(Candidat.nom, Candidat.prenom, ListeAttente.date)
         .all()
     )

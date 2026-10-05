@@ -136,7 +136,7 @@ function ConfirmDialog({ state, onResolve }: { state: ConfirmState; onResolve: (
         transition={{ duration: 0.15 }}
         className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6"
       >
-        <p className="text-sm text-black/80 leading-relaxed mb-5">{state.message}</p>
+        <p className="text-sm text-gray-900 leading-relaxed mb-5">{state.message}</p>
         <div className="flex justify-end gap-2">
           <button
             onClick={() => onResolve(false)}

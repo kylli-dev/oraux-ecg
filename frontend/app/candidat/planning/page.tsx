@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, CalendarDays, CheckCircle2, Clock, AlertTriangle } from "lucide-react";
+import { Loader2, CalendarDays, CheckCircle2, Clock, AlertTriangle, MapPin } from "lucide-react";
 
 const RED = "#C62828";
 const API_BASE = process.env.NEXT_PUBLIC_PORTAL_API_URL ?? "http://localhost:8000";
@@ -47,16 +47,39 @@ function authHeaders(token: string) {
 
 // ── Composants ──────────────────────────────────────────────────────────────────
 function EpreuveRow({ ep }: { ep: EpreuveOut }) {
-  const debut = ep.heure_prepa ?? ep.heure_debut;
   return (
-    <div className="flex items-center gap-3 py-1.5">
-      <span className="text-xs font-mono text-gray-400 w-24 shrink-0">
-        {debut} – {ep.heure_fin}
-      </span>
-      <span className="text-sm text-gray-700">{ep.matiere}</span>
-      {ep.salle_intitule && (
-        <span className="ml-auto text-xs font-mono text-gray-400">Salle n° {ep.salle_intitule}</span>
-      )}
+    <div className="py-3 space-y-1">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <span className="text-sm font-semibold text-gray-900">{ep.matiere}</span>
+        <div className="ml-auto flex flex-wrap items-center gap-1.5">
+        {ep.salle_preparation_intitule && (
+          <span className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-900">
+            <MapPin className="h-3 w-3" />
+            Préparation : salle {ep.salle_preparation_intitule}
+          </span>
+        )}
+        {ep.salle_intitule ? (
+          <span
+            className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-semibold text-gray-900"
+            style={{ borderColor: RED + "55", backgroundColor: RED + "0D" }}
+          >
+            <MapPin className="h-3 w-3" style={{ color: RED }} />
+            Examen : salle {ep.salle_intitule}
+          </span>
+        ) : (
+          <span className="text-xs italic text-gray-700">Salle communiquée ultérieurement</span>
+        )}
+        </div>
+      </div>
+      {/* Les trois tranches horaires, sur une simple ligne de texte */}
+      <p className="text-sm text-gray-700 tabular-nums">
+        Préparation{" "}
+        <span className="font-semibold text-gray-900">{ep.heure_prepa ?? "—"}</span>
+        <span className="mx-2">·</span>
+        Début examen <span className="font-semibold text-gray-900">{ep.heure_debut}</span>
+        <span className="mx-2">·</span>
+        Fin examen <span className="font-semibold text-gray-900">{ep.heure_fin}</span>
+      </p>
     </div>
   );
 }
@@ -77,6 +100,8 @@ export default function CandidatPlanningPage() {
   const [pendingTriplet, setPendingTriplet] = useState<{ date: string; heure_debut: string } | null>(null);
   // Filtre par date
   const [filterDate, setFilterDate] = useState("");
+  // Triplet dont l'inscription est en cours — le spinner ne s'affiche que sur son bouton
+  const [inscritKey, setInscritKey] = useState<string | null>(null);
 
   const loadData = useCallback(async (tok: string) => {
     setLoading(true);
@@ -111,6 +136,14 @@ export default function CandidatPlanningPage() {
     setToken(tok);
     loadData(tok);
   }, [router, loadData]);
+
+  // Après un rechargement (inscription, désinscription…), la date filtrée peut ne plus
+  // avoir aucun triplet : elle disparaît alors de la liste déroulante, qui retombait
+  // visuellement sur « Toutes les dates » alors que le filtre restait actif (liste vide).
+  // On réinitialise le filtre dans ce cas pour que l'affichage et la sélection concordent.
+  useEffect(() => {
+    if (filterDate && !triplets.some((t) => t.date === filterDate)) setFilterDate("");
+  }, [triplets, filterDate]);
 
   const doInscrire = async (date: string, heure_debut: string) => {
     setActionLoading(true);
@@ -173,7 +206,7 @@ export default function CandidatPlanningPage() {
           <h2 className="text-base font-semibold text-gray-900 mb-2">
             Confirmer le changement d&apos;inscription
           </h2>
-          <p className="text-sm text-gray-600 mb-5">
+          <p className="text-sm text-gray-700 mb-5">
             En validant, votre inscription du{" "}
             <strong>{formatDate(inscription!.date)}</strong> sera annulée et remplacée
             par celle du <strong>{formatDate(pendingTriplet.date)}</strong>.
@@ -182,7 +215,7 @@ export default function CandidatPlanningPage() {
             <button
               onClick={() => setPendingTriplet(null)}
               disabled={actionLoading}
-              className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition"
+              className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 transition"
             >
               Annuler
             </button>
@@ -210,7 +243,7 @@ export default function CandidatPlanningPage() {
           <h2 className="text-base font-semibold text-gray-900 mb-2">
             Confirmer l&apos;annulation
           </h2>
-          <p className="text-sm text-gray-600 mb-5">
+          <p className="text-sm text-gray-700 mb-5">
             Êtes-vous sûr de vouloir annuler votre inscription aux oraux du{" "}
             <strong>{formatDate(inscription!.date)}</strong> ?
           </p>
@@ -218,7 +251,7 @@ export default function CandidatPlanningPage() {
             <button
               onClick={() => setConfirmDesinscription(false)}
               disabled={actionLoading}
-              className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition"
+              className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 transition"
             >
               Non, garder
             </button>
@@ -239,18 +272,23 @@ export default function CandidatPlanningPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-65px)]">
-        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+        <Loader2 className="h-6 w-6 animate-spin text-gray-700" />
       </div>
     );
   }
 
   const availableDates = Array.from(new Set(triplets.map((t) => t.date))).sort();
+  // Une seule liste filtrée + triée (date puis heure de début), partagée par le compteur,
+  // le message « aucun triplet » et l'affichage — les trois ne peuvent plus diverger.
+  const tripletsAffiches = triplets
+    .filter((t) => !filterDate || t.date === filterDate)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.heure_debut.localeCompare(b.heure_debut));
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8">
       <button
         onClick={() => router.push("/candidat/accueil")}
-        className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 mb-6 transition"
+        className="flex items-center gap-1 text-sm text-gray-700 hover:text-black mb-6 transition"
       >
         ← Retour à l&apos;accueil
       </button>
@@ -303,55 +341,65 @@ export default function CandidatPlanningPage() {
       )}
 
       {/* ── Triplets disponibles ── */}
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
+      <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
+        <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
           Triplets disponibles
         </h2>
-        {/* Liste déroulante plutôt qu'un <input type="date"> : celui-ci laissait choisir
-            n'importe quel jour du calendrier, y compris ceux sans aucun triplet — la
-            plupart des sélections retombaient donc sur "Aucun triplet pour cette date",
-            ce qui donnait l'impression que le filtre ne s'appliquait pas. Ici, seules les
-            dates ayant réellement des triplets sont proposées, et "Toutes les dates"
-            remplace le bouton ✕ pour défiltrer. */}
+        {/* Liste déroulante plutôt qu'un <input type="date"> : seules les dates ayant
+            réellement des triplets sont proposées, et "Toutes les dates" retire le filtre. */}
         {availableDates.length > 0 && (
-          <select
-            value={filterDate}
-            onChange={(e) => setFilterDate(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-100 focus:border-red-300"
-          >
-            <option value="">Toutes les dates</option>
-            {availableDates.map((d) => (
-              <option key={d} value={d}>{formatDate(d)}</option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            <label htmlFor="filtre-date" className="text-sm font-medium text-gray-900">Date :</label>
+            <select
+              id="filtre-date"
+              value={filterDate}
+              onChange={(e) => setFilterDate(e.target.value)}
+              className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-red-100 focus:border-red-300"
+            >
+              <option value="">Toutes les dates ({triplets.length})</option>
+              {availableDates.map((d) => (
+                <option key={d} value={d}>
+                  {formatDate(d)} ({triplets.filter((t) => t.date === d).length})
+                </option>
+              ))}
+            </select>
+            {filterDate && (
+              <button
+                onClick={() => setFilterDate("")}
+                className="text-sm font-medium hover:underline"
+                style={{ color: RED }}
+              >
+                Effacer
+              </button>
+            )}
+          </div>
         )}
       </div>
 
-      {/* Compteur explicite : rend le résultat du filtre vérifiable même quand la liste
-          filtrée ressemble à la liste complète (ex. une seule date disponible, où
-          sélectionner cette date ne peut pas visuellement différer de "Toutes les
-          dates" — ce n'est pas un bug, juste que la sélection ne retire rien). */}
+      {/* Compteur explicite : rend le résultat du filtre vérifiable. Calculé sur la même
+          liste que l'affichage (tripletsAffiches). */}
       {filterDate && (
-        <p className="text-xs text-gray-400 -mt-2 mb-3">
-          {triplets.filter((t) => t.date === filterDate).length} triplet(s) pour le{" "}
-          {formatDate(filterDate)}
+        <p className="text-sm text-gray-900 -mt-2 mb-3">
+          {tripletsAffiches.length} triplet{tripletsAffiches.length > 1 ? "s" : ""} pour le{" "}
+          <span className="font-semibold">{formatDate(filterDate)}</span>
         </p>
       )}
 
       {triplets.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-200 p-12 text-center">
-          <CalendarDays className="h-7 w-7 mx-auto mb-3 text-gray-300" />
-          <p className="text-sm text-gray-400">Aucun triplet disponible pour l&apos;instant.</p>
+        <div className="rounded-xl border border-dashed border-gray-300 p-12 text-center">
+          <CalendarDays className="h-7 w-7 mx-auto mb-3 text-gray-700" />
+          <p className="text-sm text-gray-900">Aucun triplet disponible pour l&apos;instant.</p>
         </div>
       ) : (
         <div className="space-y-4">
-          {triplets.filter((t) => !filterDate || t.date === filterDate).length === 0 && (
-            <div className="rounded-xl border border-dashed border-gray-200 p-8 text-center">
-              <CalendarDays className="h-7 w-7 mx-auto mb-3 text-gray-300" />
-              <p className="text-sm text-gray-400">Aucun triplet pour cette date.</p>
+          {tripletsAffiches.length === 0 && (
+            <div className="rounded-xl border border-dashed border-gray-300 p-8 text-center">
+              <CalendarDays className="h-7 w-7 mx-auto mb-3 text-gray-700" />
+              <p className="text-sm text-gray-900">Aucun triplet pour cette date.</p>
             </div>
           )}
-          {triplets.filter((t) => !filterDate || t.date === filterDate).map((triplet) => {
+          {tripletsAffiches.map((triplet) => {
+            const tripletKey = `${triplet.date}-${triplet.heure_debut}-${triplet.epreuves.map((e) => e.id).join(",")}`;
             const firstHeure = triplet.epreuves.length > 0
               ? (triplet.epreuves[0].heure_prepa ?? triplet.epreuves[0].heure_debut)
               : triplet.heure_debut.slice(0, 5);
@@ -360,34 +408,32 @@ export default function CandidatPlanningPage() {
               : triplet.heure_fin.slice(0, 5);
             return (
               <div
-                key={`${triplet.date}-${triplet.heure_debut}-${triplet.epreuves.map((e) => e.id).join(",")}`}
-                className="rounded-xl border bg-white shadow-sm overflow-hidden"
+                key={tripletKey}
+                className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden"
               >
-                <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50">
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-3.5 w-3.5 text-gray-400" />
-                    <span className="text-sm font-semibold text-gray-800 capitalize">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-gray-200 bg-gray-50">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <Clock className="h-4 w-4 text-gray-900" />
+                    <span className="text-sm font-semibold text-gray-900 capitalize">
                       {formatDate(triplet.date)}
                     </span>
-                    <span className="text-sm font-mono text-gray-500">
+                    <span className="text-sm font-medium text-gray-900 tabular-nums">
                       {firstHeure} – {lastHeure}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleInscrireClick(triplet.date, triplet.heure_debut)}
-                      disabled={actionLoading}
-                      className="text-xs text-white px-3 py-1.5 rounded-lg font-medium hover:opacity-90 transition disabled:opacity-50 flex items-center gap-1.5"
-                      style={{ backgroundColor: RED }}
-                    >
-                      {actionLoading && pendingTriplet === null && (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      )}
-                      Je m&apos;inscris
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => { setInscritKey(tripletKey); handleInscrireClick(triplet.date, triplet.heure_debut); }}
+                    disabled={actionLoading}
+                    className="text-xs text-white px-3 py-1.5 rounded-lg font-medium hover:opacity-90 transition disabled:opacity-50 flex items-center gap-1.5"
+                    style={{ backgroundColor: RED }}
+                  >
+                    {actionLoading && pendingTriplet === null && inscritKey === tripletKey && (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    )}
+                    Je m&apos;inscris
+                  </button>
                 </div>
-                <div className="px-4 divide-y divide-gray-50">
+                <div className="px-4 divide-y divide-gray-100">
                   {triplet.epreuves.map((ep) => (
                     <EpreuveRow key={ep.id} ep={ep} />
                   ))}

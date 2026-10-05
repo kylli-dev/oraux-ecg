@@ -97,6 +97,22 @@ MESSAGE_TYPE_DEFAULTS = {
             "<p>Cordialement,<br>Le service des admissions</p>"
         ),
     },
+    # Envoyé par /portal/forgot-password — {url} est le lien de réinitialisation (à usage
+    # unique), valable {minutes} minutes.
+    "REINITIALISATION_MDP": {
+        "sujet": "Réinitialisation de votre mot de passe — oraux ECG",
+        "corps_html": (
+            "<p>Bonjour {prenom} {nom},</p>"
+            "<p>Vous avez demandé la réinitialisation du mot de passe de votre compte "
+            "(login : <strong>{login}</strong>).</p>"
+            "<p>Pour choisir un nouveau mot de passe, cliquez sur ce lien "
+            "(valable {minutes} minutes, utilisable une seule fois) :<br>"
+            "<a href=\"{url}\">{url}</a></p>"
+            "<p>Si vous n'êtes pas à l'origine de cette demande, ignorez cet email : "
+            "votre mot de passe actuel reste inchangé.</p>"
+            "<p>Cordialement,<br>Le service des admissions</p>"
+        ),
+    },
     # Pas un email — affiché tel quel dans l'encadré "Consignes importantes" de la page
     # d'accueil du portail candidat (voir /portal/consignes-accueil et
     # frontend/app/candidat/accueil/page.tsx). "sujet" n'est pas utilisé pour ce code.

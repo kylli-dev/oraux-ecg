@@ -78,7 +78,7 @@ function ChangePasswordForm() {
           <h1 className="text-xl font-semibold text-center mb-1">
             Changer votre mot de passe
           </h1>
-          <p className="text-sm text-black/40 text-center mb-6">
+          <p className="text-sm text-gray-700 text-center mb-6">
             {forced
               ? "Ce mot de passe vous a été attribué : merci d'en choisir un nouveau."
               : "ENSAE — IP Paris"}
@@ -86,7 +86,7 @@ function ChangePasswordForm() {
 
           <form onSubmit={submit} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-black/50 mb-1.5 uppercase tracking-wide">
+              <label className="block text-xs font-medium text-gray-800 mb-1.5 uppercase tracking-wide">
                 Mot de passe actuel
               </label>
               <input
@@ -101,7 +101,7 @@ function ChangePasswordForm() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-black/50 mb-1.5 uppercase tracking-wide">
+              <label className="block text-xs font-medium text-gray-800 mb-1.5 uppercase tracking-wide">
                 Nouveau mot de passe
               </label>
               <div className="relative">
@@ -116,7 +116,7 @@ function ChangePasswordForm() {
                 <button
                   type="button"
                   onClick={() => setShow((s) => !s)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-black/30 hover:text-black/60 transition"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-700 hover:text-black transition"
                 >
                   {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -124,7 +124,7 @@ function ChangePasswordForm() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-black/50 mb-1.5 uppercase tracking-wide">
+              <label className="block text-xs font-medium text-gray-800 mb-1.5 uppercase tracking-wide">
                 Confirmer le nouveau mot de passe
               </label>
               <input
@@ -167,7 +167,7 @@ function ChangePasswordForm() {
           </form>
         </div>
 
-        <p className="text-center text-xs text-black/20 mt-6">
+        <p className="text-center text-xs text-gray-700 mt-6">
           Oraux ENSAE — Back-office
         </p>
       </div>

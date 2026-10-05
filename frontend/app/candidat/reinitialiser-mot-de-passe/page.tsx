@@ -59,7 +59,7 @@ function ResetForm() {
       <div className="text-center">
         <CheckCircle className="h-10 w-10 mx-auto mb-4" style={{ color: "#16a34a" }} />
         <h1 className="text-lg font-semibold text-gray-900 mb-2">Mot de passe réinitialisé</h1>
-        <p className="text-sm text-gray-500 mb-6">
+        <p className="text-sm text-gray-700 mb-6">
           Vous pouvez maintenant vous connecter avec votre nouveau mot de passe.
         </p>
         <Link
@@ -78,7 +78,7 @@ function ResetForm() {
       <div className="text-center">
         <AlertCircle className="h-10 w-10 mx-auto mb-4 text-red-500" />
         <h1 className="text-lg font-semibold text-gray-900 mb-2">Lien invalide</h1>
-        <p className="text-sm text-gray-500 mb-6">
+        <p className="text-sm text-gray-700 mb-6">
           Ce lien de réinitialisation est invalide ou a expiré.
         </p>
         <Link
@@ -95,7 +95,7 @@ function ResetForm() {
   return (
     <>
       <h1 className="text-xl font-semibold text-gray-900 mb-1">Nouveau mot de passe</h1>
-      <p className="text-sm text-gray-500 mb-6">
+      <p className="text-sm text-gray-700 mb-6">
         Choisissez un mot de passe d&apos;au moins 8 caractères.
       </p>
 
@@ -105,7 +105,7 @@ function ResetForm() {
           { label: "Confirmer le mot de passe", value: confirm, set: setConfirm },
         ].map(({ label, value, set }) => (
           <div key={label} className="space-y-1">
-            <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wide">
               {label}
             </label>
             <input

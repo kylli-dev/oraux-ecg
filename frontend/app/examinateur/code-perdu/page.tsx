@@ -40,7 +40,7 @@ export default function CodePerduPage() {
       <div className="w-full max-w-sm">
         <button
           onClick={() => router.back()}
-          className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-700 transition mb-6"
+          className="flex items-center gap-1.5 text-sm text-gray-700 hover:text-black transition mb-6"
         >
           <ArrowLeft className="h-4 w-4" /> Retour
         </button>
@@ -50,7 +50,7 @@ export default function CodePerduPage() {
             <Mail className="h-7 w-7 text-[#C62828]" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Code d&apos;accès perdu</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-gray-700 mt-1">
             Entrez votre adresse email pour recevoir votre code d&apos;accès.
           </p>
         </div>
@@ -59,7 +59,7 @@ export default function CodePerduPage() {
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 text-center space-y-3">
             <CheckCircle className="h-10 w-10 text-green-500 mx-auto" />
             <p className="font-semibold text-gray-900">Email envoyé</p>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-700">
               Si votre adresse est enregistrée, vous recevrez votre code d&apos;accès dans quelques minutes.
             </p>
             <button

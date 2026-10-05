@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, CheckCircle, Clock, FileText, Download, AlertTriangle, Lock } from "lucide-react";
+import { ArrowLeft, Loader2, CheckCircle, Clock, FileText, Download, AlertTriangle, Lock, X, ExternalLink } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
 
@@ -23,6 +23,7 @@ type Epreuve = {
   salle_preparation_intitule: string | null;
   planche_nom: string | null;
   conflit_etablissement: boolean;
+  est_second_examinateur?: boolean;
 };
 
 type StatsMatiere = {
@@ -76,9 +77,34 @@ export default function ExaminateurPlanningPage() {
   const [comments, setComments] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState<Record<number, "save" | "validate" | null>>({});
   const [saved, setSaved] = useState<Record<number, boolean>>({});
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<"pdf" | "xlsx" | null>(null);
   const [filterDate, setFilterDate] = useState("");
   const [searchCandidat, setSearchCandidat] = useState("");
+  // Sujet (planche PDF) affiché dans la page — plus fiable qu'une fenêtre surgissante,
+  // que les bloqueurs de pop-up peuvent empêcher.
+  const [sujet, setSujet] = useState<{ ep: Epreuve; url: string | null; loading: boolean; error: string } | null>(null);
+
+  async function ouvrirSujet(ep: Epreuve) {
+    setSujet({ ep, url: null, loading: true, error: "" });
+    const token = sessionStorage.getItem("examinateur_token") ?? "";
+    try {
+      const r = await fetch(`${API}/examinateur/me/epreuves/${ep.id}/planche`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        setSujet({ ep, url: null, loading: false, error: d.detail ?? "Sujet non disponible" });
+        return;
+      }
+      const url = URL.createObjectURL(await r.blob());
+      setSujet({ ep, url, loading: false, error: "" });
+    } catch {
+      setSujet({ ep, url: null, loading: false, error: "Impossible de charger le sujet" });
+    }
+  }
+
+  function fermerSujet() {
+    if (sujet?.url) URL.revokeObjectURL(sujet.url);
+    setSujet(null);
+  }
 
   const load = useCallback(async () => {
     const token = sessionStorage.getItem("examinateur_token");
@@ -136,21 +162,27 @@ export default function ExaminateurPlanningPage() {
     }
   }
 
-  async function handleExport() {
-    setExporting(true);
+  // Export du planning en PDF (imprimable) ou Excel — limité à la date filtrée si un
+  // filtre de date est actif, sinon toutes les journées.
+  async function handleExport(format: "pdf" | "xlsx") {
+    setExporting(format);
+    setError("");
     const token = sessionStorage.getItem("examinateur_token") ?? "";
+    const route = format === "pdf" ? "export-pdf" : "export";
+    const qs = filterDate ? `?date=${filterDate}` : "";
     try {
-      const r = await fetch(`${API}/examinateur/me/epreuves/export`, { headers: { Authorization: `Bearer ${token}` } });
-      if (!r.ok) { setError("Erreur export"); return; }
+      const r = await fetch(`${API}/examinateur/me/epreuves/${route}${qs}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!r.ok) { setError("Erreur lors de l'export"); return; }
       const blob = await r.blob();
       const cd = r.headers.get("content-disposition") ?? "";
       const match = cd.match(/filename="([^"]+)"/);
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = match?.[1] ?? "planning.xlsx";
+      a.download = match?.[1] ?? `planning.${format}`;
       a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     } catch { setError("Erreur lors de l'export"); }
-    finally { setExporting(false); }
+    finally { setExporting(null); }
   }
 
   const dates = [...new Set(epreuves.map((e) => e.date))].sort();
@@ -176,18 +208,24 @@ export default function ExaminateurPlanningPage() {
     <div className="min-h-screen bg-[#F5F5F5]">
       <header className="bg-white border-b border-gray-100 shadow-sm">
         <div className="max-w-3xl mx-auto px-4 py-4 flex items-center gap-3">
-          <button onClick={() => router.back()} className="text-gray-400 hover:text-gray-700 transition">
+          <button onClick={() => router.back()} className="text-gray-700 hover:text-black transition">
             <ArrowLeft className="h-5 w-5" />
           </button>
           <h1 className="text-lg font-semibold text-gray-900 flex-1">Mon planning & notes</h1>
-          <button
-            onClick={handleExport}
-            disabled={exporting || epreuves.length === 0}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-red-200 text-[#C62828] hover:bg-red-50 transition disabled:opacity-40"
-          >
-            {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-            Exporter Excel
-          </button>
+          <span className="hidden sm:inline text-xs text-gray-700">
+            {filterDate ? "Exporter la journée filtrée :" : "Exporter mon planning :"}
+          </span>
+          {(["pdf", "xlsx"] as const).map((f) => (
+            <button
+              key={f}
+              onClick={() => handleExport(f)}
+              disabled={exporting !== null || epreuves.length === 0}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-red-200 text-[#C62828] font-medium hover:bg-red-50 transition disabled:opacity-40"
+            >
+              {exporting === f ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+              {f === "pdf" ? "PDF" : "Excel"}
+            </button>
+          ))}
         </div>
       </header>
 
@@ -210,15 +248,15 @@ export default function ExaminateurPlanningPage() {
                       { label: "Toutes les notes", data: s.toutes_notes, color: "gray" },
                     ].map(({ label, data, color }) => (
                       <div key={label} className={`rounded-xl p-3 ${color === "purple" ? "bg-red-50 border border-red-100" : "bg-gray-50 border border-gray-100"}`}>
-                        <p className="text-xs font-semibold text-gray-500 mb-2">{label}</p>
+                        <p className="text-xs font-semibold text-gray-700 mb-2">{label}</p>
                         {data.count === 0 ? (
-                          <p className="text-xs text-gray-400 italic">Aucune note</p>
+                          <p className="text-xs text-gray-700 italic">Aucune note</p>
                         ) : (
                           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                            <span className="text-gray-500">Candidats</span><span className="font-semibold text-gray-800">{data.count}</span>
-                            <span className="text-gray-500">Moyenne</span><span className="font-semibold text-gray-800">{data.moyenne?.toFixed(2)}</span>
-                            <span className="text-gray-500">Écart-type</span><span className="font-semibold text-gray-800">{data.ecart_type?.toFixed(2)}</span>
-                            <span className="text-gray-500">Min / Max</span><span className="font-semibold text-gray-800">{data.min} / {data.max}</span>
+                            <span className="text-gray-700">Candidats</span><span className="font-semibold text-gray-800">{data.count}</span>
+                            <span className="text-gray-700">Moyenne</span><span className="font-semibold text-gray-800">{data.moyenne?.toFixed(2)}</span>
+                            <span className="text-gray-700">Écart-type</span><span className="font-semibold text-gray-800">{data.ecart_type?.toFixed(2)}</span>
+                            <span className="text-gray-700">Min / Max</span><span className="font-semibold text-gray-800">{data.min} / {data.max}</span>
                           </div>
                         )}
                       </div>
@@ -255,7 +293,7 @@ export default function ExaminateurPlanningPage() {
             {(filterDate || searchCandidat) && (
               <button
                 onClick={() => { setFilterDate(""); setSearchCandidat(""); }}
-                className="text-xs text-gray-400 hover:text-gray-700 px-2 transition"
+                className="text-xs text-gray-700 hover:text-black px-2 transition"
               >
                 Effacer
               </button>
@@ -270,18 +308,18 @@ export default function ExaminateurPlanningPage() {
           </div>
         ) : epreuves.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-gray-200 p-16 text-center">
-            <Clock className="h-10 w-10 mx-auto mb-3 text-gray-300" />
-            <p className="text-base font-medium text-gray-500">Aucune épreuve assignée</p>
+            <Clock className="h-10 w-10 mx-auto mb-3 text-gray-700" />
+            <p className="text-base font-medium text-gray-700">Aucune épreuve assignée</p>
           </div>
         ) : Object.keys(byDate).length === 0 ? (
           <div className="rounded-2xl border border-dashed border-gray-200 p-10 text-center">
-            <p className="text-sm font-medium text-gray-500">Aucun résultat pour cette sélection</p>
+            <p className="text-sm font-medium text-gray-700">Aucun résultat pour cette sélection</p>
           </div>
         ) : (
           <div className="space-y-8">
             {Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b)).map(([date, eps]) => (
               <div key={date}>
-                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3 capitalize">
+                <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3 capitalize">
                   {formatDate(date)}
                 </h2>
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -297,7 +335,7 @@ export default function ExaminateurPlanningPage() {
                         {/* Infos épreuve */}
                         <div className="flex items-start gap-2 mb-2 flex-wrap">
                           <span className="text-sm font-semibold text-gray-900">{ep.matiere}</span>
-                          <span className="text-xs text-gray-400 font-mono">
+                          <span className="text-xs text-gray-700 font-mono">
                             {ep.preparation_minutes
                               ? `Prépa ${heurePrepa(ep.heure_debut, ep.preparation_minutes)} — `
                               : ""}
@@ -310,34 +348,34 @@ export default function ExaminateurPlanningPage() {
                             {ep.candidat_prenom} <span className="font-medium">{ep.candidat_nom}</span>
                           </p>
                         ) : (
-                          <p className="text-sm text-gray-400 italic mb-2">Aucun candidat assigné</p>
+                          <p className="text-sm text-gray-700 italic mb-2">Aucun candidat assigné</p>
                         )}
 
                         {/* Salle + sujet */}
-                        <div className="flex flex-wrap gap-3 mb-2 text-xs text-gray-500">
+                        <div className="flex flex-wrap gap-3 mb-2 text-xs text-gray-700">
                           {ep.salle_preparation_intitule && (
                             <span>🚪 Prépa : <span className="font-medium text-gray-700">{ep.salle_preparation_intitule}</span></span>
                           )}
                           {ep.salle_intitule && (
                             <span>🏛 Salle : <span className="font-medium text-gray-700">{ep.salle_intitule}</span></span>
                           )}
-                          {ep.planche_nom && (
+                        </div>
+
+                        {/* Sujet affecté au candidat */}
+                        <div className="mb-2">
+                          {ep.planche_nom ? (
                             <button
-                              onClick={async () => {
-                                const win = window.open("", "_blank");
-                                if (!win) return;
-                                const token = sessionStorage.getItem("examinateur_token") ?? "";
-                                try {
-                                  const r = await fetch(`${API}/examinateur/me/epreuves/${ep.id}/planche`, { headers: { Authorization: `Bearer ${token}` } });
-                                  if (!r.ok) { win.close(); setError("Sujet non disponible"); return; }
-                                  win.location.href = URL.createObjectURL(await r.blob());
-                                } catch { win.close(); }
-                              }}
-                              className="flex items-center gap-1 text-[#C62828] hover:text-[#B71C1C] hover:underline transition"
+                              onClick={() => ouvrirSujet(ep)}
+                              className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#C62828]/30 bg-red-50/60 text-[#C62828] font-medium hover:bg-red-50 transition"
                             >
-                              <FileText className="h-3 w-3 shrink-0" />
-                              <span className="font-medium">{ep.planche_nom}</span>
+                              <FileText className="h-4 w-4 shrink-0" />
+                              Consulter le sujet : <span className="font-semibold">{ep.planche_nom}</span>
                             </button>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 text-sm text-gray-700 italic">
+                              <FileText className="h-4 w-4 shrink-0" />
+                              Aucun sujet affecté pour l&apos;instant
+                            </span>
                           )}
                         </div>
 
@@ -349,8 +387,13 @@ export default function ExaminateurPlanningPage() {
                               Même établissement que le candidat
                             </span>
                           )}
+                          {ep.est_second_examinateur && (
+                            <span className="flex items-center gap-1 text-xs bg-blue-50 border border-blue-200 text-blue-800 rounded-full px-2 py-0.5 font-medium">
+                              2ᵉ examinateur — la note est saisie par l&apos;examinateur principal
+                            </span>
+                          )}
                           {locked && (
-                            <span className="flex items-center gap-1 text-xs bg-gray-100 border border-gray-200 text-gray-500 rounded-full px-2 py-0.5 font-medium">
+                            <span className="flex items-center gap-1 text-xs bg-gray-100 border border-gray-200 text-gray-700 rounded-full px-2 py-0.5 font-medium">
                               <Lock className="h-3 w-3 shrink-0" />
                               {ep.note_statut === "VALIDE" ? "Note validée" : ep.note_statut === "HARMONISE" ? "Note harmonisée" : "Note publiée"}
                             </span>
@@ -358,7 +401,7 @@ export default function ExaminateurPlanningPage() {
                         </div>
 
                         {/* Zone notation */}
-                        {ep.candidat_id && (
+                        {ep.candidat_id && !ep.est_second_examinateur && (
                           <div className="mt-3 space-y-2">
                             <div className="flex items-center gap-2">
                               <div className="relative">
@@ -375,7 +418,7 @@ export default function ExaminateurPlanningPage() {
                                       : "border-gray-200 focus:ring-[#C62828]/40"
                                   }`}
                                 />
-                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">/20</span>
+                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-700 pointer-events-none">/20</span>
                               </div>
                               {raw && !valid && (
                                 <span className="text-xs text-red-500">Note invalide (0–20)</span>
@@ -398,7 +441,7 @@ export default function ExaminateurPlanningPage() {
                             )}
 
                             {locked && ep.note_commentaire && (
-                              <p className="text-xs text-gray-500 italic bg-gray-50 rounded-lg px-3 py-2">
+                              <p className="text-xs text-gray-700 italic bg-gray-50 rounded-lg px-3 py-2">
                                 {ep.note_commentaire}
                               </p>
                             )}
@@ -408,7 +451,7 @@ export default function ExaminateurPlanningPage() {
                                 <button
                                   onClick={() => saveNote(ep, false)}
                                   disabled={!!isSaving || !isDirty || (!!raw && !valid)}
-                                  className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 transition disabled:opacity-40"
+                                  className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 transition disabled:opacity-40"
                                 >
                                   {isSaving === "save" ? <Loader2 className="h-3 w-3 animate-spin inline" /> : null}
                                   {" "}Enregistrer brouillon
@@ -434,6 +477,46 @@ export default function ExaminateurPlanningPage() {
           </div>
         )}
       </main>
+
+      {/* ── Consultation du sujet ── */}
+      {sujet && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-3 sm:p-6" onClick={fermerSujet}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[92vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200">
+              <FileText className="h-5 w-5 text-[#C62828] shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900 truncate">{sujet.ep.planche_nom}</p>
+                <p className="text-xs text-gray-700 truncate">
+                  {sujet.ep.matiere} · {formatDate(sujet.ep.date)} · {sujet.ep.heure_debut}
+                  {sujet.ep.candidat_nom && <> · {sujet.ep.candidat_prenom} {sujet.ep.candidat_nom}</>}
+                </p>
+              </div>
+              {sujet.url && (
+                <a
+                  href={sujet.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hidden sm:inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-gray-300 text-gray-900 hover:bg-gray-50 transition"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" /> Ouvrir dans un onglet
+                </a>
+              )}
+              <button onClick={fermerSujet} className="p-1.5 rounded-lg text-gray-700 hover:bg-gray-100 hover:text-black transition" title="Fermer">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex-1 bg-gray-100">
+              {sujet.loading ? (
+                <div className="h-full flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-[#C62828]" /></div>
+              ) : sujet.error ? (
+                <div className="h-full flex items-center justify-center text-sm text-red-700">{sujet.error}</div>
+              ) : (
+                <iframe src={sujet.url ?? undefined} title={`Sujet ${sujet.ep.planche_nom ?? ""}`} className="w-full h-full border-0" />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

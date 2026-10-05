@@ -276,6 +276,7 @@ type TripletDisponible = {
   candidat_nom?: string | null;
   candidat_prenom?: string | null;
   motif?: string | null;
+  details?: string[];
 };
 
 type InscriptionGestion = {
@@ -485,6 +486,13 @@ function enumerateDates(start: string, end: string): string[] {
   return dates;
 }
 
+// "2026-09-17" → "17-09-2026" (jj-mm-aaaa), pour les colonnes de tableau.
+function formatDateCourte(dateStr: string | null | undefined): string {
+  if (!dateStr) return "";
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : dateStr;
+}
+
 function formatDate(dateStr: string): string {
   try {
     return new Date(dateStr + "T12:00:00").toLocaleDateString("fr-FR", {
@@ -675,7 +683,7 @@ function ImportExcelModal({
       <div className="space-y-4">
         {/* Template download */}
         <div className="flex items-center justify-between rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-3">
-          <p className="text-sm text-gray-600">Télécharger le modèle Excel</p>
+          <p className="text-sm text-gray-700">Télécharger le modèle Excel</p>
           <a
             href={templateUrl}
             download
@@ -703,13 +711,13 @@ function ImportExcelModal({
               {file ? (
                 <div>
                   <p className="text-sm font-semibold text-gray-800">{file.name}</p>
-                  <p className="text-xs text-gray-400 mt-1">{(file.size / 1024).toFixed(1)} Ko — cliquer pour changer</p>
+                  <p className="text-xs text-gray-700 mt-1">{(file.size / 1024).toFixed(1)} Ko — cliquer pour changer</p>
                 </div>
               ) : (
                 <div>
-                  <Upload className="h-8 w-8 mx-auto mb-2 text-gray-300" />
-                  <p className="text-sm text-gray-500">Cliquer pour sélectionner un fichier Excel</p>
-                  <p className="text-xs text-gray-400 mt-1">.xlsx uniquement</p>
+                  <Upload className="h-8 w-8 mx-auto mb-2 text-gray-700" />
+                  <p className="text-sm text-gray-700">Cliquer pour sélectionner un fichier Excel</p>
+                  <p className="text-xs text-gray-700 mt-1">.xlsx uniquement</p>
                 </div>
               )}
             </div>
@@ -747,7 +755,7 @@ function ImportExcelModal({
         {/* Actions */}
         {(!result || (result.errors?.length > 0 && result.created === 0)) && (
           <div className="flex gap-2 justify-end">
-            <button onClick={handleClose} className="text-sm text-gray-500 px-4 py-2 rounded-lg hover:bg-gray-100 transition">
+            <button onClick={handleClose} className="text-sm text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-100 transition">
               Annuler
             </button>
             <button
@@ -793,7 +801,7 @@ function Btn({
   const base = `inline-flex items-center rounded-lg font-medium transition focus:outline-none disabled:opacity-50 ${size}`;
   const vars = {
     primary: `text-white hover:opacity-90`,
-    ghost: `text-black/60 hover:bg-black/5`,
+    ghost: `text-gray-800 hover:bg-black/5`,
     danger: `text-red-600 bg-red-50 hover:bg-red-100`,
   };
   return (
@@ -821,8 +829,8 @@ function Field({
 }) {
   return (
     <div className="space-y-1">
-      <label className="block text-xs font-medium text-black/50 uppercase tracking-wide">{label}</label>
-      {hint && <p className="text-[10px] text-black/30 -mt-0.5">{hint}</p>}
+      <label className="block text-xs font-medium text-gray-800 uppercase tracking-wide">{label}</label>
+      {hint && <p className="text-[10px] text-gray-700 -mt-0.5">{hint}</p>}
       {children}
     </div>
   );
@@ -855,21 +863,21 @@ function ErrorMsg({ msg }: { msg: string }) {
 
 function StatutBadge({ statut }: { statut: string }) {
   const map: Record<string, [string, string]> = {
-    BROUILLON:     ["bg-gray-100 text-gray-500",   "Brouillon"],
+    BROUILLON:     ["bg-gray-100 text-gray-700",   "Brouillon"],
     OUVERT:        ["bg-green-100 text-green-700",  "Ouvert"],
-    CLOS:          ["bg-black/10 text-black/50",    "Clos"],
+    CLOS:          ["bg-black/10 text-gray-800",    "Clos"],
     LIBRE:         ["bg-green-100 text-green-700",  "Libre"],
-    CREE:          ["bg-gray-100 text-gray-500",    "Créé"],
+    CREE:          ["bg-gray-100 text-gray-700",    "Créé"],
     ATTRIBUEE:     ["bg-blue-100 text-blue-700",    "Réservé"],
     EN_EVALUATION: ["bg-yellow-100 text-yellow-700","En éval."],
     FINALISEE:     ["bg-purple-100 text-purple-700","Finalisé"],
     ANNULEE:       ["bg-red-100 text-red-500",      "Annulé"],
-    IMPORTE:       ["bg-gray-100 text-gray-400",    "À placer"],
+    IMPORTE:       ["bg-gray-100 text-gray-700",    "À placer"],
     INSCRIT:       ["bg-green-100 text-green-700",  "Inscrit"],
     CONFIRME:      ["bg-blue-100 text-blue-700",    "Confirmé"],
     ANNULE:        ["bg-red-100 text-red-500",      "Annulé"],
   };
-  const [cls, label] = map[statut] ?? ["bg-gray-100 text-gray-500", statut];
+  const [cls, label] = map[statut] ?? ["bg-gray-100 text-gray-700", statut];
   return (
     <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>
       {label}
@@ -880,8 +888,8 @@ function StatutBadge({ statut }: { statut: string }) {
 function Empty({ message, sub }: { message: string; sub?: string }) {
   return (
     <div className="rounded-xl border border-dashed border-black/15 p-14 text-center">
-      <p className="text-black/40 font-medium">{message}</p>
-      {sub && <p className="text-sm text-black/30 mt-1">{sub}</p>}
+      <p className="text-gray-700 font-medium">{message}</p>
+      {sub && <p className="text-sm text-gray-700 mt-1">{sub}</p>}
     </div>
   );
 }
@@ -959,7 +967,7 @@ function PlanningsSection({
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-xl font-semibold">Plannings</h2>
-          <p className="text-sm text-black/40 mt-0.5">
+          <p className="text-sm text-gray-700 mt-0.5">
             Gérez vos sessions d&apos;oraux
           </p>
         </div>
@@ -971,7 +979,7 @@ function PlanningsSection({
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-16 text-black/30">
+        <div className="flex justify-center py-16 text-gray-700">
           <Spinner />
         </div>
       ) : error ? (
@@ -989,7 +997,7 @@ function PlanningsSection({
                 {["Nom", "Période", "Statut", ""].map((h) => (
                   <th
                     key={h}
-                    className="px-5 py-3.5 text-xs font-semibold text-black/50 tracking-wide"
+                    className="px-5 py-3.5 text-xs font-semibold text-gray-800 tracking-wide"
                   >
                     {h}
                   </th>
@@ -1003,7 +1011,7 @@ function PlanningsSection({
                   className="border-t border-black/5 hover:bg-black/[0.012] transition"
                 >
                   <td className="px-5 py-3.5 font-medium">{p.nom}</td>
-                  <td className="px-5 py-3.5 text-black/50 text-xs">
+                  <td className="px-5 py-3.5 text-gray-800 text-xs">
                     {p.date_debut} &rarr; {p.date_fin}
                   </td>
                   <td className="px-5 py-3.5">
@@ -1165,7 +1173,7 @@ function EditPlanningForm({
         </Field>
       </div>
       <div className="space-y-2 rounded-xl border border-black/8 bg-gray-50/60 px-4 py-3">
-        <p className="text-[11px] font-semibold text-black/40 uppercase tracking-wide mb-1">Paramètres</p>
+        <p className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide mb-1">Paramètres</p>
         {([
           { key: "envoyer_convocations", label: "Envoyer les convocations aux candidats" },
           { key: "interdire_modification_candidat", label: "Interdire la modification par le candidat" },
@@ -1178,7 +1186,7 @@ function EditPlanningForm({
               onChange={(e) => setF(key, e.target.checked)}
               className="w-4 h-4 rounded border-black/20 accent-black"
             />
-            <span className="text-sm text-black/70">{label}</span>
+            <span className="text-sm text-gray-900">{label}</span>
           </label>
         ))}
       </div>
@@ -1260,7 +1268,7 @@ function ImportPlanningForm({
           type="file"
           accept=".xlsx,.xls"
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          className="w-full text-sm text-black/60 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-black/5 hover:file:bg-black/10"
+          className="w-full text-sm text-gray-800 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-black/5 hover:file:bg-black/10"
         />
       </Field>
       <ErrorMsg msg={error} />
@@ -1390,8 +1398,8 @@ function statutBadgeCell(statut: string) {
   if (statut === "EN_EVALUATION")
     return <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-medium bg-purple-100 text-purple-700">En éval.</span>;
   if (statut === "FINALISEE")
-    return <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-medium bg-gray-200 text-gray-600">Finalisé</span>;
-  return <span className="inline-block px-1.5 py-0.5 rounded text-[11px] bg-gray-100 text-gray-500">{statut}</span>;
+    return <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-medium bg-gray-200 text-gray-700">Finalisé</span>;
+  return <span className="inline-block px-1.5 py-0.5 rounded text-[11px] bg-gray-100 text-gray-700">{statut}</span>;
 }
 
 function rowStatut(byMat: Record<string, EpreuveFlat[]>): string {
@@ -1481,7 +1489,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
     }
   };
 
-  if (loading) return <div className="flex justify-center py-16 text-black/30"><Spinner /></div>;
+  if (loading) return <div className="flex justify-center py-16 text-gray-700"><Spinner /></div>;
   if (epreuves.length === 0)
     return <Empty message="Aucun créneau" sub="Appliquez un gabarit pour générer les créneaux du planning." />;
 
@@ -1565,7 +1573,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
           <option value="EN_EVALUATION">En évaluation</option>
           <option value="FINALISEE">Finalisé</option>
         </select>
-        <span className="text-xs text-black/30 ml-auto">{filtered.length} créneau(x)</span>
+        <span className="text-xs text-gray-700 ml-auto">{filtered.length} créneau(x)</span>
       </div>
 
       {/* Barre de suppression de journées sélectionnées */}
@@ -1580,7 +1588,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
             {deletingDays ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
             Supprimer
           </button>
-          <button onClick={() => setSelectedDates(new Set())} className="text-xs text-black/40 hover:text-black/60 transition ml-auto">
+          <button onClick={() => setSelectedDates(new Set())} className="text-xs text-gray-700 hover:text-black transition ml-auto">
             Annuler
           </button>
         </div>
@@ -1599,10 +1607,11 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
           <thead className="sticky top-0 z-20">
             {/* Ligne 1 : en-têtes matières */}
             <tr className="bg-gray-100 border-b">
-              <th className="sticky left-0 z-30 bg-gray-100 w-[100px] min-w-[100px] max-w-[100px] overflow-hidden px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap border-r border-black/10">Statut</th>
-              <th className="sticky left-[100px] z-30 bg-gray-100 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap">Dép. prépa</th>
-              <th className="sticky left-[190px] z-30 bg-gray-100 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap">Dép. exam</th>
-              <th className="sticky left-[280px] z-30 bg-gray-100 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2.5 text-left text-xs font-medium text-black/50 whitespace-nowrap border-r border-black/10">Fin exam</th>
+              <th className="sticky left-0 z-30 bg-gray-100 w-[100px] min-w-[100px] max-w-[100px] overflow-hidden px-3 py-2.5 text-left text-xs font-semibold text-gray-900 whitespace-nowrap border-r border-black/10">Date</th>
+              <th className="sticky left-[100px] z-30 bg-gray-100 w-[100px] min-w-[100px] max-w-[100px] overflow-hidden px-3 py-2.5 text-left text-xs font-medium text-gray-800 whitespace-nowrap border-r border-black/10">Statut</th>
+              <th className="sticky left-[200px] z-30 bg-gray-100 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2.5 text-left text-xs font-medium text-gray-800 whitespace-nowrap">Dép. prépa</th>
+              <th className="sticky left-[290px] z-30 bg-gray-100 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2.5 text-left text-xs font-medium text-gray-800 whitespace-nowrap">Dép. exam</th>
+              <th className="sticky left-[380px] z-30 bg-gray-100 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2.5 text-left text-xs font-medium text-gray-800 whitespace-nowrap border-r border-black/10">Fin exam</th>
               {matieres.map((m) => (
                 <th
                   key={m}
@@ -1614,11 +1623,12 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
               ))}
             </tr>
             {/* Ligne 2 : sous-colonnes par matière */}
-            <tr className="bg-gray-50 border-b text-[11px] text-black/40">
-              <th className="sticky left-0 z-30 bg-gray-50 w-[100px] min-w-[100px] max-w-[100px] border-r border-black/10" colSpan={1} />
-              <th className="sticky left-[100px] z-30 bg-gray-50 w-[90px] min-w-[90px] max-w-[90px]" />
-              <th className="sticky left-[190px] z-30 bg-gray-50 w-[90px] min-w-[90px] max-w-[90px]" />
-              <th className="sticky left-[280px] z-30 bg-gray-50 w-[90px] min-w-[90px] max-w-[90px] border-r border-black/10" />
+            <tr className="bg-gray-50 border-b text-[11px] text-gray-700">
+              <th className="sticky left-0 z-30 bg-gray-50 w-[100px] min-w-[100px] max-w-[100px] border-r border-black/10" />
+              <th className="sticky left-[100px] z-30 bg-gray-50 w-[100px] min-w-[100px] max-w-[100px] border-r border-black/10" colSpan={1} />
+              <th className="sticky left-[200px] z-30 bg-gray-50 w-[90px] min-w-[90px] max-w-[90px]" />
+              <th className="sticky left-[290px] z-30 bg-gray-50 w-[90px] min-w-[90px] max-w-[90px]" />
+              <th className="sticky left-[380px] z-30 bg-gray-50 w-[90px] min-w-[90px] max-w-[90px] border-r border-black/10" />
               {matieres.map((m) => (
                 <React.Fragment key={m}>
                   <th className="px-3 py-1.5 text-left font-normal border-l border-black/10">Candidat</th>
@@ -1635,10 +1645,11 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                 {/* En-tête de date */}
                 <tr>
                   <td
-                    colSpan={4 + matieres.length * 4}
-                    className="px-4 py-2 bg-gray-100 font-semibold text-black/60 text-xs uppercase tracking-widest sticky left-0 z-10"
+                    colSpan={5 + matieres.length * 4}
+                    className="px-4 py-2 bg-gray-100 font-semibold text-gray-900 text-xs uppercase tracking-widest"
                   >
-                    <label className="inline-flex items-center gap-2 cursor-pointer">
+                    {/* Libellé figé à gauche : reste visible pendant le défilement horizontal */}
+                    <label className="sticky left-4 inline-flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
                         checked={selectedDates.has(date)}
@@ -1672,20 +1683,24 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
 
                   return (
                     <tr key={key} className={`border-b border-black/[0.06] hover:bg-black/[0.02] transition ${rowBg}`}>
+                      {/* Date — sticky : visible en permanence, quel que soit le défilement */}
+                      <td className={`sticky left-0 z-10 w-[100px] min-w-[100px] max-w-[100px] overflow-hidden px-3 py-2 text-sm font-medium text-gray-900 tabular-nums whitespace-nowrap border-r border-black/[0.06] ${stickyBg}`}>
+                        {formatDateCourte(row.date)}
+                      </td>
                       {/* Statut — sticky */}
-                      <td className={`sticky left-0 z-10 w-[100px] min-w-[100px] max-w-[100px] overflow-hidden px-3 py-2 whitespace-nowrap border-r border-black/[0.06] ${stickyBg}`}>
+                      <td className={`sticky left-[100px] z-10 w-[100px] min-w-[100px] max-w-[100px] overflow-hidden px-3 py-2 whitespace-nowrap border-r border-black/[0.06] ${stickyBg}`}>
                         {statutBadgeCell(rs)}
                       </td>
                       {/* Dép. prépa — sticky */}
-                      <td className={`sticky left-[100px] z-10 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2 text-black/40 font-mono text-xs whitespace-nowrap ${stickyBg}`}>
+                      <td className={`sticky left-[200px] z-10 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2 text-gray-700 font-mono text-xs whitespace-nowrap ${stickyBg}`}>
                         {debPrepaMap.get(key) ?? "—"}
                       </td>
                       {/* Dép. exam — sticky */}
-                      <td className={`sticky left-[190px] z-10 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2 font-mono text-xs whitespace-nowrap ${stickyBg}`}>
+                      <td className={`sticky left-[290px] z-10 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2 font-mono text-xs whitespace-nowrap ${stickyBg}`}>
                         {row.heure_debut}
                       </td>
                       {/* Fin exam — sticky */}
-                      <td className={`sticky left-[280px] z-10 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2 text-black/40 font-mono text-xs whitespace-nowrap border-r border-black/[0.06] ${stickyBg}`}>
+                      <td className={`sticky left-[380px] z-10 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2 text-gray-700 font-mono text-xs whitespace-nowrap border-r border-black/[0.06] ${stickyBg}`}>
                         {row.heure_fin}
                       </td>
                       {/* Par matière */}
@@ -1694,7 +1709,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                         if (eps.length === 0) {
                           return (
                             <React.Fragment key={m}>
-                              <td className="px-3 py-2 text-black/20 text-xs border-l border-black/[0.06]" colSpan={4}>—</td>
+                              <td className="px-3 py-2 text-gray-700 text-xs border-l border-black/[0.06]" colSpan={4}>—</td>
                             </React.Fragment>
                           );
                         }
@@ -1709,7 +1724,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                                       {e.candidat_nom} {e.candidat_prenom}
                                     </span>
                                   ) : (
-                                    <span className="text-black/25 text-xs italic">—</span>
+                                    <span className="text-gray-700 text-xs italic">—</span>
                                   )}
                                 </div>
                               ))}
@@ -1717,26 +1732,26 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                             {/* Examinateur */}
                             <td className="px-3 py-2">
                               {eps.map((e) => (
-                                <div key={e.id} className="text-xs text-black/50">
+                                <div key={e.id} className="text-xs text-gray-800">
                                   {e.examinateur_nom
                                     ? `${e.examinateur_nom}${e.examinateur_prenom ? " " + e.examinateur_prenom[0] + "." : ""}`
-                                    : <span className="text-black/20 italic">—</span>}
+                                    : <span className="text-gray-700 italic">—</span>}
                                 </div>
                               ))}
                             </td>
                             {/* Salle */}
                             <td className="px-3 py-2">
                               {eps.map((e) => (
-                                <div key={e.id} className="text-xs text-black/50">
+                                <div key={e.id} className="text-xs text-gray-800">
                                   {e.salle_intitule ? (
                                     <>
                                       {e.salle_preparation_intitule && (
-                                        <span className="text-black/35" title="Salle préparation">{e.salle_preparation_intitule} → </span>
+                                        <span className="text-gray-700" title="Salle préparation">{e.salle_preparation_intitule} → </span>
                                       )}
                                       <span title="Salle oral">{e.salle_intitule}</span>
                                     </>
                                   ) : (
-                                    <span className="text-black/20 italic">—</span>
+                                    <span className="text-gray-700 italic">—</span>
                                   )}
                                 </div>
                               ))}
@@ -1744,11 +1759,11 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                             {/* Surveillant(s) */}
                             <td className="px-3 py-2">
                               {eps.map((e) => (
-                                <div key={e.id} className="text-xs text-black/50">
+                                <div key={e.id} className="text-xs text-gray-800">
                                   {e.surveillant_nom ? (
                                     <div>{e.surveillant_nom}{e.surveillant_prenom ? " " + e.surveillant_prenom[0] + "." : ""}</div>
                                   ) : (
-                                    <span className="text-black/20 italic">—</span>
+                                    <span className="text-gray-700 italic">—</span>
                                   )}
                                   {e.surveillant2_nom && (
                                     <div>{e.surveillant2_nom}{e.surveillant2_prenom ? " " + e.surveillant2_prenom[0] + "." : ""}</div>
@@ -1814,7 +1829,7 @@ function PlanningDaySection({
   }
 
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="w-full">
       {/* Header */}
       <div className="flex items-center gap-3 mb-5">
         <button
@@ -1824,7 +1839,7 @@ function PlanningDaySection({
           <ChevronLeft className="h-4 w-4" />
         </button>
         <div>
-          <p className="text-xs text-black/40 uppercase tracking-wide">Planning</p>
+          <p className="text-xs text-gray-700 uppercase tracking-wide">Planning</p>
           <h2 className="text-xl font-semibold leading-tight">{planning.nom}</h2>
         </div>
         <StatutBadge statut={planning.statut} />
@@ -1839,7 +1854,7 @@ function PlanningDaySection({
             className={`px-4 py-2 text-sm font-medium rounded-t-lg transition -mb-px border border-b-0 ${
               viewMode === m
                 ? "bg-white border-black/10 text-black"
-                : "border-transparent text-black/40 hover:text-black/60"
+                : "border-transparent text-gray-700 hover:text-black"
             }`}
           >
             {m === "journee" ? "Vue journée" : m === "tableau" ? "Vue tableau" : "Vue triplets"}
@@ -1878,7 +1893,7 @@ function PlanningDaySection({
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
-              <span className="text-sm text-black/40 hidden sm:block">{formatDate(date)}</span>
+              <span className="text-sm text-gray-700 hidden sm:block">{formatDate(date)}</span>
             </div>
             <div className="flex gap-2">
               <Btn label="Planification DnD" icon={LayoutGrid} onClick={() => setDndMode(true)} small />
@@ -1893,7 +1908,7 @@ function PlanningDaySection({
               {(["triplets", "creneaux"] as const).map(v => (
                 <button key={v} onClick={() => setDaySubView(v)}
                   className={`px-4 py-1.5 text-xs font-semibold rounded-t-lg transition -mb-px border border-b-0 ${
-                    daySubView === v ? "bg-white border-black/10 text-black" : "border-transparent text-black/40 hover:text-black/60"
+                    daySubView === v ? "bg-white border-black/10 text-black" : "border-transparent text-gray-700 hover:text-black"
                   }`}>
                   {v === "triplets" ? "Association triplets" : "Vue créneaux"}
                 </button>
@@ -1903,23 +1918,20 @@ function PlanningDaySection({
 
           {/* Day content */}
           {loading ? (
-            <div className="flex justify-center py-16 text-black/30"><Spinner /></div>
+            <div className="flex justify-center py-16 text-gray-700"><Spinner /></div>
           ) : !dayData || dayData.demi_journees.length === 0 ? (
             <div className="rounded-xl border border-dashed border-black/15 p-14 text-center">
-              <CalendarDays className="h-8 w-8 mx-auto mb-3 text-black/20" />
-              <p className="text-black/40 font-medium">Aucune demi-journée</p>
-              <p className="text-sm text-black/30 mt-1">
+              <CalendarDays className="h-8 w-8 mx-auto mb-3 text-gray-700" />
+              <p className="text-gray-700 font-medium">Aucune demi-journée</p>
+              <p className="text-sm text-gray-700 mt-1">
                 Cliquez sur &laquo; Appliquer un gabarit &raquo; pour générer les créneaux de cette journée.
               </p>
             </div>
           ) : daySubView === "triplets" ? (
             <TripletAssociationView dayData={dayData} />
           ) : (
-            <div className="grid gap-5 md:grid-cols-2">
-              {dayData.demi_journees.map((dj, djIdx) => {
-                const tripletOffset = dayData.demi_journees
-                  .slice(0, djIdx)
-                  .reduce((acc, prev) => acc + new Set(prev.epreuves.map(e => hm(e.heure_debut))).size, 0);
+            <div className="space-y-5">
+              {dayData.demi_journees.map((dj) => {
                 return (
                   <DemiJourneeCard
                     key={dj.id}
@@ -1928,7 +1940,6 @@ function PlanningDaySection({
                     matieres={matieres}
                     onRegen={() => setRegenDj(dj)}
                     onRefresh={loadDay}
-                    tripletOffset={tripletOffset}
                   />
                 );
               })}
@@ -1938,7 +1949,7 @@ function PlanningDaySection({
           {/* Modals */}
           <Modal open={applyModal} onClose={() => setApplyModal(false)} title="Appliquer un gabarit" wide>
             {journeeTypes.length === 0 ? (
-              <p className="text-sm text-black/50">
+              <p className="text-sm text-gray-800">
                 Aucune journée type disponible. Créez-en une dans la section &laquo; Journées types &raquo;.
               </p>
             ) : (
@@ -1974,8 +1985,32 @@ function PlanningDaySection({
 const EPREUVE_STATUTS = ["CREE", "LIBRE", "PRERESERVEE", "ATTRIBUEE", "EN_EVALUATION", "FINALISEE", "ANNULEE"];
 const EPREUVE_STATUT_LABEL: Record<string, string> = {
   CREE: "Créé", LIBRE: "Libre", PRERESERVEE: "Préréservé",
-  ATTRIBUEE: "Réservé", EN_EVALUATION: "En évaluation", FINALISEE: "Finalisé", ANNULEE: "Annulé",
+  ATTRIBUEE: "Attribué", EN_EVALUATION: "En évaluation", FINALISEE: "Finalisé", ANNULEE: "Annulé",
+  ABSENT: "Absent",
 };
+
+// Couleurs d'un statut d'épreuve — UNE seule palette pour toutes les vues du planning
+// (Vue tableau, Vue triplets, Association triplets, Vue créneaux) : Libre = vert,
+// Préréservé = ambre, Attribué = bleu.
+function statutEpreuveCls(s: string): string {
+  switch (s) {
+    case "LIBRE": return "bg-emerald-50 text-emerald-800 border-emerald-200";
+    case "PRERESERVEE": return "bg-amber-50 text-amber-800 border-amber-200";
+    case "ATTRIBUEE": return "bg-blue-50 text-blue-800 border-blue-200";
+    case "ABSENT": return "bg-red-50 text-red-700 border-red-200";
+    case "ANNULEE": return "bg-gray-100 text-gray-700 border-gray-300 line-through";
+    case "EN_EVALUATION": return "bg-yellow-50 text-yellow-800 border-yellow-200";
+    case "FINALISEE": return "bg-purple-50 text-purple-800 border-purple-200";
+    default: return "bg-gray-50 text-gray-800 border-gray-200";
+  }
+}
+
+function heurePrepa(heureDebut: string, prepMinutes: number | null | undefined): string | null {
+  if (!prepMinutes) return null;
+  const [h, m] = hm(heureDebut).split(":").map(Number);
+  const total = h * 60 + m - prepMinutes;
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
 
 function EpreuveRow({
   epreuve,
@@ -2000,11 +2035,11 @@ function EpreuveRow({
     if (s === "LIBRE") return "bg-green-50 text-green-700";
     if (s === "PRERESERVEE") return "bg-amber-50 text-amber-700";
     if (s === "ATTRIBUEE") return "bg-blue-50 text-blue-700";
-    if (s === "CREE") return "bg-gray-50 text-gray-500";
+    if (s === "CREE") return "bg-gray-50 text-gray-700";
     if (s === "EN_EVALUATION") return "bg-yellow-50 text-yellow-700";
     if (s === "FINALISEE") return "bg-purple-50 text-purple-700";
     if (s === "ANNULEE") return "bg-red-50 text-red-500";
-    return "bg-gray-50 text-gray-400";
+    return "bg-gray-50 text-gray-700";
   };
 
   const handleStatut = async (newStatut: string) => {
@@ -2054,25 +2089,25 @@ function EpreuveRow({
     <>
       <div className="flex items-center justify-between px-4 py-2.5 hover:bg-black/[0.01] transition group">
         <div className="flex items-center gap-3 flex-1 min-w-0">
-          <span className="text-xs text-black/40 font-mono w-24 shrink-0">
+          <span className="text-xs text-gray-700 font-mono w-24 shrink-0">
             {hm(epreuve.heure_debut)} – {hm(epreuve.heure_fin)}
           </span>
           <div className="flex flex-col min-w-0">
             <span className="text-sm font-medium">{epreuve.matiere}</span>
             {epreuve.candidat_nom && (
-              <span className="text-xs text-black/40 truncate">
+              <span className="text-xs text-gray-700 truncate">
                 {epreuve.candidat_prenom} {epreuve.candidat_nom}
               </span>
             )}
             {epreuve.salle_intitule && (
-              <span className="text-[10px] text-black/30 font-mono">{epreuve.salle_intitule}</span>
+              <span className="text-[10px] text-gray-700 font-mono">{epreuve.salle_intitule}</span>
             )}
           </div>
         </div>
         <div className="flex items-center gap-1.5">
           <button
             onClick={openEdit}
-            className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-black/5 text-black/40 hover:text-black/70 transition"
+            className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-black/5 text-gray-700 hover:text-black transition"
             title="Modifier"
           >
             <Edit2 className="h-3 w-3" />
@@ -2080,7 +2115,7 @@ function EpreuveRow({
           {!epreuve.candidat_nom && (
             <button
               onClick={handleDelete}
-              className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-50 text-black/30 hover:text-red-500 transition"
+              className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-50 text-gray-700 hover:text-red-500 transition"
               title="Supprimer"
             >
               <Trash2 className="h-3 w-3" />
@@ -2127,7 +2162,7 @@ function EpreuveRow({
             onChange={(e) => setEditDebut(e.target.value)}
             className="text-sm border rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-300"
           />
-          <span className="text-xs text-black/30">–</span>
+          <span className="text-xs text-gray-700">–</span>
           <input
             type="time"
             value={editFin}
@@ -2142,7 +2177,7 @@ function EpreuveRow({
             {saving && <Loader2 className="h-3 w-3 animate-spin" />}
             Enregistrer
           </button>
-          <button onClick={() => setEditOpen(false)} className="text-xs text-black/40 hover:text-black/70">
+          <button onClick={() => setEditOpen(false)} className="text-xs text-gray-700 hover:text-black">
             Annuler
           </button>
         </div>
@@ -2158,25 +2193,25 @@ function TripletAssociationView({ dayData }: { dayData: DayViewData }) {
   const allEpreuves = dayData.demi_journees.flatMap(dj =>
     dj.epreuves.map(e => ({ ...e, djType: dj.type }))
   );
+  type EpreuveJour = (typeof allEpreuves)[number];
 
   // Matières présentes, triées alphabétiquement
-  const allMatieres = [...new Set(allEpreuves.map(e => e.matiere))].sort();
+  const allMatieres = [...new Set(allEpreuves.map(e => e.matiere))].sort((a, b) => a.localeCompare(b, "fr"));
+  // Une journée mixte ESH/HGG : chaque candidat ne passe que l'une des deux → N-1 épreuves
+  const upper = new Set(allMatieres.map(m => m.toUpperCase()));
+  const nbAttendu = upper.has("ESH") && upper.has("HGG") ? allMatieres.length - 1 : allMatieres.length;
 
-  // Grouper par candidat_id (non null) → un triplet = un candidat + ses épreuves
-  const candidatMap = new Map<number, { nom: string; prenom: string; epreuves: typeof allEpreuves }>();
+  // Un triplet = les épreuves d'UN candidat (à des horaires différents, par rotation) —
+  // jamais une ligne horaire : c'est ce qui éparpillait un même candidat sur plusieurs
+  // "triplets" T1, T2… dès qu'il s'inscrivait.
+  const candidatMap = new Map<number, { nom: string; prenom: string; epreuves: EpreuveJour[] }>();
   for (const ep of allEpreuves) {
     if (ep.candidat_id == null) continue;
     if (!candidatMap.has(ep.candidat_id)) {
-      candidatMap.set(ep.candidat_id, {
-        nom: ep.candidat_nom ?? "",
-        prenom: ep.candidat_prenom ?? "",
-        epreuves: [],
-      });
+      candidatMap.set(ep.candidat_id, { nom: ep.candidat_nom ?? "", prenom: ep.candidat_prenom ?? "", epreuves: [] });
     }
     candidatMap.get(ep.candidat_id)!.epreuves.push(ep);
   }
-
-  // Trier les candidats par heure de leur première épreuve
   const triplets = [...candidatMap.entries()]
     .map(([id, c]) => ({
       id,
@@ -2186,143 +2221,132 @@ function TripletAssociationView({ dayData }: { dayData: DayViewData }) {
     }))
     .sort((a, b) => hm(a.epreuves[0]?.heure_debut ?? "").localeCompare(hm(b.epreuves[0]?.heure_debut ?? "")));
 
-  // Créneaux libres (sans candidat, non annulés) par matière
-  const libreByMatiere = new Map<string, typeof allEpreuves>();
-  for (const ep of allEpreuves) {
-    if (ep.candidat_id != null || ep.statut === "ANNULEE") continue;
-    if (!libreByMatiere.has(ep.matiere)) libreByMatiere.set(ep.matiere, []);
-    libreByMatiere.get(ep.matiere)!.push(ep);
-  }
-  const totalLibres = allEpreuves.filter(e => e.candidat_id == null && e.statut !== "ANNULEE").length;
+  // Épreuves sans candidat (non annulées) : libres OU préréservées
+  const sansCandidat = allEpreuves
+    .filter(e => e.candidat_id == null && e.statut !== "ANNULEE")
+    .sort((a, b) => hm(a.heure_debut).localeCompare(hm(b.heure_debut)) || a.matiere.localeCompare(b.matiere, "fr"));
+  const nbLibres = sansCandidat.filter(e => e.statut === "LIBRE").length;
+  const nbPrereservees = sansCandidat.filter(e => e.statut === "PRERESERVEE").length;
 
-  const statutCls = (s: string) => {
-    if (s === "LIBRE") return "text-blue-600 bg-blue-50 border-blue-100";
-    if (s === "ATTRIBUEE") return "text-green-700 bg-green-50 border-green-100";
-    if (s === "ANNULEE") return "text-red-500 bg-red-50 border-red-100";
-    if (s === "CREE") return "text-purple-600 bg-purple-50 border-purple-100";
-    if (s === "EN_EVALUATION") return "text-yellow-700 bg-yellow-50 border-yellow-100";
-    if (s === "FINALISEE") return "text-cyan-600 bg-cyan-50 border-cyan-100";
-    return "text-gray-500 bg-gray-50 border-gray-100";
+  const horaire = (ep: EpreuveJour) => {
+    const prepa = heurePrepa(ep.heure_debut, ep.preparation_minutes);
+    return (
+      <span className="tabular-nums">
+        {prepa && <span className="text-gray-700">Prépa {prepa} · </span>}
+        <span className="font-semibold text-gray-900">{hm(ep.heure_debut)} – {hm(ep.heure_fin)}</span>
+      </span>
+    );
   };
+  const salles = (ep: EpreuveJour) =>
+    ep.salle_intitule || ep.salle_preparation_intitule ? (
+      <span className="text-gray-800">
+        {ep.salle_preparation_intitule && <>Prépa {ep.salle_preparation_intitule} · </>}
+        {ep.salle_intitule ? <>Salle {ep.salle_intitule}</> : <span className="italic">salle non assignée</span>}
+      </span>
+    ) : (
+      <span className="italic text-gray-700">Salle non assignée</span>
+    );
 
-  if (triplets.length === 0 && totalLibres === 0) {
-    return <p className="text-sm text-black/30 text-center py-10">Aucune épreuve pour cette date.</p>;
+  if (triplets.length === 0 && sansCandidat.length === 0) {
+    return <p className="text-sm text-gray-800 text-center py-10">Aucune épreuve pour cette date.</p>;
   }
 
   return (
     <div className="space-y-4">
       {/* Résumé */}
-      <div className="flex flex-wrap items-center gap-4 px-1 text-xs text-black/50">
-        <span><span className="font-semibold text-black/70">{triplets.length}</span> triplet{triplets.length > 1 ? "s" : ""} assigné{triplets.length > 1 ? "s" : ""}</span>
-        {totalLibres > 0 && <span className="text-amber-600"><span className="font-semibold">{totalLibres}</span> créneau{totalLibres > 1 ? "x" : ""} libre{totalLibres > 1 ? "s" : ""}</span>}
-        <span>{allMatieres.join(" · ")}</span>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-1 text-sm text-gray-900">
+        <span><span className="font-semibold">{triplets.length}</span> candidat{triplets.length > 1 ? "s" : ""} inscrit{triplets.length > 1 ? "s" : ""}</span>
+        <span><span className="font-semibold">{nbLibres}</span> créneau{nbLibres > 1 ? "x" : ""} libre{nbLibres > 1 ? "s" : ""}</span>
+        {nbPrereservees > 0 && (
+          <span><span className="font-semibold">{nbPrereservees}</span> préréservé{nbPrereservees > 1 ? "s" : ""}</span>
+        )}
+        <span className="text-gray-700">{allMatieres.join(" · ")}</span>
       </div>
 
-      {/* Tableau principal : un triplet = une ligne */}
-      <div className="overflow-x-auto rounded-xl border border-black/8 bg-white">
-        <table className="w-full text-xs border-collapse">
-          <thead>
-            <tr className="bg-gray-50">
-              <th className="px-3 py-2.5 text-left font-semibold text-black/40 border-b border-black/8 w-[64px]">Triplet</th>
-              <th className="px-3 py-2.5 text-left font-semibold text-black/60 border-b border-black/8">Candidat</th>
-              {allMatieres.map(m => (
-                <th key={m} className="px-3 py-2.5 text-center font-semibold text-black/70 border-b border-black/8 whitespace-nowrap">{m}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {triplets.map((t, i) => {
-              const bg   = TRIPLET_BG[i % TRIPLET_BG.length];
-              const ring = TRIPLET_RING[i % TRIPLET_RING.length];
-              return (
-                <tr key={t.id} className="border-b border-black/5 last:border-0 hover:bg-black/[0.012]">
-                  {/* T-chip */}
-                  <td className="px-3 py-2 text-center">
-                    <span className="inline-block font-mono font-bold text-[11px] rounded-full px-2 py-0.5 text-gray-700"
-                      style={{ backgroundColor: bg, outline: `1.5px solid ${ring}` }}>
-                      T{i + 1}
-                    </span>
-                  </td>
-                  {/* Candidat */}
-                  <td className="px-3 py-2 font-medium text-black/80 whitespace-nowrap">
-                    {t.nom} {t.prenom}
-                  </td>
-                  {/* Une cellule par matière */}
-                  {allMatieres.map(matiere => {
-                    const ep = t.epreuves.find(e => e.matiere === matiere);
-                    if (!ep) return (
-                      <td key={matiere} className="px-3 py-2 text-center text-black/20">—</td>
-                    );
-                    const periode = ep.djType === "MATIN" ? "Matin" : "AM";
-                    // Heure de préparation = heure_debut - preparation_minutes
-                    const heurePrepa = ep.preparation_minutes
-                      ? (() => {
-                          const [h, m] = hm(ep.heure_debut).split(":").map(Number);
-                          const total = h * 60 + m - ep.preparation_minutes;
-                          return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
-                        })()
-                      : hm(ep.heure_debut);
-                    return (
-                      <td key={matiere} className="px-2 py-1.5">
-                        <div className={`rounded-lg border px-2.5 py-1.5 text-center ${statutCls(ep.statut)}`}>
-                          <div className="font-mono text-[11px] leading-tight">
-                            <span className="opacity-60">{heurePrepa}</span>
-                            <span className="opacity-30 mx-0.5">→</span>
-                            <span className="font-semibold">{hm(ep.heure_fin)}</span>
-                          </div>
-                          <div className="text-[9px] opacity-60 mt-0.5 uppercase tracking-wide">
-                            {periode} · {ep.statut}
-                          </div>
-                          {ep.salle_intitule && (
-                            <div className="text-[9px] opacity-70 mt-0.5 font-medium">
-                              {ep.salle_preparation_intitule && (
-                                <span title="Salle préparation">{ep.salle_preparation_intitule} → </span>
-                              )}
-                              <span title="Salle oral">{ep.salle_intitule}</span>
-                            </div>
-                          )}
+      {/* Triplets attribués : une ligne = un candidat et ses épreuves */}
+      {triplets.length > 0 ? (
+        <div className="overflow-x-auto rounded-xl border border-black/10 bg-white">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="bg-gray-50">
+                <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-900 border-b border-black/10">Candidat</th>
+                {allMatieres.map(m => (
+                  <th key={m} className="px-3 py-2.5 text-left text-xs font-semibold text-gray-900 border-b border-black/10 whitespace-nowrap">{m}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {triplets.map(t => {
+                const incomplet = t.epreuves.length < nbAttendu;
+                return (
+                  <tr key={t.id} className="border-b border-black/5 last:border-0 align-top">
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      <div className="font-semibold text-gray-900">{t.nom} {t.prenom}</div>
+                      {incomplet && (
+                        <div className="mt-1 text-xs font-medium text-red-700">
+                          Triplet incomplet : {t.epreuves.length}/{nbAttendu} épreuves
                         </div>
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+                      )}
+                    </td>
+                    {allMatieres.map(matiere => {
+                      const eps = t.epreuves.filter(e => e.matiere === matiere);
+                      if (eps.length === 0) return (
+                        <td key={matiere} className="px-3 py-2.5 text-gray-700">—</td>
+                      );
+                      return (
+                        <td key={matiere} className="px-2 py-1.5">
+                          {eps.map(ep => (
+                            <div key={ep.id} className={`rounded-lg border px-2.5 py-1.5 mb-1 last:mb-0 text-xs space-y-0.5 ${statutEpreuveCls(ep.statut)}`}>
+                              <div>{horaire(ep)}</div>
+                              <div>{salles(ep)}</div>
+                              <div className="font-semibold">
+                                {ep.djType === "MATIN" ? "Matin" : "Après-midi"} · {EPREUVE_STATUT_LABEL[ep.statut] ?? ep.statut}
+                              </div>
+                            </div>
+                          ))}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="text-sm text-gray-800 px-1">Aucun candidat inscrit sur cette journée pour l&apos;instant.</p>
+      )}
 
-      {/* Créneaux libres */}
-      {totalLibres > 0 && (
-        <div className="rounded-xl border border-amber-100 bg-amber-50/40 overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-amber-100 flex items-center gap-2">
-            <span className="text-xs font-semibold text-amber-700">Créneaux libres — sans candidat</span>
-            <span className="text-[10px] text-amber-500 font-mono">{totalLibres} épreuve{totalLibres > 1 ? "s" : ""}</span>
+      {/* Épreuves sans candidat */}
+      {sansCandidat.length > 0 && (
+        <div className="rounded-xl border border-black/10 bg-white overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-black/10 bg-gray-50 flex items-center gap-2">
+            <span className="text-sm font-semibold text-gray-900">Créneaux sans candidat</span>
+            <span className="text-xs text-gray-800">{sansCandidat.length} épreuve{sansCandidat.length > 1 ? "s" : ""}</span>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs border-collapse">
+            <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="bg-amber-50/60">
-                  <th className="px-3 py-2 text-left font-semibold text-amber-600/60 border-b border-amber-100">Matière</th>
-                  <th className="px-3 py-2 text-left font-semibold text-amber-600/60 border-b border-amber-100">Session</th>
-                  <th className="px-3 py-2 text-left font-semibold text-amber-600/60 border-b border-amber-100">Horaire</th>
-                  <th className="px-3 py-2 text-left font-semibold text-amber-600/60 border-b border-amber-100">Statut</th>
+                <tr>
+                  {["Matière", "Session", "Horaire", "Salle", "Statut"].map(h => (
+                    <th key={h} className="px-3 py-2 text-left text-xs font-semibold text-gray-900 border-b border-black/10">{h}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {allEpreuves
-                  .filter(e => e.candidat_id == null && e.statut !== "ANNULEE")
-                  .sort((a, b) => hm(a.heure_debut).localeCompare(hm(b.heure_debut)))
-                  .map(ep => (
-                    <tr key={ep.id} className="border-b border-amber-100/60 last:border-0">
-                      <td className="px-3 py-1.5 font-medium text-black/70">{ep.matiere}</td>
-                      <td className="px-3 py-1.5 text-black/40">{ep.djType === "MATIN" ? "Matin" : "Après-midi"}</td>
-                      <td className="px-3 py-1.5 font-mono text-black/60">{hm(ep.heure_debut)} → {hm(ep.heure_fin)}</td>
-                      <td className="px-3 py-1.5">
-                        <span className={`inline-block px-2 py-0.5 rounded-full border text-[10px] font-semibold ${statutCls(ep.statut)}`}>{ep.statut}</span>
-                      </td>
-                    </tr>
-                  ))}
+                {sansCandidat.map(ep => (
+                  <tr key={ep.id} className="border-b border-black/5 last:border-0">
+                    <td className="px-3 py-1.5 font-medium text-gray-900">{ep.matiere}</td>
+                    <td className="px-3 py-1.5 text-gray-900">{ep.djType === "MATIN" ? "Matin" : "Après-midi"}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">{horaire(ep)}</td>
+                    <td className="px-3 py-1.5">{salles(ep)}</td>
+                    <td className="px-3 py-1.5">
+                      <span className={`inline-block px-2 py-0.5 rounded-full border text-[11px] font-semibold ${statutEpreuveCls(ep.statut)}`}>
+                        {EPREUVE_STATUT_LABEL[ep.statut] ?? ep.statut}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -2343,7 +2367,24 @@ const TRIPLET_ETAT: Record<string, { label: string; cls: string }> = {
   PRERESERVEE:  { label: "Préréservé",    cls: "bg-amber-50 text-amber-700 border-amber-200" },
   ATTRIBUEE:    { label: "Attribué",      cls: "bg-blue-50 text-blue-700 border-blue-200" },
   INCOMPLET:    { label: "Incomplet",     cls: "bg-red-50 text-red-600 border-red-200" },
-  INDISPONIBLE: { label: "Indisponible",  cls: "bg-gray-100 text-gray-500 border-gray-200" },
+  INDISPONIBLE: { label: "Indisponible",  cls: "bg-gray-100 text-gray-700 border-gray-200" },
+};
+
+// Ce que signifie chaque état — affiché en légende au-dessus de la liste.
+const TRIPLET_ETAT_AIDE: Record<string, string> = {
+  LIBRE: "les 3 épreuves sont libres : un candidat peut le choisir, ou vous pouvez le préréserver.",
+  PRERESERVEE: "mis de côté sans candidat : invisible pour les candidats jusqu'à ce qu'il soit libéré.",
+  ATTRIBUEE: "réservé par un candidat inscrit.",
+  INDISPONIBLE: "une partie de ses épreuves est préréservée via un autre triplet : il ne peut plus être complété tel quel.",
+  INCOMPLET: "impossible de former les 3 épreuves (créneau manquant dans le planning, épreuve déjà prise, ou attribution hors inscription).",
+};
+
+// Couleur d'une pastille d'épreuve selon SON statut propre (pas celui du triplet).
+const EPREUVE_STATUT_CLS: Record<string, string> = {
+  LIBRE: "bg-emerald-50 border-emerald-200 text-emerald-700",
+  PRERESERVEE: "bg-amber-50 border-amber-200 text-amber-700",
+  ATTRIBUEE: "bg-blue-50 border-blue-200 text-blue-700",
+  MANQUANTE: "bg-white border-dashed border-red-300 text-red-500",
 };
 
 function TripletsAdminView({ planningId }: { planningId: number }) {
@@ -2391,12 +2432,12 @@ function TripletsAdminView({ planningId }: { planningId: number }) {
     byDate.get(t.date)!.push(t);
   }
 
-  if (loading) return <div className="flex justify-center py-16 text-black/30"><Spinner /></div>;
+  if (loading) return <div className="flex justify-center py-16 text-gray-700"><Spinner /></div>;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
-        <p className="text-sm text-black/50">
+        <p className="text-sm text-gray-800">
           État de chaque triplet du planning — préréservez un triplet Libre pour le mettre de côté sans lui assigner de candidat, ou libérez une pré-réservation.
         </p>
         <div className="flex items-center gap-2 ml-auto">
@@ -2421,14 +2462,28 @@ function TripletsAdminView({ planningId }: { planningId: number }) {
         </div>
       </div>
 
+      <div className="bg-white rounded-2xl border border-black/5 px-4 py-3 grid gap-1.5 sm:grid-cols-2">
+        {Object.entries(TRIPLET_ETAT).map(([k, v]) => {
+          const nb = triplets.filter((t) => (!filterDate || t.date === filterDate) && t.type_slot === k).length;
+          return (
+            <div key={k} className="flex items-start gap-2 text-xs text-gray-800 leading-snug">
+              <span className={`shrink-0 text-[11px] px-2 py-0.5 rounded-full font-semibold border ${v.cls}`}>
+                {v.label} · {nb}
+              </span>
+              <span className="pt-0.5">{TRIPLET_ETAT_AIDE[k]}</span>
+            </div>
+          );
+        })}
+      </div>
+
       {filtered.length === 0 ? (
         <Empty message="Aucun triplet" sub="Aucun créneau généré pour cette date, ou filtre trop restrictif." />
       ) : (
         [...byDate.entries()].map(([date, trips]) => (
           <div key={date} className="bg-white rounded-2xl border border-black/5 shadow-sm overflow-hidden">
             <div className="px-4 py-2.5 bg-black/[0.02] border-b border-black/5">
-              <span className="text-xs font-semibold text-black/50">{formatDate(date)}</span>
-              <span className="text-xs text-black/30 ml-2">{trips.length} triplet(s)</span>
+              <span className="text-xs font-semibold text-gray-800">{formatDate(date)}</span>
+              <span className="text-xs text-gray-700 ml-2">{trips.length} triplet(s)</span>
             </div>
             <div className="divide-y divide-black/5">
               {[...trips]
@@ -2441,16 +2496,20 @@ function TripletsAdminView({ planningId }: { planningId: number }) {
                   return (
                     <div key={key} className="px-4 py-2.5">
                       <div className="flex items-center gap-4">
-                        <span className="font-mono text-sm text-black/70 w-14">{t.heure_debut}</span>
+                        <span className="font-mono text-sm text-gray-900 w-14">{t.heure_debut}</span>
                         <div className="flex-1 flex flex-wrap gap-2">
                           {t.epreuves.map((e) => (
-                            <span key={e.id} className="text-xs px-2 py-0.5 rounded-full bg-black/[0.03] border border-black/10 text-black/60">
-                              {e.matiere} <span className="text-black/30">{e.heure_debut}</span>
+                            <span
+                              key={e.id}
+                              title={e.statut === "MANQUANTE" ? "Aucune épreuve à cet horaire dans le planning" : e.statut}
+                              className={`text-xs px-2 py-0.5 rounded-full border ${EPREUVE_STATUT_CLS[e.statut ?? ""] ?? "bg-black/[0.03] border-black/10 text-gray-800"}`}
+                            >
+                              {e.statut === "MANQUANTE" && "✗ "}{e.matiere} <span className="opacity-60">{e.heure_debut}</span>
                             </span>
                           ))}
                         </div>
                         {showCandidat && (
-                          <span className="text-xs text-black/60 font-medium w-40 truncate" title={`${t.candidat_nom} ${t.candidat_prenom ?? ""}`}>
+                          <span className="text-xs text-gray-800 font-medium w-40 truncate" title={`${t.candidat_nom} ${t.candidat_prenom ?? ""}`}>
                             {t.candidat_nom} {t.candidat_prenom}
                           </span>
                         )}
@@ -2462,7 +2521,7 @@ function TripletsAdminView({ planningId }: { planningId: number }) {
                             onClick={() => toggle(t)}
                             disabled={busy === key}
                             className={`text-xs px-3 py-1.5 rounded-lg font-medium transition disabled:opacity-50 ${
-                              t.type_slot === "LIBRE" ? "text-white hover:opacity-90" : "border border-black/15 text-black/60 hover:bg-black/[0.03]"
+                              t.type_slot === "LIBRE" ? "text-white hover:opacity-90" : "border border-black/15 text-gray-800 hover:bg-black/[0.03]"
                             }`}
                             style={t.type_slot === "LIBRE" ? { backgroundColor: RED } : undefined}
                           >
@@ -2471,9 +2530,28 @@ function TripletsAdminView({ planningId }: { planningId: number }) {
                         )}
                       </div>
                       {t.motif && (
-                        <p className="text-xs text-black/40 mt-1.5 pl-[4.5rem] pr-2 leading-snug">
+                        <p className={`text-xs mt-1.5 pl-[4.5rem] pr-2 leading-snug ${
+                          t.type_slot === "INCOMPLET" ? "text-red-600/80" : t.type_slot === "INDISPONIBLE" ? "text-gray-800" : "text-gray-700"
+                        }`}>
                           {t.motif}
                         </p>
+                      )}
+                      {t.details && t.details.length > 0 && (
+                        <details className="mt-1 pl-[4.5rem] pr-2" open={t.type_slot === "INCOMPLET" || t.type_slot === "INDISPONIBLE"}>
+                          <summary className="text-[11px] text-gray-700 cursor-pointer select-none hover:text-black">
+                            Détail par épreuve
+                          </summary>
+                          <ul className="mt-1 space-y-0.5">
+                            {t.details.map((d, i) => (
+                              <li
+                                key={i}
+                                className={`text-[11px] leading-snug ${d.startsWith("✗") ? "text-red-600/80" : "text-gray-800"}`}
+                              >
+                                {d.startsWith("✗") || d.startsWith("✓") ? d : `• ${d}`}
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
                       )}
                     </div>
                   );
@@ -2494,14 +2572,12 @@ function DemiJourneeCard({
   matieres,
   onRegen,
   onRefresh,
-  tripletOffset,
 }: {
   dj: DemiJournee;
   planningId: number;
   matieres: MatiereItem[];
   onRegen: () => void;
   onRefresh: () => void;
-  tripletOffset: number;
 }) {
   const toast = useToast();
   const [addOpen, setAddOpen] = useState(false);
@@ -2555,34 +2631,12 @@ function DemiJourneeCard({
   // Matières présentes dans cette demi-journée, triées
   const djMatieres = [...new Set(dj.epreuves.map(e => e.matiere))].sort();
 
-  // Calcul dép. prépa : basé sur preparation_minutes de l'épreuve ou écart entre créneaux
-  const slotTimes = slots.map(([s]) => {
-    const [h, m] = s.split(":").map(Number);
-    return h * 60 + m;
-  });
-  const slotGap = slotTimes.length > 1 ? slotTimes[1] - slotTimes[0] : 0;
-
-  const debPrepa = (slotIdx: number, slot: string): string => {
-    const ep0 = slotMap.get(slot)?.[0];
-    const prep = ep0?.preparation_minutes ?? slotGap;
-    if (!prep) return slot;
-    const [h, m] = slot.split(":").map(Number);
-    const total = h * 60 + m - prep;
-    return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
-  };
-
-  const statutCls = (s: string) => {
-    if (s === "LIBRE") return "bg-blue-50 text-blue-600 border-blue-100";
-    if (s === "ATTRIBUEE") return "bg-green-50 text-green-700 border-green-100";
-    if (s === "ANNULEE") return "bg-red-50 text-red-500 border-red-100";
-    if (s === "CREE") return "bg-purple-50 text-purple-600 border-purple-100";
-    if (s === "EN_EVALUATION") return "bg-yellow-50 text-yellow-700 border-yellow-100";
-    if (s === "FINALISEE") return "bg-cyan-50 text-cyan-600 border-cyan-100";
-    return "bg-gray-50 text-gray-500 border-gray-100";
-  };
+  // Une ligne = un CRÉNEAU HORAIRE (toutes les matières qui commencent à cette heure),
+  // pas un triplet : le triplet d'un candidat combine des épreuves à des heures
+  // différentes (rotation) — voir l'onglet « Association triplets ».
 
   const isMatin = dj.type === "MATIN";
-  const accentColor = isMatin ? "#F59E0B" : "#6366F1";
+  const accentColor = isMatin ? "#B45309" : "#4338CA";
 
   return (
     <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
@@ -2592,10 +2646,10 @@ function DemiJourneeCard({
           <span className="font-semibold text-sm" style={{ color: accentColor }}>
             {isMatin ? "Matin" : "Après-midi"}
           </span>
-          <span className="text-xs text-black/40">{hm(dj.heure_debut)} – {hm(dj.heure_fin)}</span>
+          <span className="text-sm text-gray-900 tabular-nums">{hm(dj.heure_debut)} – {hm(dj.heure_fin)}</span>
           {slots.length > 0 && (
-            <span className="text-[10px] text-black/30">
-              · {slots.length} triplets · T{tripletOffset + 1}→T{tripletOffset + slots.length}
+            <span className="text-xs text-gray-800">
+              · {slots.length} créneau{slots.length > 1 ? "x" : ""} · {dj.epreuves.length} épreuve{dj.epreuves.length > 1 ? "s" : ""}
             </span>
           )}
         </div>
@@ -2605,72 +2659,55 @@ function DemiJourneeCard({
         </div>
       </div>
 
-      {/* Matrice triplets */}
+      {/* Matrice créneaux × matières */}
       {dj.epreuves.length === 0 ? (
-        <p className="px-4 py-5 text-sm text-black/30 text-center">Aucune épreuve</p>
+        <p className="px-4 py-5 text-sm text-gray-800 text-center">Aucune épreuve</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-xs border-collapse">
             <thead>
               <tr style={{ backgroundColor: accentColor + "10" }}>
-                <th className="px-3 py-2 text-left font-semibold text-black/40 border-b border-black/8 whitespace-nowrap w-[60px]">Triplet</th>
-                <th className="px-3 py-2 text-left font-semibold text-black/50 border-b border-black/8 whitespace-nowrap">Horaire</th>
+                <th className="px-3 py-2 text-left font-semibold text-gray-900 border-b border-black/10 whitespace-nowrap">Horaire</th>
                 {djMatieres.map(m => (
-                  <th key={m} className="px-3 py-2 text-center font-semibold border-b border-black/8 whitespace-nowrap" style={{ color: accentColor }}>{m}</th>
+                  <th key={m} className="px-3 py-2 text-center font-semibold border-b border-black/10 whitespace-nowrap" style={{ color: accentColor }}>{m}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {slots.map(([slot, epreuves], slotIdx) => {
-                const globalIdx = tripletOffset + slotIdx;
-                const bg   = TRIPLET_BG[globalIdx % TRIPLET_BG.length];
-                const ring = TRIPLET_RING[globalIdx % TRIPLET_RING.length];
-                const finExam = epreuves[0]?.heure_fin ? hm(epreuves[0].heure_fin) : "—";
+              {slots.map(([slot, epreuves]) => {
+                const ref = epreuves.find(e => e.preparation_minutes) ?? epreuves[0];
+                const prepa = ref ? heurePrepa(ref.heure_debut, ref.preparation_minutes) : null;
+                const finExam = ref?.heure_fin ? hm(ref.heure_fin) : "—";
                 return (
-                  <tr key={slot} className="border-b border-black/5 last:border-0 hover:bg-black/[0.012]">
-                    {/* T-chip */}
-                    <td className="px-3 py-2 text-center">
-                      <span
-                        className="inline-block text-[11px] font-mono font-bold rounded-full px-2 py-0.5 text-gray-700"
-                        style={{ backgroundColor: bg, outline: `1.5px solid ${ring}` }}
-                      >
-                        T{globalIdx + 1}
-                      </span>
+                  <tr key={slot} className="border-b border-black/5 last:border-0 hover:bg-black/[0.012] align-top">
+                    {/* Horaire : prépa · début – fin */}
+                    <td className="px-3 py-2 whitespace-nowrap tabular-nums">
+                      {prepa && <div className="text-gray-800">Prépa {prepa}</div>}
+                      <div className="text-gray-900 font-semibold">{slot} – {finExam}</div>
                     </td>
-                    {/* Horaire prépa → fin */}
-                    <td className="px-3 py-2 font-mono whitespace-nowrap">
-                      <span className="text-black/40">{debPrepa(slotIdx, slot)}</span>
-                      <span className="text-black/20 mx-1">→</span>
-                      <span className="text-black/70 font-semibold">{finExam}</span>
-                    </td>
-                    {/* Cellules par matière */}
+                    {/* Cellules par matière — toutes les salles en parallèle (dédoublement) */}
                     {djMatieres.map(matiere => {
-                      const ep = epreuves.find(e => e.matiere === matiere);
-                      if (!ep) return (
+                      const eps = epreuves.filter(e => e.matiere === matiere);
+                      if (eps.length === 0) return (
                         <td key={matiere} className="px-2 py-1.5 text-center">
-                          <span className="text-black/20">—</span>
+                          <span className="text-gray-700">—</span>
                         </td>
                       );
                       return (
-                        <td key={matiere} className="px-2 py-1.5">
-                          <div className={`rounded-lg border px-2 py-1.5 text-center min-h-[38px] flex flex-col items-center justify-center gap-0.5 ${statutCls(ep.statut)}`}>
-                            {ep.candidat_nom ? (
-                              <span className="font-semibold leading-tight truncate max-w-[110px] block">
-                                {ep.candidat_nom} {ep.candidat_prenom?.charAt(0)}.
+                        <td key={matiere} className="px-2 py-1.5 space-y-1">
+                          {eps.map(ep => (
+                            <div key={ep.id} className={`rounded-lg border px-2 py-1.5 text-center min-h-[38px] flex flex-col items-center justify-center gap-0.5 ${statutEpreuveCls(ep.statut)}`}>
+                              {ep.candidat_nom ? (
+                                <span className="font-semibold leading-tight truncate max-w-[130px] block" title={`${ep.candidat_nom} ${ep.candidat_prenom ?? ""}`}>
+                                  {ep.candidat_nom} {ep.candidat_prenom?.charAt(0)}.
+                                </span>
+                              ) : null}
+                              <span className="text-[11px] font-semibold">{EPREUVE_STATUT_LABEL[ep.statut] ?? ep.statut}</span>
+                              <span className="text-[11px]">
+                                {ep.salle_intitule ? <>Salle {ep.salle_intitule}</> : <span className="italic">Salle non assignée</span>}
                               </span>
-                            ) : (
-                              <span className="text-[10px] opacity-50">libre</span>
-                            )}
-                            <span className="text-[9px] opacity-60 uppercase tracking-wide">{ep.statut}</span>
-                            {ep.salle_intitule && (
-                              <span className="text-[9px] opacity-70 font-medium">
-                                {ep.salle_preparation_intitule && (
-                                  <span title="Salle préparation">{ep.salle_preparation_intitule} → </span>
-                                )}
-                                <span title="Salle oral">{ep.salle_intitule}</span>
-                              </span>
-                            )}
-                          </div>
+                            </div>
+                          ))}
                         </td>
                       );
                     })}
@@ -2685,7 +2722,7 @@ function DemiJourneeCard({
       {/* Formulaire ajout créneau */}
       {addOpen && (
         <div className="px-4 py-3 border-t bg-gray-50/60">
-          <p className="text-xs font-semibold text-black/50 mb-2">Nouveau créneau</p>
+          <p className="text-xs font-semibold text-gray-800 mb-2">Nouveau créneau</p>
           <div className="flex items-center gap-2 flex-wrap">
             <select
               value={newMatiere}
@@ -2704,7 +2741,7 @@ function DemiJourneeCard({
               className="text-sm border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-gray-300"
             />
             {newFin ? (
-              <span className="text-xs text-black/40 font-mono">→ {newFin} <span className="text-black/25">({duree} min)</span></span>
+              <span className="text-xs text-gray-700 font-mono">→ {newFin} <span className="text-gray-700">({duree} min)</span></span>
             ) : newMatiere && !duree ? (
               <span className="text-xs text-amber-500">Aucune épreuve de référence — durée inconnue</span>
             ) : null}
@@ -2716,7 +2753,7 @@ function DemiJourneeCard({
               {adding && <Loader2 className="h-3 w-3 animate-spin" />}
               Créer
             </button>
-            <button onClick={() => setAddOpen(false)} className="text-xs text-black/40 hover:text-black/70">
+            <button onClick={() => setAddOpen(false)} className="text-xs text-gray-700 hover:text-black">
               Annuler
             </button>
           </div>
@@ -2861,7 +2898,7 @@ function ApplyForm({
             key={m}
             onClick={() => setMode(m)}
             className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
-              mode === m ? "bg-white shadow-sm text-black" : "text-black/50 hover:text-black/70"
+              mode === m ? "bg-white shadow-sm text-black" : "text-gray-800 hover:text-black"
             }`}
           >
             {m === "single" ? "Une date" : "Plusieurs dates"}
@@ -2882,7 +2919,7 @@ function ApplyForm({
       ) : (
         <div className="space-y-3">
           <div className="rounded-lg border border-black/10 bg-black/[0.02] p-3">
-            <p className="text-xs font-medium text-black/50 uppercase tracking-wide mb-2">Sélectionner une plage</p>
+            <p className="text-xs font-medium text-gray-800 uppercase tracking-wide mb-2">Sélectionner une plage</p>
             <div className="flex items-end gap-2">
               <Field label="Du">
                 <Input type="date" value={rangeFrom} min={dateDebut} max={dateFin} onChange={(e) => setRangeFrom(e.target.value)} />
@@ -2901,14 +2938,14 @@ function ApplyForm({
           </div>
 
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-black/50 uppercase tracking-wide">
+            <span className="text-xs font-medium text-gray-800 uppercase tracking-wide">
               {selectedDates.size} date{selectedDates.size > 1 ? "s" : ""} sélectionnée{selectedDates.size > 1 ? "s" : ""}
             </span>
             <div className="flex gap-3">
-              <button onClick={() => setSelectedDates(new Set(allDates))} className="text-xs text-black/40 hover:text-black/70 underline">
+              <button onClick={() => setSelectedDates(new Set(allDates))} className="text-xs text-gray-700 hover:text-black underline">
                 Tout cocher
               </button>
-              <button onClick={() => setSelectedDates(new Set())} className="text-xs text-black/40 hover:text-black/70 underline">
+              <button onClick={() => setSelectedDates(new Set())} className="text-xs text-gray-700 hover:text-black underline">
                 Tout décocher
               </button>
             </div>
@@ -3058,7 +3095,7 @@ function BlocTimeline({
         {TL_HOURS.map((h) => (
           <div
             key={h}
-            className="absolute right-1 text-[10px] font-mono text-black/25 -translate-y-1/2"
+            className="absolute right-1 text-[10px] font-mono text-gray-700 -translate-y-1/2"
             style={{ top: `${((h * 60 - TL_START) / TL_TOTAL) * 100}%` }}
           >
             {h}h
@@ -3081,7 +3118,7 @@ function BlocTimeline({
           />
         ))}
         <div
-          className="absolute left-1.5 text-[9px] font-medium text-black/25 -translate-y-1/2"
+          className="absolute left-1.5 text-[9px] font-medium text-gray-700 -translate-y-1/2"
           style={{ top: `${((12 * 60 - TL_START) / TL_TOTAL) * 100}%` }}
         >
           midi
@@ -3126,7 +3163,7 @@ function BlocTimeline({
         })}
 
         {blocs.length === 0 && (
-          <div className="flex items-center justify-center h-full text-xs text-black/20">
+          <div className="flex items-center justify-center h-full text-xs text-gray-700">
             Aucun bloc — ajoutez-en un pour commencer
           </div>
         )}
@@ -3222,24 +3259,24 @@ function JourneeTypeEditor({ jt, onRename }: { jt: JourneeType; onRename?: (newN
               <button onClick={saveNom} disabled={savingNom} className="text-xs px-3 py-1 bg-black text-white rounded-lg font-medium disabled:opacity-40">
                 {savingNom ? "…" : "OK"}
               </button>
-              <button onClick={() => { setEditingNom(false); setNomValue(jt.nom); }} className="text-xs text-black/40 hover:text-black/70 px-2 py-1">
+              <button onClick={() => { setEditingNom(false); setNomValue(jt.nom); }} className="text-xs text-gray-700 hover:text-black px-2 py-1">
                 Annuler
               </button>
             </>
           ) : (
             <button
               onClick={() => setEditingNom(true)}
-              className="text-sm font-medium text-black/70 hover:text-black flex items-center gap-1.5 group"
+              className="text-sm font-medium text-gray-900 hover:text-black flex items-center gap-1.5 group"
               title="Modifier le nom"
             >
               {nomValue}
-              <Pencil className="h-3 w-3 text-black/20 group-hover:text-black/50 transition" />
+              <Pencil className="h-3 w-3 text-gray-700 group-hover:text-black transition" />
             </button>
           )}
         </div>
 
         <div className="flex items-center justify-between mb-4">
-          <span className="text-xs font-semibold text-black/40 uppercase tracking-wide">
+          <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
             Blocs ({blocs.length})
           </span>
           <Btn
@@ -3310,7 +3347,7 @@ function JourneeTypeEditor({ jt, onRename }: { jt: JourneeType; onRename?: (newN
         </AnimatePresence>
 
         {blocs.length > 0 && !selectedBloc && !showAdd && (
-          <p className="mt-3 text-xs text-black/25 text-center">
+          <p className="mt-3 text-xs text-gray-700 text-center">
             Cliquez sur un bloc pour le modifier
           </p>
         )}
@@ -3318,7 +3355,7 @@ function JourneeTypeEditor({ jt, onRename }: { jt: JourneeType; onRename?: (newN
 
       {/* ── Panneau droit : Appliquer au planning ── */}
       <div className="w-72 shrink-0 p-5 bg-gray-50/60">
-        <p className="text-xs font-semibold text-black/40 uppercase tracking-wide mb-4">
+        <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-4">
           Appliquer au planning
         </p>
         <div className="space-y-3">
@@ -3370,10 +3407,10 @@ function JourneeTypeEditor({ jt, onRename }: { jt: JourneeType; onRename?: (newN
 
         {selPlanning && (
           <div className="mt-5 pt-4 border-t border-black/5">
-            <p className="text-[10px] text-black/30 font-medium uppercase tracking-wide mb-1">
+            <p className="text-[10px] text-gray-700 font-medium uppercase tracking-wide mb-1">
               Plage du planning
             </p>
-            <p className="text-xs text-black/50">
+            <p className="text-xs text-gray-800">
               {selPlanning.date_debut} → {selPlanning.date_fin}
             </p>
           </div>
@@ -3404,7 +3441,7 @@ function ApplyJourneeTypeToPlanning({ jt, onClose }: { jt: JourneeType; onClose:
 
   if (plannings.length === 0) {
     return (
-      <p className="text-sm text-black/50">
+      <p className="text-sm text-gray-800">
         Aucun planning disponible. Créez-en un dans la section &laquo; Plannings &raquo;.
       </p>
     );
@@ -3488,7 +3525,7 @@ function JourneeTypesSection() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-xl font-semibold">Journées types</h2>
-          <p className="text-sm text-black/40 mt-0.5">
+          <p className="text-sm text-gray-700 mt-0.5">
             Gabarits de génération des créneaux
           </p>
         </div>
@@ -3510,7 +3547,7 @@ function JourneeTypesSection() {
             className={`px-4 py-2 text-sm font-medium rounded-t-lg transition -mb-px border border-b-0 ${
               tab === t
                 ? "bg-white border-black/10 text-black"
-                : "border-transparent text-black/40 hover:text-black/60"
+                : "border-transparent text-gray-700 hover:text-black"
             }`}
           >
             {t === "gabarits" ? "Gabarits" : "Matrice oraux"}
@@ -3521,7 +3558,7 @@ function JourneeTypesSection() {
       {tab === "matrice" ? (
         <InterfaceAdminENSAEPlanning />
       ) : loading ? (
-        <div className="flex justify-center py-16 text-black/30">
+        <div className="flex justify-center py-16 text-gray-700">
           <Spinner />
         </div>
       ) : jts.length === 0 ? (
@@ -3540,7 +3577,7 @@ function JourneeTypesSection() {
                 <div className="flex items-center gap-3">
                   <span className="font-medium">{jt.nom}</span>
 
-                  <span className="text-xs text-black/30">
+                  <span className="text-xs text-gray-700">
                     {jt.duree_defaut_minutes}min &bull; pause{" "}
                     {jt.pause_defaut_minutes}min
                     {jt.preparation_defaut_minutes > 0 && (
@@ -4139,16 +4176,16 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
   const StepPills = () => (
     <div className="flex items-center gap-2 mb-1">
       <button
-        className={`text-[11px] font-bold px-2 py-0.5 rounded-full transition ${step === 1 ? "bg-black text-white" : "border border-black/20 text-black/40 hover:border-black/50"}`}
+        className={`text-[11px] font-bold px-2 py-0.5 rounded-full transition ${step === 1 ? "bg-black text-white" : "border border-black/20 text-gray-700 hover:border-black/50"}`}
         onClick={() => step === 2 && setStep(1)}
       >1</button>
       <button
-        className={`text-xs transition ${step === 1 ? "font-semibold text-black/80" : "text-black/40 hover:text-black/60"}`}
+        className={`text-xs transition ${step === 1 ? "font-semibold text-gray-900" : "text-gray-700 hover:text-black"}`}
         onClick={() => step === 2 && setStep(1)}
       >Paramétrage</button>
-      <span className="text-black/20 text-xs mx-1">→</span>
-      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${step === 2 ? "bg-black text-white" : "border border-black/20 text-black/30"}`}>2</span>
-      <span className={`text-xs ${step === 2 ? "font-semibold text-black/80" : "text-black/30"}`}>Matrice & enregistrement</span>
+      <span className="text-gray-700 text-xs mx-1">→</span>
+      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${step === 2 ? "bg-black text-white" : "border border-black/20 text-gray-700"}`}>2</span>
+      <span className={`text-xs ${step === 2 ? "font-semibold text-gray-900" : "text-gray-700"}`}>Matrice & enregistrement</span>
     </div>
   );
 
@@ -4207,7 +4244,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
               type="button"
               onClick={() => switchMode(m)}
               className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition ${
-                p.mode === m ? "bg-black text-white border-black" : "bg-white text-black/50 border-black/15 hover:border-black/30"
+                p.mode === m ? "bg-black text-white border-black" : "bg-white text-gray-800 border-black/15 hover:border-black/30"
               }`}
             >
               {m === "demi-journee" ? "Demi-journée" : "Journée complète"}
@@ -4240,7 +4277,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                 {/* En-tête du bloc */}
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-black/70">Bloc {idx + 1}</span>
+                    <span className="text-sm font-semibold text-gray-900">Bloc {idx + 1}</span>
                     {p.mode === "demi-journee" ? (
                       <div className="flex items-center gap-1" title="Nature de la demi-journée — déduite de l'heure de début par défaut, forçable pour un bloc « jury » parallèle qui déborde sur midi">
                         {(["MATIN", "APRES_MIDI"] as const).map((t) => (
@@ -4249,7 +4286,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                             type="button"
                             onClick={() => setBloc(idx, "type_demi_journee", t)}
                             className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border transition ${
-                              effectiveDjType(bloc) === t ? "bg-black text-white border-black" : "bg-white text-black/40 border-black/15 hover:border-black/30"
+                              effectiveDjType(bloc) === t ? "bg-black text-white border-black" : "bg-white text-gray-700 border-black/15 hover:border-black/30"
                             }`}
                           >
                             {t === "MATIN" ? "Matin" : "Après-midi"}
@@ -4257,7 +4294,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                         ))}
                       </div>
                     ) : (
-                      <span className="text-xs text-black/40 font-medium">— {blocLabel(bloc.heure_debut, bloc.heure_fin)}</span>
+                      <span className="text-xs text-gray-700 font-medium">— {blocLabel(bloc.heure_debut, bloc.heure_fin)}</span>
                     )}
                   </div>
                   <div className="flex items-center gap-3">
@@ -4269,7 +4306,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                       </span>
                     )}
                     {p.blocs.length > 1 && (
-                      <button onClick={() => removeBloc(idx)} className="text-black/25 hover:text-red-500 transition">
+                      <button onClick={() => removeBloc(idx)} className="text-gray-700 hover:text-red-500 transition">
                         <X className="h-3.5 w-3.5" />
                       </button>
                     )}
@@ -4278,7 +4315,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
 
                 {/* Matières du bloc */}
                 <div className="space-y-1.5">
-                  <p className="text-[11px] font-semibold text-black/40 uppercase tracking-wide">Matières</p>
+                  <p className="text-[11px] font-semibold text-gray-700 uppercase tracking-wide">Matières</p>
                   {activeMatieres.length === 0 ? (
                     <p className="text-xs text-amber-600">Aucune matière active — Paramétrages → Matières.</p>
                   ) : (
@@ -4288,7 +4325,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                         return (
                           <button key={m.id} type="button" onClick={() => toggleBlocMatiere(idx, m.intitule)}
                             className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition ${
-                              checked ? "bg-black text-white border-black" : "bg-white text-black/50 border-black/15 hover:border-black/30"
+                              checked ? "bg-black text-white border-black" : "bg-white text-gray-800 border-black/15 hover:border-black/30"
                             }`}
                           >
                             {m.intitule}
@@ -4306,16 +4343,16 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="bg-white border-b border-black/5">
-                          <th className="text-left px-3 py-1.5 text-black/40 font-medium">Matière</th>
-                          <th className="text-center px-3 py-1.5 text-black/40 font-medium">Oral (min)</th>
-                          <th className="text-center px-3 py-1.5 text-black/40 font-medium">Prépa (min)</th>
-                          <th className="text-center px-3 py-1.5 text-black/40 font-medium">Salles (dédoublement)</th>
+                          <th className="text-left px-3 py-1.5 text-gray-700 font-medium">Matière</th>
+                          <th className="text-center px-3 py-1.5 text-gray-700 font-medium">Oral (min)</th>
+                          <th className="text-center px-3 py-1.5 text-gray-700 font-medium">Prépa (min)</th>
+                          <th className="text-center px-3 py-1.5 text-gray-700 font-medium">Salles (dédoublement)</th>
                         </tr>
                       </thead>
                       <tbody>
                         {bloc.matieres_config.map((mc) => (
                           <tr key={mc.nom} className="border-b border-black/5 last:border-0 bg-white">
-                            <td className="px-3 py-1.5 font-medium text-black/70">{mc.nom}</td>
+                            <td className="px-3 py-1.5 font-medium text-gray-900">{mc.nom}</td>
                             <td className="px-2 py-1 text-center">
                               <input type="number" value={mc.duree_minutes}
                                 onChange={(e) => setBlocMatiereConfig(idx, mc.nom, "duree_minutes", Math.max(5, Number(e.target.value)))}
@@ -4483,7 +4520,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
 
         <button
           onClick={addBloc}
-          className="w-full py-2 rounded-xl border border-dashed border-black/20 text-xs text-black/40 hover:border-black/40 hover:text-black/60 transition flex items-center justify-center gap-1.5"
+          className="w-full py-2 rounded-xl border border-dashed border-black/20 text-xs text-gray-700 hover:border-black/40 hover:text-black transition flex items-center justify-center gap-1.5"
         >
           <Plus className="h-3.5 w-3.5" /> Ajouter un bloc{isJC ? " (jury parallèle)" : ""}
         </button>
@@ -4525,8 +4562,8 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
       <StepPills />
 
       {/* Récapitulatif */}
-      <div className="rounded-lg bg-gray-50 border border-black/8 px-4 py-2.5 text-xs text-black/60 flex flex-wrap gap-x-5 gap-y-1">
-        <span className="font-semibold text-black/80">{p.nom}</span>
+      <div className="rounded-lg bg-gray-50 border border-black/8 px-4 py-2.5 text-xs text-gray-800 flex flex-wrap gap-x-5 gap-y-1">
+        <span className="font-semibold text-gray-900">{p.nom}</span>
         <span>{p.blocs.map((b, i) => b.matieres_config.length ? `Bloc ${i+1}: ${b.matieres_config.map(mc => mc.nom).join(", ")}` : null).filter(Boolean).join(" · ")}</span>
         {p.blocs.map((bloc, idx) => {
           const blocRows = matrix.filter(r => r.bloc_idx === idx);
@@ -4544,7 +4581,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
           const bonusTotal = p.blocs.reduce((s, b) => s + (b.bonus_slots ?? 0), 0);
           return (
             <>
-              <span className="font-medium text-black/70">{totalCandidats} créneaux · {capacite} candidat(s)</span>
+              <span className="font-medium text-gray-900">{totalCandidats} créneaux · {capacite} candidat(s)</span>
               {bonusTotal > 0 && (
                 <span className="text-amber-600 font-medium">({regularTotal} oraux + {bonusTotal} bonus)</span>
               )}
@@ -4555,7 +4592,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
 
       {/* Barre d'outils matrice */}
       <div className="flex items-center justify-between">
-        <p className="text-xs text-black/40">
+        <p className="text-xs text-gray-700">
           Chaque triplet T<em>k</em> = un candidat passant {maxBlocN} épreuve(s) à des horaires décalés.
           {p.salles_par_matiere > 1 && <> · {capacite} candidats au total.</>}
         </p>
@@ -4563,14 +4600,14 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
           type="button"
           onClick={() => { setEditMode(e => !e); setDragSrc(null); setDragOver(null); }}
           className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition ${
-            editMode ? "bg-black text-white border-black" : "bg-white text-black/50 border-black/15 hover:border-black/30"
+            editMode ? "bg-black text-white border-black" : "bg-white text-gray-800 border-black/15 hover:border-black/30"
           }`}
         >
           {editMode ? "✓ Mode édition actif" : "Modifier manuellement"}
         </button>
       </div>
       {editMode && (
-        <p className="text-[11px] text-black/30 -mt-2">
+        <p className="text-[11px] text-gray-700 -mt-2">
           Glissez un triplet vers une autre cellule pour l'échanger.
         </p>
       )}
@@ -4584,13 +4621,13 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
         <table className="w-full text-xs border-collapse">
           <thead>
             <tr className="bg-gray-50">
-              <th className="text-left px-3 py-2 text-black/40 font-medium border-b border-black/8 whitespace-nowrap">Dép. prépa</th>
-              <th className="text-left px-3 py-2 text-black/40 font-medium border-b border-black/8 whitespace-nowrap">Dép. exam</th>
-              <th className="text-left px-3 py-2 text-black/40 font-medium border-b border-black/8 whitespace-nowrap">Fin exam</th>
+              <th className="text-left px-3 py-2 text-gray-700 font-medium border-b border-black/8 whitespace-nowrap">Dép. prépa</th>
+              <th className="text-left px-3 py-2 text-gray-700 font-medium border-b border-black/8 whitespace-nowrap">Dép. exam</th>
+              <th className="text-left px-3 py-2 text-gray-700 font-medium border-b border-black/8 whitespace-nowrap">Fin exam</th>
               {allMC.map((mc) => (
-                <th key={mc.nom} className="text-center px-3 py-2 font-semibold border-b border-black/8 text-black/70 whitespace-nowrap">
+                <th key={mc.nom} className="text-center px-3 py-2 font-semibold border-b border-black/8 text-gray-900 whitespace-nowrap">
                   {mc.nom}
-                  <span className="block text-[10px] font-normal text-black/35">{mc.duree_minutes}' · {mc.preparation_minutes}' prépa</span>
+                  <span className="block text-[10px] font-normal text-gray-700">{mc.duree_minutes}' · {mc.preparation_minutes}' prépa</span>
                 </th>
               ))}
             </tr>
@@ -4603,7 +4640,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                 <React.Fragment key={i}>
                   {isNewBloc && (
                     <tr>
-                      <td colSpan={totalCols} className="px-3 py-1.5 bg-black/[0.04] text-[11px] font-semibold text-black/50 uppercase tracking-wide">
+                      <td colSpan={totalCols} className="px-3 py-1.5 bg-black/[0.04] text-[11px] font-semibold text-gray-800 uppercase tracking-wide">
                         Bloc {row.bloc_idx + 1} — {blocLabel(p.blocs[row.bloc_idx].heure_debut, p.blocs[row.bloc_idx].heure_fin)} · {p.blocs[row.bloc_idx].heure_debut} → {matrix.filter(r => r.bloc_idx === row.bloc_idx && !r.isPause).slice(-1)[0]?.fin_exam ?? p.blocs[row.bloc_idx].heure_fin}
                       </td>
                     </tr>
@@ -4617,13 +4654,13 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                     </tr>
                   ) : (
                   <tr className={`border-b last:border-0 ${row.isBonus ? "border-amber-100 bg-amber-50/50 hover:bg-amber-50" : "border-black/5 hover:bg-black/[0.015]"}`}>
-                    <td className={`px-3 py-1.5 font-mono ${row.isBonus ? "text-amber-400" : "text-black/40"}`}>{row.deb_prepa}</td>
-                    <td className={`px-3 py-1.5 font-mono font-medium ${row.isBonus ? "text-amber-700" : "text-black/80"}`}>{row.deb_exam}</td>
-                    <td className={`px-3 py-1.5 font-mono ${row.isBonus ? "text-amber-400" : "text-black/50"}`}>{row.fin_exam}</td>
+                    <td className={`px-3 py-1.5 font-mono ${row.isBonus ? "text-amber-400" : "text-gray-700"}`}>{row.deb_prepa}</td>
+                    <td className={`px-3 py-1.5 font-mono font-medium ${row.isBonus ? "text-amber-700" : "text-gray-900"}`}>{row.deb_exam}</td>
+                    <td className={`px-3 py-1.5 font-mono ${row.isBonus ? "text-amber-400" : "text-gray-800"}`}>{row.fin_exam}</td>
                     {allMC.map((mc, globalJ) => {
                       const localJ = blocMatieres.findIndex(c => c.nom === mc.nom);
                       if (localJ === -1) {
-                        return <td key={globalJ} className="px-3 py-1 text-center text-black/15">—</td>;
+                        return <td key={globalJ} className="px-3 py-1 text-center text-gray-700">—</td>;
                       }
                       const k = row.candidates[localJ];
                       const isOver = dragOver?.rowIdx === i && dragOver?.matIdx === localJ;
@@ -4660,7 +4697,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                             <span
                               key={k2}
                               title="Salle parallèle (dédoublement)"
-                              className="inline-block ml-1 px-2 py-0.5 rounded-full font-semibold text-[11px] text-gray-500 bg-black/[0.03] border border-dashed border-black/15"
+                              className="inline-block ml-1 px-2 py-0.5 rounded-full font-semibold text-[11px] text-gray-700 bg-black/[0.03] border border-dashed border-black/15"
                             >
                               T{k2 + 1}
                             </span>
@@ -4709,7 +4746,7 @@ function MatieresSelector({
     onChange(selected.includes(m) ? selected.filter((x) => x !== m) : [...selected, m]);
 
   if (matieres.length === 0)
-    return <p className="text-xs text-black/40 italic">Aucune matière configurée — ajoutez-en dans Paramétrages → Matières.</p>;
+    return <p className="text-xs text-gray-700 italic">Aucune matière configurée — ajoutez-en dans Paramétrages → Matières.</p>;
 
   return (
     <div className="flex flex-wrap gap-2">
@@ -4723,7 +4760,7 @@ function MatieresSelector({
             className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
               active
                 ? "bg-black text-white border-black"
-                : "bg-white text-black/50 border-black/20 hover:border-black/40 hover:text-black/70"
+                : "bg-white text-gray-800 border-black/20 hover:border-black/40 hover:text-black"
             }`}
           >
             {m.intitule}
@@ -4820,7 +4857,7 @@ function AddBlocForm({
 
   return (
     <div className="space-y-3">
-      <p className="text-xs font-semibold text-black/40 uppercase tracking-wide mb-2">
+      <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
         Nouveau bloc
       </p>
       <div className="grid grid-cols-2 gap-3">
@@ -4916,7 +4953,7 @@ function AddBlocForm({
             small
             variant="ghost"
           />
-          <p className="text-[11px] text-black/35">
+          <p className="text-[11px] text-gray-700">
             Recommandé : garde la distinction Matin/Après-midi valide, avec ces matières.
           </p>
         </div>
@@ -4994,13 +5031,13 @@ function EditBlocForm({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between mb-1">
-        <p className="text-xs font-semibold text-black/40 uppercase tracking-wide">
+        <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
           Modifier le bloc{" "}
           <span className={`px-1.5 py-0.5 rounded-full ${bloc.type_bloc === "GENERATION" ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-600"}`}>
             {bloc.type_bloc}
           </span>
         </p>
-        <button onClick={onCancel} className="p-1 hover:text-black/60 text-black/20 transition">
+        <button onClick={onCancel} className="p-1 hover:text-black text-gray-700 transition">
           <X className="h-4 w-4" />
         </button>
       </div>
@@ -5115,7 +5152,7 @@ function CandidatsSection() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-xl font-semibold">Candidats</h2>
-          <p className="text-sm text-black/40 mt-0.5">Gérez les candidats et leurs inscriptions</p>
+          <p className="text-sm text-gray-700 mt-0.5">Gérez les candidats et leurs inscriptions</p>
         </div>
         <div className="flex items-center gap-2">
           <Btn
@@ -5173,7 +5210,7 @@ function CandidatsSection() {
                 className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition ${
                   tab === t
                     ? "border-[#C62828] text-[#C62828]"
-                    : "border-transparent text-black/50 hover:text-black"
+                    : "border-transparent text-gray-800 hover:text-black"
                 }`}
               >
                 {t === "liste" ? "Liste"
@@ -5204,8 +5241,8 @@ function CandidatsSection() {
                         filterProfil === p
                           ? p === "HGG" ? "bg-purple-100 text-purple-700 border-purple-300"
                             : p === "ESH" ? "bg-emerald-100 text-emerald-700 border-emerald-300"
-                            : "bg-black/10 text-black/70 border-black/20"
-                          : "bg-white text-black/40 border-black/10 hover:bg-black/[0.03]"
+                            : "bg-black/10 text-gray-900 border-black/20"
+                          : "bg-white text-gray-700 border-black/10 hover:bg-black/[0.03]"
                       }`}
                     >
                       {p === "" ? "Tous" : p}
@@ -5214,7 +5251,7 @@ function CandidatsSection() {
                 </div>
               </div>
               {loading ? (
-                <div className="flex justify-center py-16 text-black/30"><Spinner /></div>
+                <div className="flex justify-center py-16 text-gray-700"><Spinner /></div>
               ) : error ? (
                 <ErrorMsg msg={error} />
               ) : candidats.length === 0 ? (
@@ -5225,7 +5262,7 @@ function CandidatsSection() {
                     <thead>
                       <tr className="bg-[#F5F5F5] text-left">
                         {["Nom", "Prénom", "Email", "Profil", "Statut", ""].map((h) => (
-                          <th key={h} className="px-5 py-3.5 text-xs font-semibold text-black/50 tracking-wide">{h}</th>
+                          <th key={h} className="px-5 py-3.5 text-xs font-semibold text-gray-800 tracking-wide">{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -5248,7 +5285,7 @@ function CandidatsSection() {
                         >
                           <td className="px-5 py-3.5 font-medium">{c.nom}</td>
                           <td className="px-5 py-3.5">{c.prenom}</td>
-                          <td className="px-5 py-3.5 text-black/50">{c.email}</td>
+                          <td className="px-5 py-3.5 text-gray-800">{c.email}</td>
                           <td className="px-5 py-3.5">
                             {(() => {
                               const p = c.profil?.toUpperCase() ||
@@ -5258,7 +5295,7 @@ function CandidatsSection() {
                                 ? <span className="text-xs font-semibold px-2 py-0.5 rounded bg-purple-100 text-purple-700">HGG</span>
                                 : p === "ESH"
                                 ? <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">ESH</span>
-                                : <span className="text-xs text-black/25">—</span>;
+                                : <span className="text-xs text-gray-700">—</span>;
                             })()}
                           </td>
                           <td className="px-5 py-3.5"><StatutBadge statut={c.statut} /></td>
@@ -5553,9 +5590,9 @@ function CandidatGestionDrawer({
           <div>
             {fiche ? (
               <>
-                {fiche.civilite && <p className="text-xs text-black/40">{fiche.civilite}</p>}
+                {fiche.civilite && <p className="text-xs text-gray-700">{fiche.civilite}</p>}
                 <h3 className="font-bold text-base leading-tight">{fiche.nom} {fiche.prenom}</h3>
-                {fiche.code_candidat && <p className="text-xs font-mono text-black/40 mt-0.5">{fiche.code_candidat}</p>}
+                {fiche.code_candidat && <p className="text-xs font-mono text-gray-700 mt-0.5">{fiche.code_candidat}</p>}
               </>
             ) : (
               <div className="h-5 w-40 bg-black/5 rounded animate-pulse" />
@@ -5576,17 +5613,17 @@ function CandidatGestionDrawer({
               <div className="p-4 space-y-4">
                 {/* Identity */}
                 <div>
-                  <p className="text-[10px] font-semibold text-black/40 uppercase tracking-wide mb-2">Identité</p>
+                  <p className="text-[10px] font-semibold text-gray-700 uppercase tracking-wide mb-2">Identité</p>
                   <dl className="space-y-1.5 text-xs">
-                    <div className="flex gap-1.5 flex-wrap"><dt className="text-black/40 w-12 shrink-0">Email</dt><dd className="break-all min-w-0">{fiche.email}</dd></div>
-                    {fiche.tel_portable && <div className="flex gap-1.5"><dt className="text-black/40 w-12 shrink-0">Tél.</dt><dd>{fiche.tel_portable}</dd></div>}
-                    {fiche.profil && <div className="flex gap-1.5"><dt className="text-black/40 w-12 shrink-0">Profil</dt><dd className="font-medium text-blue-700">{fiche.profil}</dd></div>}
-                    {fiche.classe && <div className="flex gap-1.5"><dt className="text-black/40 w-12 shrink-0">Classe</dt><dd>{fiche.classe}</dd></div>}
-                    {fiche.etablissement && <div className="flex gap-1.5 flex-wrap"><dt className="text-black/40 w-12 shrink-0">Établ.</dt><dd className="break-words min-w-0">{fiche.etablissement}</dd></div>}
-                    {fiche.qualite && <div className="flex gap-1.5"><dt className="text-black/40 w-12 shrink-0">Qualité</dt><dd>{fiche.qualite}</dd></div>}
-                    {fiche.numero_ine && <div className="flex gap-1.5"><dt className="text-black/40 w-12 shrink-0">INE</dt><dd className="font-mono">{fiche.numero_ine}</dd></div>}
+                    <div className="flex gap-1.5 flex-wrap"><dt className="text-gray-700 w-12 shrink-0">Email</dt><dd className="break-all min-w-0">{fiche.email}</dd></div>
+                    {fiche.tel_portable && <div className="flex gap-1.5"><dt className="text-gray-700 w-12 shrink-0">Tél.</dt><dd>{fiche.tel_portable}</dd></div>}
+                    {fiche.profil && <div className="flex gap-1.5"><dt className="text-gray-700 w-12 shrink-0">Profil</dt><dd className="font-medium text-blue-700">{fiche.profil}</dd></div>}
+                    {fiche.classe && <div className="flex gap-1.5"><dt className="text-gray-700 w-12 shrink-0">Classe</dt><dd>{fiche.classe}</dd></div>}
+                    {fiche.etablissement && <div className="flex gap-1.5 flex-wrap"><dt className="text-gray-700 w-12 shrink-0">Établ.</dt><dd className="break-words min-w-0">{fiche.etablissement}</dd></div>}
+                    {fiche.qualite && <div className="flex gap-1.5"><dt className="text-gray-700 w-12 shrink-0">Qualité</dt><dd>{fiche.qualite}</dd></div>}
+                    {fiche.numero_ine && <div className="flex gap-1.5"><dt className="text-gray-700 w-12 shrink-0">INE</dt><dd className="font-mono">{fiche.numero_ine}</dd></div>}
                     {fiche.handicape !== null && fiche.handicape !== undefined && (
-                      <div className="flex gap-1.5"><dt className="text-black/40 w-12 shrink-0">Handicap</dt>
+                      <div className="flex gap-1.5"><dt className="text-gray-700 w-12 shrink-0">Handicap</dt>
                         <dd className={fiche.handicape ? "text-amber-700 font-semibold" : ""}>{fiche.handicape ? "Oui" : "Non"}</dd>
                       </div>
                     )}
@@ -5596,7 +5633,7 @@ function CandidatGestionDrawer({
                 {/* Liste d'attente */}
                 {fiche.liste_attente.length > 0 && (
                   <div>
-                    <p className="text-[10px] font-semibold text-black/40 uppercase tracking-wide mb-2">Liste d&apos;attente</p>
+                    <p className="text-[10px] font-semibold text-gray-700 uppercase tracking-wide mb-2">Liste d&apos;attente</p>
                     <div className="flex flex-col gap-1">
                       {fiche.liste_attente.map(la => (
                         <span key={la.date} className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded">
@@ -5627,12 +5664,12 @@ function CandidatGestionDrawer({
                       ].map(({ label, val }) => (
                         <div key={label} className="flex items-center justify-between gap-1">
                           <div>
-                            <p className="text-[9px] text-black/40 uppercase">{label}</p>
+                            <p className="text-[9px] text-gray-700 uppercase">{label}</p>
                             <p className="text-xs font-mono font-medium truncate max-w-[100px]">{val}</p>
                           </div>
                           <button
                             onClick={() => { const el = document.createElement('textarea'); el.value = val; document.body.appendChild(el); el.select(); document.execCommand('copy'); document.body.removeChild(el); }}
-                            className="text-black/30 hover:text-[#C62828] transition shrink-0"
+                            className="text-gray-700 hover:text-[#C62828] transition shrink-0"
                           >
                             <Copy className="h-3 w-3" />
                           </button>
@@ -5647,7 +5684,7 @@ function CandidatGestionDrawer({
 
           {/* Right: inscription + triplets */}
           <div className="flex-1 overflow-y-auto p-5 space-y-4 min-w-0">
-            <p className="text-sm font-bold text-black/70 uppercase tracking-wide">Inscription aux oraux</p>
+            <p className="text-sm font-bold text-gray-900 uppercase tracking-wide">Inscription aux oraux</p>
 
             {/* Inscription courante */}
             {fiche?.inscription ? (
@@ -5657,9 +5694,9 @@ function CandidatGestionDrawer({
                   <table className="w-full">
                     <thead>
                       <tr className="bg-gray-50 text-left">
-                        <th className="px-3 py-2 text-black/40 font-semibold">Jour</th>
+                        <th className="px-3 py-2 text-gray-700 font-semibold">Jour</th>
                         {fiche.inscription.epreuves.map(e => (
-                          <th key={e.id} className="px-3 py-2 text-black/40 font-semibold">{e.matiere}</th>
+                          <th key={e.id} className="px-3 py-2 text-gray-700 font-semibold">{e.matiere}</th>
                         ))}
                       </tr>
                     </thead>
@@ -5698,7 +5735,7 @@ function CandidatGestionDrawer({
                 </div>
               </div>
             ) : fiche ? (
-              <div className="rounded-xl border border-dashed bg-gray-50 p-4 text-xs text-black/40 text-center">
+              <div className="rounded-xl border border-dashed bg-gray-50 p-4 text-xs text-gray-700 text-center">
                 Non inscrit(e) à ce jour
               </div>
             ) : null}
@@ -5706,12 +5743,12 @@ function CandidatGestionDrawer({
             {/* Triplets disponibles / Assignation libre */}
             <div className="rounded-xl border bg-white shadow-sm p-4">
               <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-semibold text-black/50">
+                <p className="text-xs font-semibold text-gray-800">
                   {modeLibre ? "Assignation libre" : "Créneaux disponibles (rotation N²)"}
                 </p>
                 <button
                   onClick={() => { setModeLibre(o => !o); setLibresDate(""); setLibresData({}); setSelection({}); }}
-                  className={`text-[10px] px-2.5 py-1 rounded-lg border transition ${modeLibre ? "bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100" : "bg-gray-50 text-black/50 border-gray-200 hover:bg-gray-100"}`}
+                  className={`text-[10px] px-2.5 py-1 rounded-lg border transition ${modeLibre ? "bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100" : "bg-gray-50 text-gray-800 border-gray-200 hover:bg-gray-100"}`}
                 >
                   {modeLibre ? "← Rotation N²" : "Assignation libre →"}
                 </button>
@@ -5719,22 +5756,22 @@ function CandidatGestionDrawer({
 
               {!modeLibre ? (
                 Object.keys(tripletsByDate).length === 0 ? (
-                  <p className="text-xs text-black/40">Aucun créneau disponible</p>
+                  <p className="text-xs text-gray-700">Aucun créneau disponible</p>
                 ) : (
                   <div className="space-y-4">
                     {Object.entries(tripletsByDate).map(([date, trips]) => {
                       const allMatieres = [...new Set(trips.flatMap(t => t.epreuves.map(e => e.matiere)))].sort();
                       return (
                         <div key={date}>
-                          <p className="text-xs font-semibold text-black/50 mb-2 capitalize">{fmt_date(date)}</p>
+                          <p className="text-xs font-semibold text-gray-800 mb-2 capitalize">{fmt_date(date)}</p>
                           <div className="rounded-lg border overflow-hidden">
                             <div className="overflow-x-auto">
                             <table className="w-full text-xs">
                               <thead>
                                 <tr className="bg-gray-50 text-left">
-                                  <th className="px-3 py-2 text-black/40 font-semibold">Heure</th>
+                                  <th className="px-3 py-2 text-gray-700 font-semibold">Heure</th>
                                   {allMatieres.map(m => (
-                                    <th key={m} className="px-3 py-2 text-black/40 font-semibold">{m}</th>
+                                    <th key={m} className="px-3 py-2 text-gray-700 font-semibold">{m}</th>
                                   ))}
                                   <th className="px-3 py-2"></th>
                                 </tr>
@@ -5779,23 +5816,23 @@ function CandidatGestionDrawer({
                 /* Mode assignation libre */
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
-                    <label className="text-xs text-black/50 shrink-0">Date</label>
+                    <label className="text-xs text-gray-800 shrink-0">Date</label>
                     <input
                       type="date"
                       value={libresDate}
                       onChange={(e) => { setLibresDate(e.target.value); loadLibres(e.target.value); }}
                       className="text-xs border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-orange-200"
                     />
-                    {loadingLibres && <Loader2 className="h-3 w-3 animate-spin text-black/30" />}
+                    {loadingLibres && <Loader2 className="h-3 w-3 animate-spin text-gray-700" />}
                   </div>
 
                   {libresDate && Object.keys(libresData).length === 0 && !loadingLibres && (
-                    <p className="text-xs text-black/40">Aucun créneau libre pour cette date.</p>
+                    <p className="text-xs text-gray-700">Aucun créneau libre pour cette date.</p>
                   )}
 
                   {Object.keys(libresData).length > 0 && (
                     <div className="space-y-2">
-                      <p className="text-[10px] text-black/40">Choisir un créneau par matière (★ = préréservé)</p>
+                      <p className="text-[10px] text-gray-700">Choisir un créneau par matière (★ = préréservé)</p>
                       {Object.entries(libresData).map(([matiere, eps]) => (
                         <div key={matiere} className="flex items-center gap-2">
                           <span className="text-xs font-semibold w-24 shrink-0 truncate" title={matiere}>{matiere}</span>
@@ -5907,12 +5944,12 @@ function CompactageTab({
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h3 className="text-sm font-semibold">Compactage du planning</h3>
-          <p className="text-xs text-black/40 mt-0.5">
+          <p className="text-xs text-gray-700 mt-0.5">
             Visualisez les candidats inscrits par journée et réaffectez-les pour combler les trous créés par des absences.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-xs text-black/50 shrink-0">Journée :</label>
+          <label className="text-xs text-gray-800 shrink-0">Journée :</label>
           <input
             type="date"
             value={selectedDate}
@@ -5950,9 +5987,9 @@ function CompactageTab({
             />
           ) : (
             <>
-              <p className="text-xs text-black/40">
+              <p className="text-xs text-gray-700">
                 {inscrits.length} candidat(s) inscrit(s) le{" "}
-                <span className="font-medium text-black/60 capitalize">{fmt_date(selectedDate)}</span>
+                <span className="font-medium text-gray-800 capitalize">{fmt_date(selectedDate)}</span>
                 {freeTriplets.length > 0 && (
                   <span className="ml-1 text-amber-600">— {freeTriplets.length} triplet(s) libre(s) à boucher</span>
                 )}
@@ -5962,11 +5999,11 @@ function CompactageTab({
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-50 text-left border-b">
-                      <th className="px-4 py-3 text-xs font-semibold text-black/40">Candidat</th>
+                      <th className="px-4 py-3 text-xs font-semibold text-gray-700">Candidat</th>
                       {allMatieres.map(m => (
-                        <th key={m} className="px-4 py-3 text-xs font-semibold text-black/40">{m}</th>
+                        <th key={m} className="px-4 py-3 text-xs font-semibold text-gray-700">{m}</th>
                       ))}
-                      <th className="px-4 py-3 text-xs font-semibold text-black/40"></th>
+                      <th className="px-4 py-3 text-xs font-semibold text-gray-700"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -5998,7 +6035,7 @@ function CompactageTab({
                               )}
                             </div>
                             {c.candidat_code && (
-                              <div className="text-xs font-mono text-black/30">{c.candidat_code}</div>
+                              <div className="text-xs font-mono text-gray-700">{c.candidat_code}</div>
                             )}
                           </td>
                           {allMatieres.map(m => {
@@ -6009,7 +6046,7 @@ function CompactageTab({
                               <td key={m} className="px-4 py-3 text-xs">
                                 {ep ? (
                                   <div className="flex items-center gap-1.5">
-                                    <span className={`font-mono ${isAbsent ? "line-through text-red-300" : "text-black/60"}`}>
+                                    <span className={`font-mono ${isAbsent ? "line-through text-red-300" : "text-gray-800"}`}>
                                       {ep.heure_debut}
                                     </span>
                                     {isAbsent ? (
@@ -6026,14 +6063,14 @@ function CompactageTab({
                                         onClick={() => toggleAbsent(c.candidat_id, ep)}
                                         disabled={isBusy}
                                         title="Marquer absent sur cette épreuve"
-                                        className="text-[10px] px-1.5 py-0.5 rounded border border-black/15 text-black/30 hover:border-red-300 hover:text-red-500 hover:bg-red-50 transition opacity-0 group-hover:opacity-100 disabled:opacity-40"
+                                        className="text-[10px] px-1.5 py-0.5 rounded border border-black/15 text-gray-700 hover:border-red-300 hover:text-red-500 hover:bg-red-50 transition opacity-0 group-hover:opacity-100 disabled:opacity-40"
                                       >
                                         {isBusy ? "…" : "absent"}
                                       </button>
                                     )}
                                   </div>
                                 ) : (
-                                  <span className="text-black/20">—</span>
+                                  <span className="text-gray-700">—</span>
                                 )}
                               </td>
                             );
@@ -6058,7 +6095,7 @@ function CompactageTab({
               </div>
 
               {/* Legend */}
-              <p className="text-[11px] text-black/30 flex items-center gap-1.5">
+              <p className="text-[11px] text-gray-700 flex items-center gap-1.5">
                 <span className="inline-block w-3 h-3 bg-amber-100 border border-amber-300 rounded-sm" />
                 Le bouton <strong>⚠ Réaffecter</strong> indique que ce candidat occupe un créneau dont l&apos;heure est aussi libre — potentiellement réaffectable.
               </p>
@@ -6146,7 +6183,7 @@ function ListeAttenteTab({ planningId }: { planningId: number }) {
     return !q || `${c.nom} ${c.prenom} ${c.email} ${c.code_candidat ?? ""}`.toLowerCase().includes(q);
   });
 
-  if (loading) return <div className="flex justify-center py-16 text-black/30"><Spinner /></div>;
+  if (loading) return <div className="flex justify-center py-16 text-gray-700"><Spinner /></div>;
 
   if (liste.length === 0) {
     return (
@@ -6181,25 +6218,25 @@ function ListeAttenteTab({ planningId }: { planningId: number }) {
             >
               <div className="font-medium truncate">{c.nom} {c.prenom}</div>
               <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-                {c.code_candidat && <span className="font-mono text-black/30">{c.code_candidat}</span>}
+                {c.code_candidat && <span className="font-mono text-gray-700">{c.code_candidat}</span>}
                 {c.profil && <span className="bg-blue-100 text-blue-700 px-1 rounded text-[10px]">{c.profil}</span>}
                 <span className="bg-amber-100 text-amber-700 px-1 rounded text-[10px]">{c.dates.length} date(s)</span>
               </div>
-              <div className="text-[10px] text-black/30 mt-0.5">depuis le {fmt_datetime(c.premier_enregistrement)}</div>
+              <div className="text-[10px] text-gray-700 mt-0.5">depuis le {fmt_datetime(c.premier_enregistrement)}</div>
             </button>
           ))}
           {filtered.length === 0 && (
-            <p className="p-4 text-xs text-black/30 text-center">Aucun résultat</p>
+            <p className="p-4 text-xs text-gray-700 text-center">Aucun résultat</p>
           )}
         </div>
-        <div className="px-3 py-2 border-t bg-black/[0.02] text-[10px] text-black/40">
+        <div className="px-3 py-2 border-t bg-black/[0.02] text-[10px] text-gray-700">
           {liste.length} candidat(s) en liste d&apos;attente
         </div>
       </div>
 
       {/* ── Zone principale ── */}
       {!selected ? (
-        <div className="flex-1 flex items-center justify-center text-sm text-black/30">
+        <div className="flex-1 flex items-center justify-center text-sm text-gray-700">
           Sélectionnez un candidat pour voir ses disponibilités et l&apos;inscrire
         </div>
       ) : (
@@ -6207,11 +6244,11 @@ function ListeAttenteTab({ planningId }: { planningId: number }) {
           {/* En-tête candidat */}
           <div className="rounded-xl border bg-white shadow-sm p-4 flex items-start justify-between">
             <div>
-              {selected.civilite && <p className="text-xs text-black/40">{selected.civilite}</p>}
+              {selected.civilite && <p className="text-xs text-gray-700">{selected.civilite}</p>}
               <h3 className="text-base font-bold leading-tight">{selected.nom} {selected.prenom}</h3>
-              <p className="text-xs text-black/50 mt-0.5">{selected.email}</p>
+              <p className="text-xs text-gray-800 mt-0.5">{selected.email}</p>
               {selected.code_candidat && (
-                <p className="text-xs font-mono text-black/30 mt-0.5">{selected.code_candidat}</p>
+                <p className="text-xs font-mono text-gray-700 mt-0.5">{selected.code_candidat}</p>
               )}
             </div>
             <div className="flex flex-col items-end gap-1">
@@ -6226,7 +6263,7 @@ function ListeAttenteTab({ planningId }: { planningId: number }) {
 
           {/* Dates disponibles */}
           <div className="rounded-xl border bg-white shadow-sm p-4">
-            <p className="text-xs font-semibold text-black/50 mb-2">
+            <p className="text-xs font-semibold text-gray-800 mb-2">
               Journées pour lesquelles {selected.prenom} a indiqué des disponibilités
             </p>
             <div className="flex flex-wrap gap-2">
@@ -6238,7 +6275,7 @@ function ListeAttenteTab({ planningId }: { planningId: number }) {
                     className={`text-xs px-2.5 py-1 rounded-lg border font-medium ${
                       hasTriplets
                         ? "bg-green-50 text-green-700 border-green-200"
-                        : "bg-gray-50 text-gray-400 border-gray-200"
+                        : "bg-gray-50 text-gray-700 border-gray-200"
                     }`}
                   >
                     {new Date(d.date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "long" })}
@@ -6252,12 +6289,12 @@ function ListeAttenteTab({ planningId }: { planningId: number }) {
 
           {/* Créneaux disponibles */}
           {Object.keys(tripletsByDate).length === 0 ? (
-            <div className="rounded-xl border border-dashed bg-gray-50 p-6 text-sm text-black/40 text-center">
+            <div className="rounded-xl border border-dashed bg-gray-50 p-6 text-sm text-gray-700 text-center">
               Aucun créneau disponible sur les journées indiquées par ce candidat
             </div>
           ) : (
             <div className="space-y-4">
-              <p className="text-xs font-semibold text-black/50">
+              <p className="text-xs font-semibold text-gray-800">
                 Créneaux disponibles sur les journées de disponibilité
               </p>
               {Object.entries(tripletsByDate).map(([date, trips]) => {
@@ -6271,9 +6308,9 @@ function ListeAttenteTab({ planningId }: { planningId: number }) {
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="text-left border-b">
-                          <th className="px-4 py-2 text-black/40 font-semibold">Heure</th>
+                          <th className="px-4 py-2 text-gray-700 font-semibold">Heure</th>
                           {allMatieres.map(m => (
-                            <th key={m} className="px-4 py-2 text-black/40 font-semibold">{m}</th>
+                            <th key={m} className="px-4 py-2 text-gray-700 font-semibold">{m}</th>
                           ))}
                           <th className="px-4 py-2"></th>
                         </tr>
@@ -6425,17 +6462,17 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
             >
               <div className="font-medium truncate">{c.nom} {c.prenom}</div>
               <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-                {c.code_candidat && <span className="font-mono text-black/30">{c.code_candidat}</span>}
+                {c.code_candidat && <span className="font-mono text-gray-700">{c.code_candidat}</span>}
                 {c.is_inscrit && <span className="bg-green-100 text-green-700 px-1 py-0 rounded text-[10px]">Inscrit</span>}
                 {c.is_liste_attente && <span className="bg-amber-100 text-amber-700 px-1 py-0 rounded text-[10px]">L.A.</span>}
               </div>
             </button>
           ))}
           {filtered.length === 0 && (
-            <p className="p-4 text-xs text-black/30 text-center">Aucun candidat</p>
+            <p className="p-4 text-xs text-gray-700 text-center">Aucun candidat</p>
           )}
         </div>
-        <div className="px-3 py-2 border-t bg-black/[0.02] text-[10px] text-black/40 flex justify-between">
+        <div className="px-3 py-2 border-t bg-black/[0.02] text-[10px] text-gray-700 flex justify-between">
           <span>{liste.filter(c => c.is_inscrit).length} inscrit(s)</span>
           <span>{liste.filter(c => c.is_liste_attente).length} en L.A.</span>
         </div>
@@ -6443,7 +6480,7 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
 
       {/* ── Zone principale ── */}
       {!selectedId || !fiche ? (
-        <div className="flex-1 flex items-center justify-center text-sm text-black/30">
+        <div className="flex-1 flex items-center justify-center text-sm text-gray-700">
           Sélectionnez un candidat dans la liste
         </div>
       ) : (
@@ -6453,7 +6490,7 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
             <div className="rounded-xl border bg-white shadow-sm p-5">
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  {fiche.civilite && <p className="text-xs text-black/40">{fiche.civilite}</p>}
+                  {fiche.civilite && <p className="text-xs text-gray-700">{fiche.civilite}</p>}
                   <h3 className="text-base font-bold leading-tight">{fiche.nom}</h3>
                   <p className="text-sm">{fiche.prenom}</p>
                 </div>
@@ -6463,26 +6500,26 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
               </div>
               <dl className="space-y-1.5 text-xs">
                 {fiche.code_candidat && (
-                  <div className="flex gap-1"><dt className="text-black/40 shrink-0">N°</dt><dd className="font-mono">{fiche.code_candidat}</dd></div>
+                  <div className="flex gap-1"><dt className="text-gray-700 shrink-0">N°</dt><dd className="font-mono">{fiche.code_candidat}</dd></div>
                 )}
-                <div className="flex gap-1"><dt className="text-black/40 shrink-0">Email</dt><dd className="truncate">{fiche.email}</dd></div>
+                <div className="flex gap-1"><dt className="text-gray-700 shrink-0">Email</dt><dd className="truncate">{fiche.email}</dd></div>
                 {fiche.tel_portable && (
-                  <div className="flex gap-1"><dt className="text-black/40 shrink-0">Tél.</dt><dd>{fiche.tel_portable}</dd></div>
+                  <div className="flex gap-1"><dt className="text-gray-700 shrink-0">Tél.</dt><dd>{fiche.tel_portable}</dd></div>
                 )}
                 {fiche.handicape !== null && fiche.handicape !== undefined && (
-                  <div className="flex gap-1"><dt className="text-black/40 shrink-0">Handicap</dt><dd>{fiche.handicape ? "Oui" : "Non"}</dd></div>
+                  <div className="flex gap-1"><dt className="text-gray-700 shrink-0">Handicap</dt><dd>{fiche.handicape ? "Oui" : "Non"}</dd></div>
                 )}
                 {fiche.classe && (
-                  <div className="flex gap-1"><dt className="text-black/40 shrink-0">Classe</dt><dd>{fiche.classe}</dd></div>
+                  <div className="flex gap-1"><dt className="text-gray-700 shrink-0">Classe</dt><dd>{fiche.classe}</dd></div>
                 )}
                 {fiche.etablissement && (
-                  <div className="flex gap-1"><dt className="text-black/40 shrink-0">Établ.</dt><dd className="truncate">{fiche.etablissement}</dd></div>
+                  <div className="flex gap-1"><dt className="text-gray-700 shrink-0">Établ.</dt><dd className="truncate">{fiche.etablissement}</dd></div>
                 )}
                 {fiche.qualite && (
-                  <div className="flex gap-1"><dt className="text-black/40 shrink-0">Qualité</dt><dd>{fiche.qualite}</dd></div>
+                  <div className="flex gap-1"><dt className="text-gray-700 shrink-0">Qualité</dt><dd>{fiche.qualite}</dd></div>
                 )}
                 {fiche.numero_ine && (
-                  <div className="flex gap-1"><dt className="text-black/40 shrink-0">INE</dt><dd className="font-mono">{fiche.numero_ine}</dd></div>
+                  <div className="flex gap-1"><dt className="text-gray-700 shrink-0">INE</dt><dd className="font-mono">{fiche.numero_ine}</dd></div>
                 )}
               </dl>
             </div>
@@ -6490,7 +6527,7 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
             {/* Liste d'attente */}
             {fiche.liste_attente.length > 0 && (
               <div className="rounded-xl border bg-white shadow-sm p-4">
-                <p className="text-xs font-semibold text-black/50 mb-2">Liste d&apos;attente</p>
+                <p className="text-xs font-semibold text-gray-800 mb-2">Liste d&apos;attente</p>
                 <div className="flex flex-wrap gap-1">
                   {fiche.liste_attente.map(la => (
                     <span key={la.date} className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded">
@@ -6512,9 +6549,9 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
                   <table className="w-full">
                     <thead>
                       <tr className="bg-gray-50 text-left">
-                        <th className="px-3 py-2 text-xs font-semibold text-black/40">Jour</th>
+                        <th className="px-3 py-2 text-xs font-semibold text-gray-700">Jour</th>
                         {fiche.inscription.epreuves.map(e => (
-                          <th key={e.id} className="px-3 py-2 text-xs font-semibold text-black/40">{e.matiere}</th>
+                          <th key={e.id} className="px-3 py-2 text-xs font-semibold text-gray-700">{e.matiere}</th>
                         ))}
                       </tr>
                     </thead>
@@ -6558,22 +6595,22 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
             <div className="rounded-xl border bg-white shadow-sm p-5">
               <p className="text-sm font-semibold mb-3">Créneaux disponibles à l&apos;inscription</p>
               {Object.keys(tripletsByDate).length === 0 ? (
-                <p className="text-sm text-black/40">Aucun créneau disponible</p>
+                <p className="text-sm text-gray-700">Aucun créneau disponible</p>
               ) : (
                 <div className="space-y-5">
                   {Object.entries(tripletsByDate).map(([date, trips]) => {
                     const allMatieres = [...new Set(trips.flatMap(t => t.epreuves.map(e => e.matiere)))].sort();
                     return (
                       <div key={date}>
-                        <p className="text-xs font-semibold text-black/50 mb-2 capitalize">{fmt_date(date)}</p>
+                        <p className="text-xs font-semibold text-gray-800 mb-2 capitalize">{fmt_date(date)}</p>
                         <div className="rounded-lg border overflow-hidden">
                           <div className="overflow-x-auto">
                           <table className="w-full text-xs">
                             <thead>
                               <tr className="bg-gray-50 text-left">
-                                <th className="px-3 py-2 text-black/40 font-semibold">Heure</th>
+                                <th className="px-3 py-2 text-gray-700 font-semibold">Heure</th>
                                 {allMatieres.map(m => (
-                                  <th key={m} className="px-3 py-2 text-black/40 font-semibold">{m}</th>
+                                  <th key={m} className="px-3 py-2 text-gray-700 font-semibold">{m}</th>
                                 ))}
                                 <th className="px-3 py-2"></th>
                               </tr>
@@ -6663,13 +6700,57 @@ function AffectationCandidatsTab({ planningId, candidats }: { planningId: number
     }
   }
 
-  const byDate = epreuves.reduce<Record<string, EpreuveFlat[]>>((acc, e) => {
+  const [fDate, setFDate] = useState("");
+  const [fHoraire, setFHoraire] = useState("");
+  const [fMatiere, setFMatiere] = useState("");
+  const [fExaminateur, setFExaminateur] = useState("");
+  const [fCandidat, setFCandidat] = useState("");
+
+  const nomExaminateur = (prenom: string | null, nom: string | null) => `${prenom ?? ""} ${nom ?? ""}`.trim();
+
+  // Options des filtres, construites à partir des épreuves réellement présentes.
+  const dates = [...new Set(epreuves.map((e) => e.date))].sort();
+  const horaires = [...new Set(epreuves.map((e) => e.heure_debut))].sort();
+  const matieres = [...new Set(epreuves.map((e) => e.matiere))].sort((a, b) => a.localeCompare(b, "fr"));
+  const examinateurs = new Map<number, string>();
+  for (const e of epreuves) {
+    if (e.examinateur_id) examinateurs.set(e.examinateur_id, nomExaminateur(e.examinateur_prenom, e.examinateur_nom));
+    if (e.examinateur2_id) examinateurs.set(e.examinateur2_id, nomExaminateur(e.examinateur2_prenom, e.examinateur2_nom));
+  }
+  const examinateursTries = [...examinateurs.entries()].sort(([, a], [, b]) => a.localeCompare(b, "fr"));
+  const candidatsTries = [...candidats].sort((a, b) => `${a.nom} ${a.prenom}`.localeCompare(`${b.nom} ${b.prenom}`, "fr"));
+
+  const filtered = epreuves.filter((e) => {
+    if (fDate && e.date !== fDate) return false;
+    if (fHoraire && e.heure_debut !== fHoraire) return false;
+    if (fMatiere && e.matiere !== fMatiere) return false;
+    if (fExaminateur === "aucun" && (e.examinateur_id || e.examinateur2_id)) return false;
+    if (fExaminateur && fExaminateur !== "aucun") {
+      const id = Number(fExaminateur);
+      if (e.examinateur_id !== id && e.examinateur2_id !== id) return false;
+    }
+    if (fCandidat === "aucun" && e.candidat_id !== null) return false;
+    if (fCandidat === "attribue" && e.candidat_id === null) return false;
+    if (fCandidat && !["aucun", "attribue"].includes(fCandidat) && e.candidat_id !== Number(fCandidat)) return false;
+    return true;
+  });
+  const filtresActifs = [fDate, fHoraire, fMatiere, fExaminateur, fCandidat].some(Boolean);
+  const resetFiltres = () => { setFDate(""); setFHoraire(""); setFMatiere(""); setFExaminateur(""); setFCandidat(""); };
+
+  const byDate = filtered.reduce<Record<string, EpreuveFlat[]>>((acc, e) => {
     (acc[e.date] ??= []).push(e);
     return acc;
   }, {});
 
   const assigned = epreuves.filter((e) => e.candidat_id !== null).length;
   const total = epreuves.length;
+
+  // Une seule police / taille / couleur pour toutes les cellules (horaire, matière,
+  // examinateur, candidat) — seules les mentions secondaires sont atténuées.
+  const cell = "px-4 py-3 text-sm text-gray-900 align-top";
+  const th = "text-left px-4 py-2.5 text-xs font-semibold text-gray-900 uppercase tracking-wide";
+  const selectCls = "w-full border border-black/15 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-red-300";
+  const labelCls = "block text-xs font-semibold text-gray-900 mb-1";
 
   if (loading) return <div className="p-8 text-center"><Spinner /></div>;
 
@@ -6680,8 +6761,8 @@ function AffectationCandidatsTab({ planningId, candidats }: { planningId: number
       {total > 0 && (
         <div className="bg-white rounded-xl shadow-sm p-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-black/60">{assigned} / {total} épreuves attribuées</span>
-            <span className="text-xs font-semibold text-[#C62828]">{Math.round((assigned / total) * 100)}%</span>
+            <span className="text-sm text-gray-900">{assigned} / {total} épreuves attribuées</span>
+            <span className="text-sm font-semibold text-[#C62828]">{Math.round((assigned / total) * 100)}%</span>
           </div>
           <div className="w-full bg-gray-100 rounded-full h-1.5">
             <div className="bg-[#C62828] h-1.5 rounded-full transition-all" style={{ width: `${(assigned / total) * 100}%` }} />
@@ -6689,53 +6770,121 @@ function AffectationCandidatsTab({ planningId, candidats }: { planningId: number
         </div>
       )}
 
+      {total > 0 && (
+        <div className="bg-white rounded-xl shadow-sm p-4">
+          <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+            <div>
+              <label className={labelCls}>Date</label>
+              <select value={fDate} onChange={(e) => setFDate(e.target.value)} className={selectCls}>
+                <option value="">Toutes</option>
+                {dates.map((d) => <option key={d} value={d}>{formatDate(d)}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Horaire</label>
+              <select value={fHoraire} onChange={(e) => setFHoraire(e.target.value)} className={selectCls}>
+                <option value="">Tous</option>
+                {horaires.map((h) => <option key={h} value={h}>{h}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Matière</label>
+              <select value={fMatiere} onChange={(e) => setFMatiere(e.target.value)} className={selectCls}>
+                <option value="">Toutes</option>
+                {matieres.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Examinateur</label>
+              <select value={fExaminateur} onChange={(e) => setFExaminateur(e.target.value)} className={selectCls}>
+                <option value="">Tous</option>
+                <option value="aucun">— Non assigné —</option>
+                {examinateursTries.map(([id, nom]) => <option key={id} value={id}>{nom}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Candidat</label>
+              <select value={fCandidat} onChange={(e) => setFCandidat(e.target.value)} className={selectCls}>
+                <option value="">Tous</option>
+                <option value="attribue">— Épreuves attribuées —</option>
+                <option value="aucun">— Sans candidat —</option>
+                {candidatsTries.map((c) => <option key={c.id} value={c.id}>{c.nom} {c.prenom}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="flex items-center justify-between mt-3">
+            <span className="text-sm text-gray-900">
+              {filtered.length} épreuve{filtered.length > 1 ? "s" : ""} affichée{filtered.length > 1 ? "s" : ""}
+              {filtresActifs && <span className="text-gray-700"> sur {total}</span>}
+            </span>
+            {filtresActifs && (
+              <button onClick={resetFiltres} className="text-sm text-[#C62828] hover:underline">
+                Réinitialiser les filtres
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b)).map(([date, eps]) => (
         <div key={date}>
-          <p className="text-xs font-semibold text-black/40 uppercase tracking-wide mb-2 capitalize">
+          <p className="text-sm font-semibold text-gray-900 mb-2 capitalize">
             {new Date(date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}
           </p>
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
+            <table className="w-full">
               <thead>
-                <tr className="border-b bg-black/2">
-                  <th className="text-left px-4 py-2 font-medium text-black/40 text-xs">Horaire</th>
-                  <th className="text-left px-4 py-2 font-medium text-black/40 text-xs">Matière</th>
-                  <th className="text-left px-4 py-2 font-medium text-black/40 text-xs">Examinateur</th>
-                  <th className="text-left px-4 py-2 font-medium text-black/40 text-xs">Candidat</th>
+                <tr className="border-b border-black/10 bg-black/[0.03]">
+                  <th className={th}>Horaire</th>
+                  <th className={th}>Matière</th>
+                  <th className={th}>Examinateur(s)</th>
+                  <th className={th}>Candidat</th>
                 </tr>
               </thead>
               <tbody>
-                {eps.map((ep, i) => (
-                  <tr key={ep.id} className={`border-b last:border-0 ${i % 2 === 0 ? "" : "bg-black/[0.01]"}`}>
-                    <td className="px-4 py-3 font-mono text-xs text-black/50 whitespace-nowrap">
+                {[...eps]
+                  .sort((a, b) => a.heure_debut.localeCompare(b.heure_debut) || a.matiere.localeCompare(b.matiere, "fr"))
+                  .map((ep, i) => (
+                  <tr key={ep.id} className={`border-b border-black/5 last:border-0 ${i % 2 === 0 ? "" : "bg-black/[0.015]"}`}>
+                    <td className={`${cell} whitespace-nowrap tabular-nums`}>
                       {ep.heure_debut} – {ep.heure_fin}
                     </td>
-                    <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">{ep.matiere}</td>
-                    <td className="px-4 py-3 text-sm text-black/60">
-                      {ep.examinateur_id
-                        ? `${ep.examinateur_prenom} ${ep.examinateur_nom}`
-                        : <span className="text-black/30 italic text-xs">Non assigné</span>}
+                    <td className={`${cell} whitespace-nowrap`}>{ep.matiere}</td>
+                    <td className={cell}>
+                      {ep.examinateur_id || ep.examinateur2_id ? (
+                        <div className="space-y-0.5">
+                          {ep.examinateur_id && <div>{nomExaminateur(ep.examinateur_prenom, ep.examinateur_nom)}</div>}
+                          {ep.examinateur2_id && (
+                            <div>
+                              {nomExaminateur(ep.examinateur2_prenom, ep.examinateur2_nom)}
+                              <span className="ml-1.5 text-xs text-gray-700">(2ᵉ examinateur)</span>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="italic text-gray-700">Non assigné</span>
+                      )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className={cell}>
                       <div className="flex items-center gap-2">
                         <select
                           value={ep.candidat_id ?? ""}
                           onChange={(e) => assigner(ep, e.target.value ? Number(e.target.value) : null)}
                           disabled={assigning[ep.id]}
-                          className="w-full border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 disabled:opacity-50"
+                          className={`${selectCls} disabled:opacity-50`}
                         >
                           <option value="">— Aucun —</option>
-                          {candidats.map((c) => (
+                          {candidatsTries.map((c) => (
                             <option key={c.id} value={c.id}>
                               {c.nom} {c.prenom}
                             </option>
                           ))}
                         </select>
-                        {assigning[ep.id] && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400 shrink-0" />}
+                        {assigning[ep.id] && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-700 shrink-0" />}
                         {ep.candidat_id && !assigning[ep.id] && (
                           <button
                             onClick={() => assigner(ep, null)}
-                            className="shrink-0 text-gray-300 hover:text-red-400 transition"
+                            className="shrink-0 text-gray-700 hover:text-red-500 transition"
                             title="Désaffecter"
                           >
                             <X className="h-3.5 w-3.5" />
@@ -6752,8 +6901,14 @@ function AffectationCandidatsTab({ planningId, candidats }: { planningId: number
       ))}
 
       {epreuves.length === 0 && (
-        <div className="bg-white rounded-xl shadow-sm p-10 text-center text-sm text-black/40">
+        <div className="bg-white rounded-xl shadow-sm p-10 text-center text-sm text-gray-900">
           Aucune épreuve dans ce planning.
+        </div>
+      )}
+      {epreuves.length > 0 && filtered.length === 0 && (
+        <div className="bg-white rounded-xl shadow-sm p-10 text-center text-sm text-gray-900">
+          Aucune épreuve ne correspond aux filtres.{" "}
+          <button onClick={resetFiltres} className="text-[#C62828] hover:underline">Réinitialiser</button>
         </div>
       )}
     </div>
@@ -6896,7 +7051,7 @@ function AffectationTab({ planningId, examinateurs }: { planningId: number; exam
       <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
-            <label className="block text-xs font-medium text-black/50 mb-1">Examinateur</label>
+            <label className="block text-xs font-medium text-gray-800 mb-1">Examinateur</label>
             <select
               value={selectedExId}
               onChange={(e) => { setSelectedExId(e.target.value ? Number(e.target.value) : ""); setFilterMatiere(""); }}
@@ -6911,7 +7066,7 @@ function AffectationTab({ planningId, examinateurs }: { planningId: number; exam
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-black/50 mb-1">Matière</label>
+            <label className="block text-xs font-medium text-gray-800 mb-1">Matière</label>
             <select
               value={filterMatiere}
               onChange={(e) => setFilterMatiere(e.target.value)}
@@ -6922,7 +7077,7 @@ function AffectationTab({ planningId, examinateurs }: { planningId: number; exam
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-black/50 mb-1">Date</label>
+            <label className="block text-xs font-medium text-gray-800 mb-1">Date</label>
             <select
               value={filterDate}
               onChange={(e) => setFilterDate(e.target.value)}
@@ -6941,7 +7096,7 @@ function AffectationTab({ planningId, examinateurs }: { planningId: number; exam
         {filtered.length > 0 && (
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <span className="text-xs text-black/50">{assigned}/{filtered.length} attribué(s)</span>
+              <span className="text-xs text-gray-800">{assigned}/{filtered.length} attribué(s)</span>
               <div className="w-32 bg-gray-100 rounded-full h-1.5">
                 <div className="bg-[#C62828] h-1.5 rounded-full" style={{ width: `${filtered.length ? (assigned / filtered.length) * 100 : 0}%` }} />
               </div>
@@ -6979,7 +7134,7 @@ function AffectationTab({ planningId, examinateurs }: { planningId: number; exam
         <div className="p-8 text-center"><Spinner /></div>
       ) : filtered.length === 0 ? (
         <div className="rounded-xl border border-dashed border-black/15 p-14 text-center">
-          <p className="text-black/40 font-medium">{selectedExId ? "Aucun créneau pour les matières de cet examinateur" : "Aucun créneau"}</p>
+          <p className="text-gray-700 font-medium">{selectedExId ? "Aucun créneau pour les matières de cet examinateur" : "Aucun créneau"}</p>
         </div>
       ) : (
         dates.map((date) => {
@@ -7002,7 +7157,7 @@ function AffectationTab({ planningId, examinateurs }: { planningId: number; exam
                     className="h-3.5 w-3.5 rounded accent-[#C62828]"
                   />
                 )}
-                <p className="text-xs font-semibold text-black/40 uppercase tracking-wide">
+                <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
                   {new Date(date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}
                 </p>
               </div>
@@ -7011,12 +7166,12 @@ function AffectationTab({ planningId, examinateurs }: { planningId: number; exam
                   <thead>
                     <tr className="border-b bg-black/[0.02]">
                       {selectedExId && <th className="w-8 px-3 py-2" />}
-                      <th className="text-left px-4 py-2 font-medium text-black/40 text-xs">Horaire</th>
-                      <th className="text-left px-4 py-2 font-medium text-black/40 text-xs">Matière</th>
-                      <th className="text-left px-4 py-2 font-medium text-black/40 text-xs">Candidat</th>
-                      <th className="text-left px-4 py-2 font-medium text-black/40 text-xs">Exam. 1</th>
-                      <th className="text-left px-4 py-2 font-medium text-black/40 text-xs">Exam. 2</th>
-                      <th className="text-left px-4 py-2 font-medium text-black/40 text-xs">Statut</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-700 text-xs">Horaire</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-700 text-xs">Matière</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-700 text-xs">Candidat</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-700 text-xs">Exam. 1</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-700 text-xs">Exam. 2</th>
+                      <th className="text-left px-4 py-2 font-medium text-gray-700 text-xs">Statut</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -7049,59 +7204,59 @@ function AffectationTab({ planningId, examinateurs }: { planningId: number; exam
                               )}
                             </td>
                           )}
-                          <td className="px-4 py-3 font-mono text-xs text-black/50 whitespace-nowrap">
+                          <td className="px-4 py-3 font-mono text-xs text-gray-800 whitespace-nowrap">
                             {ep.heure_debut.slice(0,5)} – {ep.heure_fin.slice(0,5)}
                             {indispo && (
                               <span className="ml-1.5 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">Indisponible</span>
                             )}
                           </td>
                           <td className="px-4 py-3 font-medium text-xs text-gray-700 whitespace-nowrap">{ep.matiere}</td>
-                          <td className="px-4 py-3 text-xs text-black/60">
+                          <td className="px-4 py-3 text-xs text-gray-800">
                             {ep.candidat_id
                               ? `${ep.candidat_prenom ?? ""} ${ep.candidat_nom ?? ""}`.trim()
-                              : <span className="text-black/25 italic">—</span>}
+                              : <span className="text-gray-700 italic">—</span>}
                           </td>
                           <td className="px-4 py-3 text-xs" onClick={(e) => e.stopPropagation()}>
                             {ep.examinateur_id ? (
-                              <span className={`flex items-center gap-1 ${isMine1 ? "text-[#C62828] font-semibold" : "text-black/60"}`}>
+                              <span className={`flex items-center gap-1 ${isMine1 ? "text-[#C62828] font-semibold" : "text-gray-800"}`}>
                                 {ep.examinateur_nom} {ep.examinateur_prenom?.charAt(0)}.
                                 {isMine1 && (
                                   <button
                                     onClick={() => handleDeassign(ep.id, 1)}
                                     disabled={isDead}
-                                    className="text-black/25 hover:text-red-500 transition ml-0.5"
+                                    className="text-gray-700 hover:text-red-500 transition ml-0.5"
                                     title="Désaffecter"
                                   >
                                     <X className="h-3 w-3" />
                                   </button>
                                 )}
                               </span>
-                            ) : <span className="text-black/25">—</span>}
+                            ) : <span className="text-gray-700">—</span>}
                           </td>
                           <td className="px-4 py-3 text-xs" onClick={(e) => e.stopPropagation()}>
                             {ep.examinateur2_id ? (
-                              <span className={`flex items-center gap-1 ${isMine2 ? "text-[#C62828] font-semibold" : "text-black/60"}`}>
+                              <span className={`flex items-center gap-1 ${isMine2 ? "text-[#C62828] font-semibold" : "text-gray-800"}`}>
                                 {ep.examinateur2_nom} {ep.examinateur2_prenom?.charAt(0)}.
                                 {isMine2 && (
                                   <button
                                     onClick={() => handleDeassign(ep.id, 2)}
                                     disabled={isDead}
-                                    className="text-black/25 hover:text-red-500 transition ml-0.5"
+                                    className="text-gray-700 hover:text-red-500 transition ml-0.5"
                                     title="Désaffecter"
                                   >
                                     <X className="h-3 w-3" />
                                   </button>
                                 )}
                               </span>
-                            ) : <span className="text-black/25">—</span>}
+                            ) : <span className="text-gray-700">—</span>}
                           </td>
                           <td className="px-4 py-3">
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
                               ep.statut === "LIBRE" ? "bg-green-100 text-green-700" :
                               ep.statut === "ATTRIBUEE" ? "bg-blue-100 text-blue-700" :
                               ep.statut === "PRERESERVEE" ? "bg-purple-100 text-purple-700" :
-                              ep.statut === "CREE" ? "bg-gray-100 text-gray-500" :
-                              "bg-gray-100 text-gray-400"
+                              ep.statut === "CREE" ? "bg-gray-100 text-gray-700" :
+                              "bg-gray-100 text-gray-700"
                             }`}>{ep.statut}</span>
                           </td>
                         </tr>
@@ -7143,7 +7298,7 @@ function MatieresCheckboxes({
     onChange(selected.includes(intitule) ? selected.filter((m) => m !== intitule) : [...selected, intitule]);
   };
   if (matieres.length === 0)
-    return <p className="text-xs text-black/40 italic">Aucune matière configurée dans Paramétrages.</p>;
+    return <p className="text-xs text-gray-700 italic">Aucune matière configurée dans Paramétrages.</p>;
   return (
     <div className="flex flex-wrap gap-2">
       {matieres.filter((m) => m.active).map((m) => (
@@ -7154,7 +7309,7 @@ function MatieresCheckboxes({
           className={`px-2.5 py-1 rounded-lg border text-sm transition ${
             selected.includes(m.intitule)
               ? "bg-blue-600 text-white border-blue-600"
-              : "bg-white text-black/60 border-black/15 hover:border-black/30"
+              : "bg-white text-gray-800 border-black/15 hover:border-black/30"
           }`}
         >
           {m.intitule}
@@ -7244,17 +7399,17 @@ function IndisponibilitesSection({ examinateurId, onLoad }: { examinateurId: num
             <span className="text-[10px] bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5 font-semibold">{items.length}</span>
           )}
         </span>
-        <span className="text-black/30 text-xs">{open ? "▲" : "▼"}</span>
+        <span className="text-gray-700 text-xs">{open ? "▲" : "▼"}</span>
       </button>
 
       {open && (
         <div className="p-4 space-y-3">
           {loading ? <div className="text-center py-4"><Spinner /></div> : items.length === 0 ? (
-            <p className="text-sm text-black/40 text-center py-2">Aucune indisponibilité enregistrée.</p>
+            <p className="text-sm text-gray-700 text-center py-2">Aucune indisponibilité enregistrée.</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b text-xs text-black/40">
+                <tr className="border-b text-xs text-gray-700">
                   <th className="text-left py-1.5 font-medium">Début</th>
                   <th className="text-left py-1.5 font-medium">Fin</th>
                   <th className="text-left py-1.5 font-medium">Commentaire</th>
@@ -7266,7 +7421,7 @@ function IndisponibilitesSection({ examinateurId, onLoad }: { examinateurId: num
                   <tr key={item.id} className="border-b last:border-0">
                     <td className="py-2 pr-3 whitespace-nowrap text-sm">{formatDt(item.debut)}</td>
                     <td className="py-2 pr-3 whitespace-nowrap text-sm">{formatDt(item.fin)}</td>
-                    <td className="py-2 text-black/50 text-sm">{item.commentaire ?? "—"}</td>
+                    <td className="py-2 text-gray-800 text-sm">{item.commentaire ?? "—"}</td>
                     <td className="py-2 text-right whitespace-nowrap">
                       <button onClick={() => startEdit(item)} className="text-xs text-blue-500 hover:text-blue-700 mr-3">Éditer</button>
                       <button onClick={() => remove(item.id)} className="text-xs text-red-400 hover:text-red-600">Supprimer</button>
@@ -7335,13 +7490,13 @@ function CreneauxExaminateur({
 
   if (loading) return <div className="flex justify-center py-6"><Spinner /></div>;
   if (epreuves.length === 0)
-    return <p className="text-sm text-black/40 text-center py-4">Aucun créneau dans ce planning pour ces matières.</p>;
+    return <p className="text-sm text-gray-700 text-center py-4">Aucun créneau dans ce planning pour ces matières.</p>;
 
   return (
     <div className="overflow-x-auto rounded-xl border">
       <table className="w-full text-sm">
         <thead>
-          <tr className="bg-black/[0.03] border-b text-xs text-black/50">
+          <tr className="bg-black/[0.03] border-b text-xs text-gray-800">
             <th className="px-3 py-2 w-6" />
             <th className="px-3 py-2 text-left font-medium">Matière</th>
             <th className="px-3 py-2 text-left font-medium">Jour</th>
@@ -7360,17 +7515,17 @@ function CreneauxExaminateur({
                   <span className={`inline-block h-2 w-2 rounded-full ${indispo ? "bg-red-400" : "bg-green-400"}`} />
                 </td>
                 <td className="px-3 py-2 font-medium">{e.matiere}</td>
-                <td className="px-3 py-2 whitespace-nowrap text-black/60">{formatDate(e.date)}</td>
+                <td className="px-3 py-2 whitespace-nowrap text-gray-800">{formatDate(e.date)}</td>
                 <td className="px-3 py-2 font-mono">{e.heure_debut}</td>
-                <td className="px-3 py-2 text-black/60">
+                <td className="px-3 py-2 text-gray-800">
                   {e.examinateur_nom
                     ? `${e.examinateur_nom} ${e.examinateur_prenom ?? ""}`
-                    : <span className="text-black/25 italic">—</span>}
+                    : <span className="text-gray-700 italic">—</span>}
                 </td>
                 <td className="px-3 py-2">
                   {e.candidat_nom
                     ? <span>{e.candidat_nom} {e.candidat_prenom}</span>
-                    : <span className="text-black/25 italic">—</span>}
+                    : <span className="text-gray-700 italic">—</span>}
                 </td>
                 <td className="px-3 py-2">
                   {indispo && (
@@ -7470,7 +7625,7 @@ function ExaminateurFiche({
       {/* Header */}
       <div className="flex items-start justify-between gap-3 px-6 pt-5 pb-4 border-b sticky top-0 bg-white z-10">
         <div>
-          <p className="text-xs text-black/40 uppercase tracking-wide mb-0.5">Examinateur</p>
+          <p className="text-xs text-gray-700 uppercase tracking-wide mb-0.5">Examinateur</p>
           <h3 className="text-lg font-semibold">{ex.prenom} {ex.nom}</h3>
           <div className="flex flex-wrap gap-1 mt-1">
             {ex.matieres.map((m) => (
@@ -7486,7 +7641,7 @@ function ExaminateurFiche({
                 ? "bg-green-50 text-green-700 border-green-200 hover:bg-green-100"
                 : ex.actif_planning === false
                   ? "bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100"
-                  : "bg-black/5 text-black/40 border-black/10 hover:bg-black/10"
+                  : "bg-black/5 text-gray-700 border-black/10 hover:bg-black/10"
             }`}
           >
             <span className={`h-1.5 w-1.5 rounded-full ${ex.actif_planning === true ? "bg-green-500" : ex.actif_planning === false ? "bg-orange-400" : "bg-black/30"}`} />
@@ -7548,7 +7703,7 @@ function ExaminateurFiche({
                     className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b last:border-0"
                   >
                     <span className="font-medium">{e.nom}</span>
-                    <span className="text-black/50 ml-2 text-xs">{e.code_uai}{e.ville ? ` — ${e.ville}` : ""}</span>
+                    <span className="text-gray-800 ml-2 text-xs">{e.code_uai}{e.ville ? ` — ${e.ville}` : ""}</span>
                   </button>
                 ))}
               </div>
@@ -7576,7 +7731,7 @@ function ExaminateurFiche({
 
         {/* Créneaux */}
         <div>
-          <p className="text-xs font-semibold text-black/40 uppercase tracking-widest mb-3">Créneaux</p>
+          <p className="text-xs font-semibold text-gray-700 uppercase tracking-widest mb-3">Créneaux</p>
           <CreneauxExaminateur planningId={planningId} examinateur={ex} indisponibilites={indisponibilites} />
         </div>
       </div>
@@ -7584,21 +7739,21 @@ function ExaminateurFiche({
       {/* Modal identifiants */}
       <Modal open={showIdentifiants} onClose={() => setShowIdentifiants(false)} title="Identifiants examinateur">
         <div className="space-y-4">
-          <p className="text-sm text-black/60">
+          <p className="text-sm text-gray-800">
             Communiquez ces informations à <strong>{ex.prenom} {ex.nom}</strong> pour accéder à son espace.
           </p>
           <div className="rounded-lg bg-black/[0.03] p-4 space-y-2.5 font-mono text-sm border">
             <div className="flex justify-between gap-4 items-center">
-              <span className="text-black/50 text-xs uppercase tracking-wide">Login</span>
+              <span className="text-gray-800 text-xs uppercase tracking-wide">Login</span>
               <span className="font-semibold select-all">{ex.email}</span>
             </div>
             <div className="h-px bg-black/5" />
             <div className="flex justify-between gap-4 items-center">
-              <span className="text-black/50 text-xs uppercase tracking-wide">Code d&apos;accès</span>
+              <span className="text-gray-800 text-xs uppercase tracking-wide">Code d&apos;accès</span>
               <span className="font-semibold select-all tracking-widest text-lg">{ex.code_acces}</span>
             </div>
           </div>
-          <p className="text-xs text-black/40">
+          <p className="text-xs text-gray-700">
             Pour réinitialiser le code d&apos;accès, utilisez Paramétrages → Réinitialisation.
           </p>
         </div>
@@ -7668,7 +7823,7 @@ function CreateExaminateurForm({
     <div className="overflow-y-auto h-full">
       <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b sticky top-0 bg-white z-10">
         <h3 className="text-lg font-semibold">Nouvel examinateur</h3>
-        <button onClick={onCancel} className="p-1 text-black/40 hover:text-black/70 transition"><X className="h-4 w-4" /></button>
+        <button onClick={onCancel} className="p-1 text-gray-700 hover:text-black transition"><X className="h-4 w-4" /></button>
       </div>
       <div className="px-6 py-5 space-y-4">
         <div className="grid grid-cols-2 gap-3">
@@ -7698,7 +7853,7 @@ function CreateExaminateurForm({
                     className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b last:border-0"
                   >
                     <span className="font-medium">{e.nom}</span>
-                    <span className="text-black/50 ml-2 text-xs">{e.code_uai}{e.ville ? ` — ${e.ville}` : ""}</span>
+                    <span className="text-gray-800 ml-2 text-xs">{e.code_uai}{e.ville ? ` — ${e.ville}` : ""}</span>
                   </button>
                 ))}
               </div>
@@ -7799,7 +7954,7 @@ function ExaminateursSection() {
           {(["fiche", "affectation"] as const).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 text-sm font-medium rounded-t-lg transition -mb-px border border-b-0 ${
-                tab === t ? "bg-white border-black/10 text-black" : "border-transparent text-black/40 hover:text-black/60"
+                tab === t ? "bg-white border-black/10 text-black" : "border-transparent text-gray-700 hover:text-black"
               }`}
             >
               {t === "fiche" ? "Fiches" : "Affectation aux épreuves"}
@@ -7820,7 +7975,7 @@ function ExaminateursSection() {
               <div className="flex rounded-lg border overflow-hidden text-xs w-full">
                 {(["tous", "actif", "inactif"] as const).map((f) => (
                   <button key={f} onClick={() => setFilterActif(f)}
-                    className={`flex-1 py-1.5 transition ${filterActif === f ? "bg-black text-white" : "bg-white text-black/50 hover:bg-black/5"}`}
+                    className={`flex-1 py-1.5 transition ${filterActif === f ? "bg-black text-white" : "bg-white text-gray-800 hover:bg-black/5"}`}
                   >
                     {f === "tous" ? "Tous" : f === "actif" ? "Actifs" : "Inact."}
                   </button>
@@ -7836,7 +7991,7 @@ function ExaminateursSection() {
             </div>
             <div className="flex-1 overflow-y-auto divide-y">
               {loading ? <div className="p-4 text-center"><Spinner /></div> :
-               filtered.length === 0 ? <p className="text-xs text-black/40 text-center p-4">Aucun examinateur</p> :
+               filtered.length === 0 ? <p className="text-xs text-gray-700 text-center p-4">Aucun examinateur</p> :
                filtered.map((ex) => (
                 <button
                   key={ex.id}
@@ -7850,7 +8005,7 @@ function ExaminateursSection() {
                   <span className={`h-2 w-2 rounded-full shrink-0 ${ex.actif_planning === true ? "bg-green-500" : ex.actif_planning === false ? "bg-orange-400" : "bg-black/15"}`} />
                   <div className="min-w-0">
                     <p className="truncate font-medium text-sm">{ex.prenom} {ex.nom}</p>
-                    <p className="truncate text-xs text-black/40">{ex.matieres.join(", ") || "—"}</p>
+                    <p className="truncate text-xs text-gray-700">{ex.matieres.join(", ") || "—"}</p>
                   </div>
                 </button>
               ))}
@@ -7885,9 +8040,9 @@ function ExaminateursSection() {
                 onDeleted={() => { setSelectedEx(null); loadExaminateurs(); }}
               />
             ) : (
-              <div className="flex flex-col items-center justify-center h-full text-black/20 gap-3 py-16">
+              <div className="flex flex-col items-center justify-center h-full text-gray-700 gap-3 py-16">
                 <GraduationCap className="h-12 w-12" />
-                <p className="text-sm text-black/30">Sélectionnez un examinateur ou créez-en un nouveau</p>
+                <p className="text-sm text-gray-700">Sélectionnez un examinateur ou créez-en un nouveau</p>
               </div>
             )}
           </div>
@@ -7952,8 +8107,8 @@ function StatCard({
       </div>
       <div>
         <div className="text-2xl font-bold tracking-tight">{value}</div>
-        <div className="text-xs font-medium text-black/50 mt-0.5">{label}</div>
-        {sub && <div className="text-xs text-black/30 mt-0.5">{sub}</div>}
+        <div className="text-xs font-medium text-gray-800 mt-0.5">{label}</div>
+        {sub && <div className="text-xs text-gray-700 mt-0.5">{sub}</div>}
       </div>
     </div>
   );
@@ -7966,7 +8121,7 @@ function ProgressBar({ value, max, color = "#C62828" }: { value: number; max: nu
       <div className="flex-1 h-1.5 bg-black/8 rounded-full overflow-hidden">
         <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
       </div>
-      <span className="text-xs text-black/40 w-8 text-right">{pct}%</span>
+      <span className="text-xs text-gray-700 w-8 text-right">{pct}%</span>
     </div>
   );
 }
@@ -8055,7 +8210,7 @@ function DashboardSection() {
             {/* Statuts */}
             <div className="bg-white rounded-xl shadow-sm p-5">
               <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4 text-black/40" />
+                <CheckCircle2 className="h-4 w-4 text-gray-700" />
                 Répartition par statut
               </h3>
               <div className="space-y-3">
@@ -8063,7 +8218,7 @@ function DashboardSection() {
                   <div key={statut}>
                     <div className="flex items-center justify-between text-xs mb-1">
                       <span className="font-medium">{statut}</span>
-                      <span className="text-black/40">{count}</span>
+                      <span className="text-gray-700">{count}</span>
                     </div>
                     <ProgressBar value={count} max={data.total_epreuves} color={STATUT_COLORS[statut] ?? "#666"} />
                   </div>
@@ -8074,7 +8229,7 @@ function DashboardSection() {
             {/* Matières */}
             <div className="bg-white rounded-xl shadow-sm p-5">
               <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                <BookOpen className="h-4 w-4 text-black/40" />
+                <BookOpen className="h-4 w-4 text-gray-700" />
                 Épreuves par matière
               </h3>
               <div className="space-y-3">
@@ -8082,7 +8237,7 @@ function DashboardSection() {
                   <div key={matiere}>
                     <div className="flex items-center justify-between text-xs mb-1">
                       <span className="font-medium">{matiere}</span>
-                      <span className="text-black/40">{count}</span>
+                      <span className="text-gray-700">{count}</span>
                     </div>
                     <ProgressBar value={count} max={data.total_epreuves} color="#C62828" />
                   </div>
@@ -8095,7 +8250,7 @@ function DashboardSection() {
           {data.by_date.length > 0 && (
             <div className="bg-white rounded-xl shadow-sm p-5">
               <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                <Clock className="h-4 w-4 text-black/40" />
+                <Clock className="h-4 w-4 text-gray-700" />
                 Épreuves par jour
               </h3>
               <div className="flex items-end gap-2 overflow-x-auto pb-2">
@@ -8103,7 +8258,7 @@ function DashboardSection() {
                   const max = Math.max(...data.by_date.map((d) => d.count));
                   return data.by_date.map(({ date, count }) => (
                     <div key={date} className="flex flex-col items-center gap-1 min-w-[48px]">
-                      <span className="text-xs text-black/50 font-medium">{count}</span>
+                      <span className="text-xs text-gray-800 font-medium">{count}</span>
                       <div
                         className="w-8 rounded-t"
                         style={{
@@ -8112,7 +8267,7 @@ function DashboardSection() {
                           opacity: 0.7 + (count / max) * 0.3,
                         }}
                       />
-                      <span className="text-[9px] text-black/30 rotate-45 origin-left whitespace-nowrap mt-1">
+                      <span className="text-[9px] text-gray-700 rotate-45 origin-left whitespace-nowrap mt-1">
                         {new Date(date + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
                       </span>
                     </div>
@@ -8123,7 +8278,7 @@ function DashboardSection() {
           )}
 
           {data.total_epreuves === 0 && (
-            <div className="bg-white rounded-xl shadow-sm p-10 text-center text-sm text-black/40">
+            <div className="bg-white rounded-xl shadow-sm p-10 text-center text-sm text-gray-700">
               Aucune épreuve générée pour ce planning.
             </div>
           )}
@@ -8385,7 +8540,7 @@ function NotesSection() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-xl font-semibold">Notes</h2>
-          <p className="text-sm text-black/40 mt-0.5">Consultation du tableau de notes et publication</p>
+          <p className="text-sm text-gray-700 mt-0.5">Consultation du tableau de notes et publication</p>
         </div>
         <div className="flex items-center gap-2">
         {tab === "tableau" && planningId !== "" && (
@@ -8411,7 +8566,7 @@ function NotesSection() {
             key={t}
             onClick={() => setTab(t)}
             className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${
-              tab === t ? "bg-white shadow text-black" : "text-black/50 hover:text-black/70"
+              tab === t ? "bg-white shadow text-black" : "text-gray-800 hover:text-black"
             }`}
           >
             {t === "tableau" ? "Tableau des notes" : t === "saisie" ? "Saisie" : "Publication"}
@@ -8434,7 +8589,7 @@ function NotesSection() {
           {!planningId ? (
             <Empty message="Sélectionnez un planning" />
           ) : loadingT ? (
-            <div className="flex justify-center py-12 text-black/30"><Spinner /></div>
+            <div className="flex justify-center py-12 text-gray-700"><Spinner /></div>
           ) : !tableau || tableau.candidats.length === 0 ? (
             <Empty message="Aucune note disponible pour ce planning" sub="Les notes apparaîtront ici dès leur saisie par les examinateurs." />
           ) : (
@@ -8464,23 +8619,23 @@ function NotesSection() {
                     <tr key={cand.id} className={ri % 2 === 0 ? "bg-white" : "bg-[#FAFAFA]"}>
                       <td className="px-3 py-2 font-semibold border border-black/8 whitespace-nowrap">{cand.nom.toUpperCase()}</td>
                       <td className="px-3 py-2 border border-black/8 whitespace-nowrap">{cand.prenom}</td>
-                      <td className="px-3 py-2 text-black/50 border border-black/8">{cand.code_candidat ?? "—"}</td>
-                      <td className="px-3 py-2 text-black/50 border border-black/8 whitespace-nowrap">{cand.date}</td>
+                      <td className="px-3 py-2 text-gray-800 border border-black/8">{cand.code_candidat ?? "—"}</td>
+                      <td className="px-3 py-2 text-gray-800 border border-black/8 whitespace-nowrap">{cand.date}</td>
                       {tableau.matieres.map((mat) => {
                         const n = cand.notes[mat];
                         if (!n) {
                           return (
                             <React.Fragment key={mat}>
-                              <td className="px-2 py-2 text-center text-black/20 border border-black/8" colSpan={3}>—</td>
+                              <td className="px-2 py-2 text-center text-gray-700 border border-black/8" colSpan={3}>—</td>
                             </React.Fragment>
                           );
                         }
                         const isEditingH = editHarm[n.note_id] !== undefined;
-                        const ecartColor = n.ecart === null ? "" : n.ecart > 0 ? "text-green-600" : n.ecart < 0 ? "text-red-500" : "text-black/40";
+                        const ecartColor = n.ecart === null ? "" : n.ecart > 0 ? "text-green-600" : n.ecart < 0 ? "text-red-500" : "text-gray-700";
                         return (
                           <React.Fragment key={mat}>
                             <td className="px-2 py-2 text-center border border-black/8 font-medium">
-                              {n.valeur !== null ? n.valeur.toFixed(1) : <span className="text-black/25">—</span>}
+                              {n.valeur !== null ? n.valeur.toFixed(1) : <span className="text-gray-700">—</span>}
                             </td>
                             <td className="px-1 py-1 text-center border border-black/8 min-w-[64px]">
                               {isEditingH ? (
@@ -8507,7 +8662,7 @@ function NotesSection() {
                                 >
                                   {n.note_harmonisee !== null
                                     ? <span className="font-semibold text-blue-700">{n.note_harmonisee.toFixed(1)}</span>
-                                    : <span className="text-black/20 group-hover:text-blue-400">—</span>}
+                                    : <span className="text-gray-700 group-hover:text-blue-400">—</span>}
                                 </button>
                               )}
                             </td>
@@ -8549,7 +8704,7 @@ function NotesSection() {
           {!saisieExamId ? (
             <Empty message="Sélectionnez un examinateur" sub="Choisissez éventuellement un planning pour filtrer la liste." />
           ) : saisieLoading ? (
-            <div className="flex justify-center py-12 text-black/30"><Spinner /></div>
+            <div className="flex justify-center py-12 text-gray-700"><Spinner /></div>
           ) : saisieRows.length === 0 ? (
             <Empty message="Aucune épreuve trouvée pour cet examinateur" />
           ) : (
@@ -8568,16 +8723,16 @@ function NotesSection() {
                     const saving = saisieSaving[row.epreuve_id] ?? false;
                     return (
                       <tr key={row.epreuve_id} className={ri % 2 === 0 ? "bg-white" : "bg-[#FAFAFA]"}>
-                        <td className="px-3 py-2 border border-black/8 whitespace-nowrap text-xs text-black/60">{row.date}</td>
+                        <td className="px-3 py-2 border border-black/8 whitespace-nowrap text-xs text-gray-800">{row.date}</td>
                         <td className="px-3 py-2 border border-black/8 font-medium whitespace-nowrap">{row.matiere}</td>
-                        <td className="px-3 py-2 border border-black/8 text-xs text-black/50 whitespace-nowrap">
+                        <td className="px-3 py-2 border border-black/8 text-xs text-gray-800 whitespace-nowrap">
                           {row.preparation_minutes ? `${row.heure_debut.slice(0,5)} (−${row.preparation_minutes}′)` : "—"}
                         </td>
                         <td className="px-3 py-2 border border-black/8 text-xs font-medium whitespace-nowrap">{row.heure_debut.slice(0,5)}–{row.heure_fin.slice(0,5)}</td>
                         <td className="px-3 py-2 border border-black/8 whitespace-nowrap">
                           {row.candidat_nom
-                            ? <span>{row.candidat_nom.toUpperCase()} <span className="text-black/50">{row.candidat_prenom}</span></span>
-                            : <span className="text-black/25 italic">Non assigné</span>}
+                            ? <span>{row.candidat_nom.toUpperCase()} <span className="text-gray-800">{row.candidat_prenom}</span></span>
+                            : <span className="text-gray-700 italic">Non assigné</span>}
                         </td>
                         <td className="px-2 py-1.5 border border-black/8">
                           <input
@@ -8604,7 +8759,7 @@ function NotesSection() {
                           ) : row.statut === "BROUILLON" ? (
                             <span className="bg-amber-100 text-amber-700 rounded-full px-2 py-0.5 font-medium">Brouillon</span>
                           ) : (
-                            <span className="text-black/30">—</span>
+                            <span className="text-gray-700">—</span>
                           )}
                         </td>
                         <td className="px-3 py-2 border border-black/8">
@@ -8637,20 +8792,20 @@ function NotesSection() {
 
       {loading ? (
         <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+          <Loader2 className="h-6 w-6 animate-spin text-gray-700" />
         </div>
       ) : notes.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-gray-200 p-16 text-center">
-          <FileSpreadsheet className="h-10 w-10 mx-auto mb-3 text-gray-300" />
-          <p className="text-base font-medium text-gray-500">Aucune note saisie</p>
-          <p className="text-sm text-gray-400 mt-1">Les notes apparaîtront ici dès leur saisie par les examinateurs.</p>
+          <FileSpreadsheet className="h-10 w-10 mx-auto mb-3 text-gray-700" />
+          <p className="text-base font-medium text-gray-700">Aucune note saisie</p>
+          <p className="text-sm text-gray-700 mt-1">Les notes apparaîtront ici dès leur saisie par les examinateurs.</p>
         </div>
       ) : (
         <div className="space-y-8">
           {/* Brouillons */}
           {brouillons.length > 0 && (
             <div>
-              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+              <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">
                 En attente de publication
               </h2>
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -8660,14 +8815,14 @@ function NotesSection() {
                       <p className="text-sm font-semibold text-gray-700">
                         {ns[0].candidat_prenom} {ns[0].candidat_nom}
                       </p>
-                      <span className="text-xs text-gray-400">#{candId}</span>
+                      <span className="text-xs text-gray-700">#{candId}</span>
                     </div>
                     {ns.map((note, ni) => (
                       <div key={note.id} className={`px-5 py-3 flex items-center justify-between ${ni > 0 ? "border-t border-gray-50" : ""}`}>
                         <div className="flex items-center gap-3">
                           <span className="text-sm text-gray-700">{note.matiere}</span>
                           <span className="text-sm font-semibold text-gray-900">
-                            {note.valeur !== null ? `${note.valeur}/20` : <span className="text-gray-400 italic">—</span>}
+                            {note.valeur !== null ? `${note.valeur}/20` : <span className="text-gray-700 italic">—</span>}
                           </span>
                         </div>
                         <button
@@ -8689,7 +8844,7 @@ function NotesSection() {
           {/* Publiées */}
           {publiees.length > 0 && (
             <div>
-              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+              <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">
                 Publiées ({publiees.length})
               </h2>
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -8697,8 +8852,8 @@ function NotesSection() {
                   <div key={note.id} className={`px-5 py-3 flex items-center justify-between ${i > 0 ? "border-t border-gray-100" : ""}`}>
                     <div className="flex items-center gap-3">
                       <p className="text-sm font-medium text-gray-700">{note.candidat_prenom} {note.candidat_nom}</p>
-                      <span className="text-xs text-gray-400">·</span>
-                      <span className="text-sm text-gray-600">{note.matiere}</span>
+                      <span className="text-xs text-gray-700">·</span>
+                      <span className="text-sm text-gray-700">{note.matiere}</span>
                       <span className="text-sm font-semibold text-gray-900">
                         {note.valeur !== null ? `${note.valeur}/20` : "—"}
                       </span>
@@ -8731,7 +8886,7 @@ function ToolbarBtn({
       onMouseDown={(e) => e.preventDefault()} // garde la sélection de texte active dans l'éditeur
       onClick={() => onExec(command, arg)}
       title={title}
-      className={`p-1.5 rounded hover:bg-black/5 text-black/60 hover:text-black/90 transition ${className}`}
+      className={`p-1.5 rounded hover:bg-black/5 text-gray-800 hover:text-black transition ${className}`}
     >
       <Icon className="h-3.5 w-3.5" />
     </button>
@@ -8787,7 +8942,7 @@ function RichTextEditor({ value, onChange }: { value: string; onChange: (html: s
           onMouseDown={(e) => e.preventDefault()}
           onClick={insertLink}
           title="Insérer un lien"
-          className="p-1.5 rounded hover:bg-black/5 text-black/60 hover:text-black/90 transition"
+          className="p-1.5 rounded hover:bg-black/5 text-gray-800 hover:text-black transition"
         >
           <Link2 className="h-3.5 w-3.5" />
         </button>
@@ -8796,7 +8951,7 @@ function RichTextEditor({ value, onChange }: { value: string; onChange: (html: s
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => exec("removeFormat")}
           title="Effacer la mise en forme"
-          className="p-1.5 rounded hover:bg-black/5 text-black/60 hover:text-black/90 transition ml-auto"
+          className="p-1.5 rounded hover:bg-black/5 text-gray-800 hover:text-black transition ml-auto"
         >
           <Eraser className="h-3.5 w-3.5" />
         </button>
@@ -8905,7 +9060,7 @@ function ReferentielSection({
       <div className="bg-white rounded-2xl border border-black/5 shadow-sm overflow-hidden">
         {/* Formulaire d'ajout */}
         <div className="p-5 border-b border-black/5">
-          <p className="text-xs font-semibold text-black/40 uppercase tracking-wide mb-3">
+          <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-3">
             Nouvelle {label.toLowerCase()}
           </p>
           <div className="flex gap-2">
@@ -8932,26 +9087,26 @@ function ReferentielSection({
         {loading ? (
           <div className="flex justify-center py-10"><Spinner /></div>
         ) : items.length === 0 ? (
-          <div className="py-10 text-center text-sm text-black/30">
+          <div className="py-10 text-center text-sm text-gray-700">
             Aucune {labelPlural} enregistrée
           </div>
         ) : (
           <div className="divide-y divide-black/5">
             {actives.map((item) => (
               <div key={item.id} className="flex items-center gap-3 px-5 py-3">
-                <span className="flex-1 text-sm font-medium text-black/80">{item.intitule}</span>
+                <span className="flex-1 text-sm font-medium text-gray-900">{item.intitule}</span>
                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
                   Actif
                 </span>
                 <button
                   onClick={() => toggleActive(item)}
-                  className="text-xs text-black/40 hover:text-amber-600 transition px-2 py-1 rounded border border-black/10 hover:border-amber-300"
+                  className="text-xs text-gray-700 hover:text-amber-600 transition px-2 py-1 rounded border border-black/10 hover:border-amber-300"
                 >
                   Désactiver
                 </button>
                 <button
                   onClick={() => handleDelete(item)}
-                  className="text-black/20 hover:text-red-500 transition"
+                  className="text-gray-700 hover:text-red-500 transition"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -8960,25 +9115,25 @@ function ReferentielSection({
             {inactives.length > 0 && (
               <>
                 <div className="px-5 py-2 bg-black/[0.02]">
-                  <span className="text-[10px] font-semibold text-black/30 uppercase tracking-wide">
+                  <span className="text-[10px] font-semibold text-gray-700 uppercase tracking-wide">
                     Inactives ({inactives.length})
                   </span>
                 </div>
                 {inactives.map((item) => (
                   <div key={item.id} className="flex items-center gap-3 px-5 py-3 opacity-50">
-                    <span className="flex-1 text-sm text-black/60 line-through">{item.intitule}</span>
-                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-black/40 border border-black/10 font-medium">
+                    <span className="flex-1 text-sm text-gray-800 line-through">{item.intitule}</span>
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 border border-black/10 font-medium">
                       Inactif
                     </span>
                     <button
                       onClick={() => toggleActive(item)}
-                      className="text-xs text-black/40 hover:text-emerald-600 transition px-2 py-1 rounded border border-black/10 hover:border-emerald-300"
+                      className="text-xs text-gray-700 hover:text-emerald-600 transition px-2 py-1 rounded border border-black/10 hover:border-emerald-300"
                     >
                       Activer
                     </button>
                     <button
                       onClick={() => handleDelete(item)}
-                      className="text-black/20 hover:text-red-500 transition"
+                      className="text-gray-700 hover:text-red-500 transition"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -9067,7 +9222,7 @@ function EtablissementsSection() {
       </div>
 
       <div className="bg-white rounded-2xl border border-black/5 shadow-sm overflow-hidden">
-        <div className="px-4 py-2.5 border-b bg-gray-50 grid grid-cols-12 gap-2 text-xs font-semibold text-black/40 uppercase tracking-wide">
+        <div className="px-4 py-2.5 border-b bg-gray-50 grid grid-cols-12 gap-2 text-xs font-semibold text-gray-700 uppercase tracking-wide">
           <span className="col-span-2">Code UAI</span>
           <span className="col-span-5">Établissement</span>
           <span className="col-span-2">Ville</span>
@@ -9077,20 +9232,20 @@ function EtablissementsSection() {
         {loading ? (
           <div className="p-6 flex justify-center"><Spinner /></div>
         ) : filtered.length === 0 ? (
-          <p className="p-6 text-sm text-black/40 text-center">
+          <p className="p-6 text-sm text-gray-700 text-center">
             {etablissements.length === 0 ? "Aucun établissement. Importez un fichier Excel." : "Aucun résultat."}
           </p>
         ) : (
           <div className="divide-y max-h-[60vh] overflow-y-auto">
             {filtered.map((e) => (
               <div key={e.id} className="grid grid-cols-12 gap-2 px-4 py-2.5 text-sm items-center hover:bg-gray-50">
-                <span className="col-span-2 font-mono text-xs text-black/60">{e.code_uai}</span>
+                <span className="col-span-2 font-mono text-xs text-gray-800">{e.code_uai}</span>
                 <span className="col-span-5 font-medium">{e.nom}</span>
-                <span className="col-span-2 text-black/50 text-xs">{e.ville ?? "—"}</span>
-                <span className="col-span-2 text-black/50 text-xs">{e.departement ?? "—"}</span>
+                <span className="col-span-2 text-gray-800 text-xs">{e.ville ?? "—"}</span>
+                <span className="col-span-2 text-gray-800 text-xs">{e.departement ?? "—"}</span>
                 <button
                   onClick={() => handleDelete(e.id, e.nom)}
-                  className="col-span-1 text-black/20 hover:text-red-500 transition flex justify-end"
+                  className="col-span-1 text-gray-700 hover:text-red-500 transition flex justify-end"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -9099,7 +9254,7 @@ function EtablissementsSection() {
           </div>
         )}
       </div>
-      <p className="text-xs text-black/40">{etablissements.length} établissement(s) enregistré(s)</p>
+      <p className="text-xs text-gray-700">{etablissements.length} établissement(s) enregistré(s)</p>
     </div>
   );
 }
@@ -9298,7 +9453,7 @@ function ParametragesSection() {
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-gray-900 mb-1">Paramétrages</h1>
-          <p className="text-sm text-gray-500">Configuration des messages automatiques et gestion des accès.</p>
+          <p className="text-sm text-gray-700">Configuration des messages automatiques et gestion des accès.</p>
         </div>
         <Btn label="Exporter Excel" icon={Download} variant="ghost" onClick={doExportParametrages} />
       </div>
@@ -9310,7 +9465,7 @@ function ParametragesSection() {
             key={t.key}
             onClick={() => setTab(t.key)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-              tab === t.key ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"
+              tab === t.key ? "bg-white shadow-sm text-gray-900" : "text-gray-700 hover:text-black"
             }`}
           >
             {t.label}
@@ -9354,7 +9509,7 @@ function ParametragesSection() {
           {selected && (
             <div className="flex-1 bg-white rounded-2xl border border-black/5 shadow-sm p-5 space-y-4">
               <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-1">
                   {selected.code}
                 </p>
                 <h2 className="text-base font-bold text-gray-900">
@@ -9385,7 +9540,7 @@ function ParametragesSection() {
               </div>
 
               {!MESSAGE_NON_EMAIL_CODES.has(selected.code) && (
-                <div className="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3 text-xs text-gray-500">
+                <div className="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3 text-xs text-gray-700">
                   <p className="font-medium mb-1">Variables disponibles :</p>
                   <p className="font-mono">{"{prenom}"} {"{nom}"} {"{login}"} {"{password}"} {"{date}"} {"{epreuves}"} {"{journees}"} {"{url}"} {"{jours}"}</p>
                 </div>
@@ -9400,7 +9555,7 @@ function ParametragesSection() {
         <div className="max-w-md">
           <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-5 space-y-4">
             <h2 className="text-base font-semibold text-gray-900">Réinitialiser le mot de passe d&apos;un candidat</h2>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-700">
               Saisissez l&apos;adresse email du candidat. Un nouveau mot de passe temporaire sera généré.
             </p>
 
@@ -9466,7 +9621,7 @@ function ParametragesSection() {
                 disabled={creatingAdmin || !newAdminUsername.trim() || newAdminPassword.length < 8}
               />
             </div>
-            <label className="flex items-center gap-2 text-sm text-gray-600">
+            <label className="flex items-center gap-2 text-sm text-gray-700">
               <input
                 type="checkbox"
                 checked={newAdminSuperAdmin}
@@ -9481,12 +9636,12 @@ function ParametragesSection() {
             {loadingAdmins ? (
               <div className="p-6 flex justify-center"><Spinner /></div>
             ) : adminAccounts.length === 0 ? (
-              <p className="p-6 text-sm text-gray-400 text-center">Aucun compte admin.</p>
+              <p className="p-6 text-sm text-gray-700 text-center">Aucun compte admin.</p>
             ) : (
               adminAccounts.map((a, i) => (
                 <div key={a.id} className={`px-5 py-4 flex items-center justify-between gap-3 ${i > 0 ? "border-t border-gray-100" : ""}`}>
                   <div className="flex items-center gap-2 min-w-0">
-                    <Shield className={`h-4 w-4 shrink-0 ${a.role === "super_admin" ? "text-amber-500" : "text-gray-300"}`} />
+                    <Shield className={`h-4 w-4 shrink-0 ${a.role === "super_admin" ? "text-amber-500" : "text-gray-700"}`} />
                     <span className="text-sm font-medium text-gray-900 truncate">{a.username}</span>
                     {a.role === "super_admin" && (
                       <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 shrink-0">
@@ -9588,7 +9743,7 @@ function ConflitsSection() {
             <AlertTriangle className="h-5 w-5 text-amber-500" />
             Conflits établissement
           </h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-gray-700 mt-1">
             Épreuves où candidat et examinateur sont issus du même lycée (code UAI identique).
           </p>
         </div>
@@ -9602,8 +9757,8 @@ function ConflitsSection() {
       ) : conflits.length === 0 ? (
         <div className="rounded-2xl border-2 border-dashed border-gray-200 p-16 text-center">
           <CheckCircle2 className="h-10 w-10 mx-auto mb-3 text-green-400" />
-          <p className="text-base font-medium text-gray-500">Aucun conflit détecté</p>
-          <p className="text-sm text-gray-400 mt-1">
+          <p className="text-base font-medium text-gray-700">Aucun conflit détecté</p>
+          <p className="text-sm text-gray-700 mt-1">
             Tous les candidats inscrits passent avec un examinateur d&apos;un autre établissement.
           </p>
         </div>
@@ -9620,7 +9775,7 @@ function ConflitsSection() {
           <div className="space-y-6">
             {Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b)).map(([date, cs]) => (
               <div key={date}>
-                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2 capitalize">
+                <h2 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2 capitalize">
                   {formatDate(date)}
                 </h2>
                 <div className="bg-white rounded-2xl border border-black/5 shadow-sm overflow-hidden">
@@ -9630,7 +9785,7 @@ function ConflitsSection() {
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-2">
                             <span className="text-sm font-semibold text-gray-900">{c.matiere}</span>
-                            <span className="text-xs text-gray-400 font-mono">{hm(c.heure_debut)} – {hm(c.heure_fin)}</span>
+                            <span className="text-xs text-gray-700 font-mono">{hm(c.heure_debut)} – {hm(c.heure_fin)}</span>
                           </div>
                           <div className="grid grid-cols-2 gap-2">
                             <div className="rounded-lg bg-blue-50 px-3 py-2">
@@ -9693,7 +9848,7 @@ function CredentialsModal({
           <Key className="h-5 w-5 text-[#C62828]" />
           <h3 className="text-base font-semibold">Identifiants générés</h3>
         </div>
-        <p className="text-sm text-black/60 mb-4">
+        <p className="text-sm text-gray-800 mb-4">
           {prenom} {nom} — <span className="font-mono text-xs">{email}</span>
         </p>
 
@@ -9716,12 +9871,12 @@ function CredentialsModal({
           ].map(({ label, value, key }) => (
             <div key={key} className="flex items-center justify-between bg-gray-50 rounded-lg border px-3 py-2">
               <div>
-                <p className="text-[10px] text-black/40 uppercase tracking-wide">{label}</p>
+                <p className="text-[10px] text-gray-700 uppercase tracking-wide">{label}</p>
                 <p className="text-sm font-mono font-medium">{value}</p>
               </div>
               <button
                 onClick={() => copy(value, key)}
-                className="text-black/30 hover:text-[#C62828] transition"
+                className="text-gray-700 hover:text-[#C62828] transition"
                 title="Copier"
               >
                 {copied === key
@@ -9879,7 +10034,7 @@ function SurveillantsSection() {
           <Shield className="h-5 w-5 text-[#C62828]" />
           <div>
             <h2 className="text-xl font-semibold">Surveillants</h2>
-            <p className="text-sm text-black/40">Gestion et planning des surveillants</p>
+            <p className="text-sm text-gray-700">Gestion et planning des surveillants</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -9902,7 +10057,7 @@ function SurveillantsSection() {
         <div className="flex rounded-xl border overflow-hidden w-fit text-xs font-medium">
           {(["annuaire", "planning"] as const).map((v) => (
             <button key={v} onClick={() => setView(v)}
-              className={`px-4 py-2 transition ${view === v ? "bg-black text-white" : "bg-white text-black/50 hover:bg-black/5"}`}
+              className={`px-4 py-2 transition ${view === v ? "bg-black text-white" : "bg-white text-gray-800 hover:bg-black/5"}`}
             >
               {v === "annuaire" ? "Annuaire" : "Planning des créneaux"}
             </button>
@@ -9918,7 +10073,7 @@ function SurveillantsSection() {
               <div className="flex rounded-lg border overflow-hidden text-xs">
                 {(["tous", "actif", "inactif"] as const).map((f) => (
                   <button key={f} onClick={() => setFilterActif(f)}
-                    className={`px-3 py-1.5 transition ${filterActif === f ? "bg-black text-white" : "bg-white text-black/50 hover:bg-black/5"}`}
+                    className={`px-3 py-1.5 transition ${filterActif === f ? "bg-black text-white" : "bg-white text-gray-800 hover:bg-black/5"}`}
                   >
                     {f === "tous" ? "Tous" : f === "actif" ? "Actifs" : "Inactifs"}
                   </button>
@@ -9943,11 +10098,11 @@ function SurveillantsSection() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-[#F5F5F5] border-b">
-                    <th className="text-left px-5 py-3 text-xs font-semibold text-black/50 tracking-wide">Nom</th>
-                    <th className="text-left px-5 py-3 text-xs font-semibold text-black/50 tracking-wide">Email</th>
-                    <th className="text-left px-5 py-3 text-xs font-semibold text-black/50 tracking-wide">Statut global</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-800 tracking-wide">Nom</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-800 tracking-wide">Email</th>
+                    <th className="text-left px-5 py-3 text-xs font-semibold text-gray-800 tracking-wide">Statut global</th>
                     {selectedPlanningId && (
-                      <th className="text-left px-5 py-3 text-xs font-semibold text-black/50 tracking-wide">Ce planning</th>
+                      <th className="text-left px-5 py-3 text-xs font-semibold text-gray-800 tracking-wide">Ce planning</th>
                     )}
                     <th className="px-5 py-3" />
                   </tr>
@@ -9958,12 +10113,12 @@ function SurveillantsSection() {
                       <td className="px-5 py-3">
                         <p className="font-medium">{s.prenom} {s.nom}</p>
                       </td>
-                      <td className="px-5 py-3 text-black/50 text-xs font-mono">{s.email}</td>
+                      <td className="px-5 py-3 text-gray-800 text-xs font-mono">{s.email}</td>
                       <td className="px-5 py-3">
                         <button
                           onClick={() => handleToggleActif(s)}
                           className={`text-xs px-2.5 py-1 rounded-full font-semibold transition ${
-                            s.actif ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                            s.actif ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                           }`}
                         >
                           {s.actif ? "Actif" : "Inactif"}
@@ -9985,7 +10140,7 @@ function SurveillantsSection() {
                               : s.actif_planning === false ? "bg-amber-400"
                               : "bg-gray-300"
                             }`} />
-                            <span className="text-black/40">
+                            <span className="text-gray-700">
                               {s.actif_planning === true ? "Actif"
                               : s.actif_planning === false ? "Inactif"
                               : "Non associé"}
@@ -10049,7 +10204,7 @@ function SurveillantsSection() {
                 return (
                   <div key={date} className="bg-white rounded-2xl border border-black/5 shadow-sm overflow-hidden">
                     <div className="px-4 py-2.5 bg-black/[0.02] border-b border-black/5 flex items-center justify-between">
-                      <span className="text-xs font-semibold text-black/60 capitalize">{fmtDate(date)}</span>
+                      <span className="text-xs font-semibold text-gray-800 capitalize">{fmtDate(date)}</span>
                       {nonAssignes > 0 && (
                         <span className="flex items-center gap-1.5 text-xs text-amber-600 font-medium">
                           <AlertTriangle className="h-3.5 w-3.5" />
@@ -10061,36 +10216,36 @@ function SurveillantsSection() {
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="border-b border-black/5 bg-black/[0.01]">
-                          <th className="text-left px-4 py-2 text-black/40 font-medium w-28">Matière</th>
-                          <th className="text-left px-4 py-2 text-black/40 font-medium w-24">Heure</th>
-                          <th className="text-left px-4 py-2 text-black/40 font-medium">Surveillant</th>
-                          <th className="text-left px-4 py-2 text-black/40 font-medium">Candidat</th>
-                          <th className="text-left px-4 py-2 text-black/40 font-medium w-20">Statut</th>
+                          <th className="text-left px-4 py-2 text-gray-700 font-medium w-28">Matière</th>
+                          <th className="text-left px-4 py-2 text-gray-700 font-medium w-24">Heure</th>
+                          <th className="text-left px-4 py-2 text-gray-700 font-medium">Surveillant</th>
+                          <th className="text-left px-4 py-2 text-gray-700 font-medium">Candidat</th>
+                          <th className="text-left px-4 py-2 text-gray-700 font-medium w-20">Statut</th>
                         </tr>
                       </thead>
                       <tbody>
                         {rows.map((ep) => (
                           <tr key={ep.id} className={`border-b border-black/[0.04] last:border-0 ${!ep.surveillant_id ? "bg-amber-50/40" : "hover:bg-black/[0.01]"}`}>
-                            <td className="px-4 py-2.5 font-medium text-black/70">{ep.matiere}</td>
-                            <td className="px-4 py-2.5 font-mono text-black/50">{ep.heure_debut} – {ep.heure_fin}</td>
+                            <td className="px-4 py-2.5 font-medium text-gray-900">{ep.matiere}</td>
+                            <td className="px-4 py-2.5 font-mono text-gray-800">{ep.heure_debut} – {ep.heure_fin}</td>
                             <td className="px-4 py-2.5">
                               {ep.surveillant_nom ? (
-                                <span className="text-black/70">{ep.surveillant_nom} {ep.surveillant_prenom}</span>
+                                <span className="text-gray-900">{ep.surveillant_nom} {ep.surveillant_prenom}</span>
                               ) : (
                                 <span className="flex items-center gap-1 text-amber-500">
                                   <AlertTriangle className="h-3 w-3" /> Non assigné
                                 </span>
                               )}
                             </td>
-                            <td className="px-4 py-2.5 text-black/50">
-                              {ep.candidat_nom ? `${ep.candidat_nom} ${ep.candidat_prenom}` : <span className="text-black/25">—</span>}
+                            <td className="px-4 py-2.5 text-gray-800">
+                              {ep.candidat_nom ? `${ep.candidat_nom} ${ep.candidat_prenom}` : <span className="text-gray-700">—</span>}
                             </td>
                             <td className="px-4 py-2.5">
                               <span className={`inline-block px-2 py-0.5 rounded-full font-medium text-[10px] ${
                                 ep.statut === "ATTRIBUEE" ? "bg-green-100 text-green-700" :
-                                ep.statut === "LIBRE" ? "bg-gray-100 text-gray-500" :
+                                ep.statut === "LIBRE" ? "bg-gray-100 text-gray-700" :
                                 ep.statut === "PRERESERVEE" ? "bg-amber-100 text-amber-700" :
-                                "bg-gray-50 text-gray-400"
+                                "bg-gray-50 text-gray-700"
                               }`}>
                                 {ep.statut}
                               </span>
@@ -10400,6 +10555,7 @@ function PlanchesSection() {
   const [impDate, setImpDate] = useState("");
   const [impMatiere, setImpMatiere] = useState("");
   const [impEpreuves, setImpEpreuves] = useState<EpreuveFlat[]>([]);
+  const [impAvecPlanche, setImpAvecPlanche] = useState<EpreuveFlat[]>([]);
   const [impLoading, setImpLoading] = useState(false);
   const [impSelected, setImpSelected] = useState<Set<number>>(new Set());
   const [impDownloading, setImpDownloading] = useState(false);
@@ -10411,6 +10567,15 @@ function PlanchesSection() {
   const [loadingEp, setLoadingEp] = useState(false);
   const [assignModal, setAssignModal] = useState<EpreuveFlat | null>(null);
   const [filterMatAss, setFilterMatAss] = useState("");
+  const [filterDateAss, setFilterDateAss] = useState("");
+  const [filterHeureAss, setFilterHeureAss] = useState("");
+  // "" = tous, "avec" / "sans" candidat, sinon l'id du candidat
+  const [filterCandAss, setFilterCandAss] = useState("");
+  // "" = toutes, "assignee" / "non_assignee", sinon le nom de la planche
+  const [filterPlancheAss, setFilterPlancheAss] = useState("");
+  const [rechercheAss, setRechercheAss] = useState("");
+  // "" = tous, "aucun" = sans examinateur, sinon l'id de l'examinateur (1er ou 2e)
+  const [filterExamAss, setFilterExamAss] = useState("");
   const [assigning, setAssigning] = useState(false);
 
   const loadPlanches = useCallback(() => {
@@ -10536,24 +10701,34 @@ function PlanchesSection() {
   }
 
   // ── Logique impression ───────────────────────────────────────────────────────
+  // Toutes les épreuves du planning ayant une planche — chargées une fois par planning ;
+  // les filtres date/matière s'appliquent ensuite localement (et leurs listes d'options
+  // viennent de cet ensemble complet, pas de la sélection déjà filtrée).
   useEffect(() => {
-    if (!impPlanningId) { setImpEpreuves([]); setImpSelected(new Set()); return; }
+    if (!impPlanningId) { setImpAvecPlanche([]); return; }
     setImpLoading(true);
     get<EpreuveFlat[]>(`plannings/${impPlanningId}/epreuves`)
-      .then((all) => {
-        const filtered = all.filter(
-          (e) =>
-            e.planche_id !== null &&
-            (impDate === "" || e.date === impDate) &&
-            (impMatiere === "" || e.matiere === impMatiere)
-        );
-        setImpEpreuves(filtered);
-        // Pré-sélectionner toutes les épreuves avec candidat + planche
-        setImpSelected(new Set(filtered.filter((e) => e.candidat_id && e.planche_id).map((e) => e.id)));
-      })
-      .catch(() => {})
+      .then((all) => setImpAvecPlanche(all.filter((e) => e.planche_id !== null)))
+      .catch(() => setImpAvecPlanche([]))
       .finally(() => setImpLoading(false));
-  }, [impPlanningId, impDate, impMatiere]);
+  }, [impPlanningId]);
+
+  useEffect(() => {
+    const filtered = impAvecPlanche
+      .filter((e) => (impDate === "" || e.date === impDate) && (impMatiere === "" || e.matiere === impMatiere))
+      .sort((a, b) => a.date.localeCompare(b.date) || hm(a.heure_debut).localeCompare(hm(b.heure_debut)));
+    setImpEpreuves(filtered);
+    // Pré-sélectionner toutes les épreuves avec candidat + planche
+    setImpSelected(new Set(filtered.filter((e) => e.candidat_id && e.planche_id).map((e) => e.id)));
+  }, [impAvecPlanche, impDate, impMatiere]);
+
+  // Dates où des planches sont assignées (avec leur nombre) — seules proposées au filtre
+  const impDatesPlanches = Array.from(
+    impAvecPlanche.reduce((m, e) => m.set(e.date, (m.get(e.date) ?? 0) + 1), new Map<string, number>()).entries()
+  ).sort(([a], [b]) => a.localeCompare(b));
+  const impMatieresOptions = Array.from(
+    new Set(impAvecPlanche.filter((e) => impDate === "" || e.date === impDate).map((e) => e.matiere))
+  ).sort((a, b) => a.localeCompare(b, "fr"));
 
   async function doDownloadBatch() {
     const ids = Array.from(impSelected);
@@ -10597,18 +10772,64 @@ function PlanchesSection() {
       )
     : [];
 
-  const epreuvesFiltrees = filterMatAss
-    ? epreuves.filter((e) => e.matiere === filterMatAss)
-    : epreuves;
+  // Filtres de l'onglet Assignation — combinables, sur toutes les colonnes du tableau
+  const rechAss = rechercheAss.trim().toLowerCase();
+  const epreuvesFiltrees = epreuves
+    .filter((e) => !filterMatAss || e.matiere === filterMatAss)
+    .filter((e) => !filterDateAss || e.date === filterDateAss)
+    .filter((e) => !filterHeureAss || hm(e.heure_debut) === filterHeureAss)
+    .filter((e) =>
+      !filterCandAss ? true
+      : filterCandAss === "avec" ? e.candidat_id != null
+      : filterCandAss === "sans" ? e.candidat_id == null
+      : String(e.candidat_id) === filterCandAss)
+    .filter((e) =>
+      !filterPlancheAss ? true
+      : filterPlancheAss === "assignee" ? !!e.planche_nom
+      : filterPlancheAss === "non_assignee" ? !e.planche_nom
+      : e.planche_nom === filterPlancheAss)
+    .filter((e) =>
+      !filterExamAss ? true
+      : filterExamAss === "aucun" ? !e.examinateur_id && !e.examinateur2_id
+      : String(e.examinateur_id) === filterExamAss || String(e.examinateur2_id) === filterExamAss)
+    .filter((e) =>
+      !rechAss ||
+      `${e.matiere} ${e.candidat_nom ?? ""} ${e.candidat_prenom ?? ""} ${e.planche_nom ?? ""} ${formatDateCourte(e.date)} ${hm(e.heure_debut)} ${e.examinateur_nom ?? ""} ${e.examinateur_prenom ?? ""} ${e.examinateur2_nom ?? ""} ${e.examinateur2_prenom ?? ""}`
+        .toLowerCase().includes(rechAss))
+    .sort((a, b) => a.date.localeCompare(b.date) || hm(a.heure_debut).localeCompare(hm(b.heure_debut)) || a.matiere.localeCompare(b.matiere, "fr"));
 
   const matiereOptions = Array.from(new Set(epreuves.map((e) => e.matiere))).sort();
+  const dateOptionsAss = Array.from(new Set(epreuves.map((e) => e.date))).sort();
+  const heureOptionsAss = Array.from(new Set(epreuves.map((e) => hm(e.heure_debut)))).sort();
+  const candidatOptionsAss = Array.from(
+    new Map(
+      epreuves
+        .filter((e) => e.candidat_id != null)
+        .map((e) => [e.candidat_id as number, `${e.candidat_nom ?? ""} ${e.candidat_prenom ?? ""}`.trim()])
+    ).entries()
+  ).sort(([, a], [, b]) => a.localeCompare(b, "fr"));
+  const plancheOptionsAss = Array.from(new Set(epreuves.map((e) => e.planche_nom).filter((n): n is string => !!n)))
+    .sort((a, b) => a.localeCompare(b, "fr"));
+  const examOptionsAss = Array.from(
+    new Map(
+      epreuves.flatMap((e) => [
+        ...(e.examinateur_id ? [[e.examinateur_id, `${e.examinateur_nom ?? ""} ${e.examinateur_prenom ?? ""}`.trim()] as [number, string]] : []),
+        ...(e.examinateur2_id ? [[e.examinateur2_id, `${e.examinateur2_nom ?? ""} ${e.examinateur2_prenom ?? ""}`.trim()] as [number, string]] : []),
+      ])
+    ).entries()
+  ).sort(([, a], [, b]) => a.localeCompare(b, "fr"));
+  const filtresAssActifs = [filterMatAss, filterDateAss, filterHeureAss, filterCandAss, filterPlancheAss, filterExamAss, rechercheAss].some(Boolean);
+  const resetFiltresAss = () => {
+    setFilterMatAss(""); setFilterDateAss(""); setFilterHeureAss("");
+    setFilterCandAss(""); setFilterPlancheAss(""); setFilterExamAss(""); setRechercheAss("");
+  };
 
   return (
     <div className="max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-xl font-semibold">Planches</h2>
-          <p className="text-sm text-black/40 mt-0.5">Gestion des sujets PDF et assignation aux épreuves</p>
+          <p className="text-sm text-gray-700 mt-0.5">Gestion des sujets PDF et assignation aux épreuves</p>
         </div>
       </div>
 
@@ -10619,7 +10840,7 @@ function PlanchesSection() {
             key={t}
             onClick={() => setTab(t)}
             className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${
-              tab === t ? "bg-white shadow text-black" : "text-black/50 hover:text-black/70"
+              tab === t ? "bg-white shadow text-black" : "text-gray-800 hover:text-black"
             }`}
           >
             {t === "sujets" ? "Gestion des sujets" : t === "assignation" ? "Assignation" : "Impression"}
@@ -10653,14 +10874,14 @@ function PlanchesSection() {
                   {uploadFiles.length > 0 ? (
                     <div>
                       <p className="text-sm font-semibold text-gray-800">{uploadFiles.length} fichier(s) sélectionné(s)</p>
-                      <p className="text-xs text-gray-400 mt-1">{uploadFiles.map((f) => f.name).join(", ")}</p>
-                      <p className="text-xs text-gray-400 mt-1">Cliquer pour changer</p>
+                      <p className="text-xs text-gray-700 mt-1">{uploadFiles.map((f) => f.name).join(", ")}</p>
+                      <p className="text-xs text-gray-700 mt-1">Cliquer pour changer</p>
                     </div>
                   ) : (
                     <div>
-                      <Upload className="h-8 w-8 mx-auto mb-2 text-gray-300" />
-                      <p className="text-sm text-gray-500">Cliquer pour sélectionner des PDFs</p>
-                      <p className="text-xs text-gray-400 mt-1">Plusieurs fichiers acceptés · PDF uniquement</p>
+                      <Upload className="h-8 w-8 mx-auto mb-2 text-gray-700" />
+                      <p className="text-sm text-gray-700">Cliquer pour sélectionner des PDFs</p>
+                      <p className="text-xs text-gray-700 mt-1">Plusieurs fichiers acceptés · PDF uniquement</p>
                     </div>
                   )}
                 </div>
@@ -10683,7 +10904,7 @@ function PlanchesSection() {
               </Field>
               {uploadErr && <ErrorMsg msg={uploadErr} />}
               <div className="flex gap-2 justify-end">
-                <button onClick={() => { setShowUpload(false); setUploadFiles([]); setUploadErr(""); }} className="text-sm text-gray-500 px-4 py-2 rounded-lg hover:bg-gray-100 transition">Annuler</button>
+                <button onClick={() => { setShowUpload(false); setUploadFiles([]); setUploadErr(""); }} className="text-sm text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-100 transition">Annuler</button>
                 <Btn label="Injecter" disabled={uploadFiles.length === 0 || uploading} icon={uploading ? Loader2 : Upload} onClick={doUpload} />
               </div>
             </div>
@@ -10691,7 +10912,7 @@ function PlanchesSection() {
 
           {/* Table */}
           {loadingP ? (
-            <div className="flex justify-center py-12 text-black/30"><Spinner /></div>
+            <div className="flex justify-center py-12 text-gray-700"><Spinner /></div>
           ) : planches.length === 0 ? (
             <Empty message="Aucun sujet chargé" sub="Cliquez sur « Injecter des sujets » pour importer des PDFs." />
           ) : (
@@ -10700,7 +10921,7 @@ function PlanchesSection() {
                 <thead>
                   <tr className="bg-[#F5F5F5]">
                     {["Nom", "Matière", "Auteur", "Statut", "Assignée", ""].map((h) => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-black/50 tracking-wide">{h}</th>
+                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-800 tracking-wide">{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -10762,19 +10983,19 @@ function PlanchesSection() {
                         <>
                           <td className="px-4 py-3 font-medium text-sm">
                             <div className="flex items-center gap-2">
-                              <FileText className="h-4 w-4 text-black/30 shrink-0" />
+                              <FileText className="h-4 w-4 text-gray-700 shrink-0" />
                               {p.nom}
                             </div>
                           </td>
-                          <td className="px-4 py-3 text-sm text-black/60">{p.matiere_intitule ?? <span className="text-black/30 italic">—</span>}</td>
-                          <td className="px-4 py-3 text-sm text-black/60">{p.examinateur_nom ?? <span className="text-black/30 italic">—</span>}</td>
+                          <td className="px-4 py-3 text-sm text-gray-800">{p.matiere_intitule ?? <span className="text-gray-700 italic">—</span>}</td>
+                          <td className="px-4 py-3 text-sm text-gray-800">{p.examinateur_nom ?? <span className="text-gray-700 italic">—</span>}</td>
                           <td className="px-4 py-3">
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${p.statut === "ACTIF" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${p.statut === "ACTIF" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700"}`}>
                               {p.statut === "ACTIF" ? "Actif" : "Inactif"}
                             </span>
                           </td>
                           <td className="px-4 py-3">
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${p.assignee ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-400"}`}>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${p.assignee ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-700"}`}>
                               {p.assignee ? "Oui" : "Non"}
                             </span>
                           </td>
@@ -10784,7 +11005,7 @@ function PlanchesSection() {
                                 href={`/api/backend/planches/${p.id}/download`}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="inline-flex items-center gap-1 text-xs text-black/50 hover:text-black/80 px-2 py-1 rounded hover:bg-black/5 transition"
+                                className="inline-flex items-center gap-1 text-xs text-gray-800 hover:text-black px-2 py-1 rounded hover:bg-black/5 transition"
                               >
                                 <Download className="h-3.5 w-3.5" />
                                 PDF
@@ -10815,47 +11036,129 @@ function PlanchesSection() {
         <div className="space-y-5">
           <div className="flex items-end gap-4 flex-wrap">
             <Field label="Planning">
-              <Select value={planningId} onChange={(e) => setPlanningId(e.target.value === "" ? "" : Number(e.target.value))} className="min-w-[220px]">
+              <Select
+                value={planningId}
+                onChange={(e) => { setPlanningId(e.target.value === "" ? "" : Number(e.target.value)); resetFiltresAss(); }}
+                className="min-w-[220px]"
+              >
                 <option value="">— Sélectionner un planning</option>
                 {plannings.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
               </Select>
             </Field>
-            {matiereOptions.length > 0 && (
-              <Field label="Filtrer par matière">
-                <Select value={filterMatAss} onChange={(e) => setFilterMatAss(e.target.value)}>
-                  <option value="">Toutes</option>
-                  {matiereOptions.map((m) => <option key={m} value={m}>{m}</option>)}
-                </Select>
-              </Field>
-            )}
           </div>
+
+          {/* Filtres sur toutes les colonnes */}
+          {planningId !== "" && epreuves.length > 0 && (
+            <div className="bg-white rounded-xl border border-black/10 shadow-sm p-4 space-y-3">
+              <div className="grid gap-3 grid-cols-2 md:grid-cols-4 lg:grid-cols-7">
+                <Field label="Recherche">
+                  <Input
+                    value={rechercheAss}
+                    onChange={(e) => setRechercheAss(e.target.value)}
+                    placeholder="Nom, planche…"
+                  />
+                </Field>
+                <Field label="Date">
+                  <Select value={filterDateAss} onChange={(e) => setFilterDateAss(e.target.value)}>
+                    <option value="">Toutes</option>
+                    {dateOptionsAss.map((d) => <option key={d} value={d}>{formatDateCourte(d)}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Matière">
+                  <Select value={filterMatAss} onChange={(e) => setFilterMatAss(e.target.value)}>
+                    <option value="">Toutes</option>
+                    {matiereOptions.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Horaire">
+                  <Select value={filterHeureAss} onChange={(e) => setFilterHeureAss(e.target.value)}>
+                    <option value="">Tous</option>
+                    {heureOptionsAss.map((h) => <option key={h} value={h}>{h}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Examinateur">
+                  <Select value={filterExamAss} onChange={(e) => setFilterExamAss(e.target.value)}>
+                    <option value="">Tous</option>
+                    <option value="aucun">— Non assigné —</option>
+                    {examOptionsAss.map(([id, nom]) => <option key={id} value={String(id)}>{nom}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Candidat">
+                  <Select value={filterCandAss} onChange={(e) => setFilterCandAss(e.target.value)}>
+                    <option value="">Tous</option>
+                    <option value="avec">— Avec candidat —</option>
+                    <option value="sans">— Sans candidat —</option>
+                    {candidatOptionsAss.map(([id, nom]) => <option key={id} value={String(id)}>{nom}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Planche">
+                  <Select value={filterPlancheAss} onChange={(e) => setFilterPlancheAss(e.target.value)}>
+                    <option value="">Toutes</option>
+                    <option value="assignee">— Assignée —</option>
+                    <option value="non_assignee">— Non assignée —</option>
+                    {plancheOptionsAss.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </Select>
+                </Field>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-900">
+                  <span className="font-semibold">{epreuvesFiltrees.length}</span> épreuve{epreuvesFiltrees.length > 1 ? "s" : ""}
+                  {filtresAssActifs && <> sur {epreuves.length}</>}
+                  {" · "}
+                  <span className="font-semibold">{epreuvesFiltrees.filter((e) => !e.planche_nom).length}</span> sans planche
+                </span>
+                {filtresAssActifs && (
+                  <button onClick={resetFiltresAss} className="text-sm font-medium hover:underline" style={{ color: RED }}>
+                    Réinitialiser les filtres
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           {!planningId ? (
             <Empty message="Sélectionnez un planning" />
           ) : loadingEp ? (
-            <div className="flex justify-center py-12 text-black/30"><Spinner /></div>
-          ) : epreuvesFiltrees.length === 0 ? (
+            <div className="flex justify-center py-12 text-gray-700"><Spinner /></div>
+          ) : epreuves.length === 0 ? (
             <Empty message="Aucune épreuve" />
+          ) : epreuvesFiltrees.length === 0 ? (
+            <Empty message="Aucune épreuve ne correspond aux filtres" />
           ) : (
             <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-[#F5F5F5]">
-                    {["Date", "Matière", "Horaire", "Candidat", "Planche assignée", ""].map((h) => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-black/50 tracking-wide">{h}</th>
+                    {["Date", "Matière", "Horaire", "Examinateur(s)", "Candidat", "Planche assignée", ""].map((h) => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-800 tracking-wide">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {epreuvesFiltrees.map((ep) => (
                     <tr key={ep.id} className="border-t border-black/5 hover:bg-black/[0.012]">
-                      <td className="px-4 py-3 text-xs text-black/50">{ep.date}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900 tabular-nums whitespace-nowrap">{formatDateCourte(ep.date)}</td>
                       <td className="px-4 py-3 font-medium">{ep.matiere}</td>
-                      <td className="px-4 py-3 text-xs text-black/60">{hm(ep.heure_debut)} → {hm(ep.heure_fin)}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900 tabular-nums whitespace-nowrap">{hm(ep.heure_debut)} → {hm(ep.heure_fin)}</td>
+                      <td className="px-4 py-3 text-sm text-gray-900">
+                        {ep.examinateur_id || ep.examinateur2_id ? (
+                          <div className="space-y-0.5">
+                            {ep.examinateur_id && <div>{ep.examinateur_nom} {ep.examinateur_prenom}</div>}
+                            {ep.examinateur2_id && (
+                              <div>
+                                {ep.examinateur2_nom} {ep.examinateur2_prenom}
+                                <span className="ml-1.5 text-xs text-gray-700">(2ᵉ)</span>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-gray-700 italic">Non assigné</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-sm">
                         {ep.candidat_nom
                           ? <span className="font-medium">{ep.candidat_nom} {ep.candidat_prenom}</span>
-                          : <span className="text-black/30 italic">—</span>}
+                          : <span className="text-gray-700 italic">—</span>}
                       </td>
                       <td className="px-4 py-3">
                         {ep.planche_nom ? (
@@ -10864,7 +11167,7 @@ function PlanchesSection() {
                             <span className="text-sm text-blue-700 font-medium">{ep.planche_nom}</span>
                           </div>
                         ) : (
-                          <span className="text-xs text-black/30 italic">Non assignée</span>
+                          <span className="text-xs text-gray-700 italic">Non assignée</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -10921,8 +11224,8 @@ function PlanchesSection() {
           <Modal open={!!assignModal} onClose={() => setAssignModal(null)} title={`Assigner une planche — ${assignModal?.matiere ?? ""}`} wide>
             {assignModal && (
               <div className="space-y-3">
-                <p className="text-sm text-black/50">
-                  Épreuve : <strong>{assignModal.matiere}</strong> · {assignModal.date} · {hm(assignModal.heure_debut)}
+                <p className="text-sm text-gray-800">
+                  Épreuve : <strong>{assignModal.matiere}</strong> · {formatDateCourte(assignModal.date)} · {hm(assignModal.heure_debut)}
                   {assignModal.candidat_nom && <> · {assignModal.candidat_nom} {assignModal.candidat_prenom}</>}
                 </p>
                 {planchesForAssign.length === 0 ? (
@@ -10936,7 +11239,7 @@ function PlanchesSection() {
                       <thead>
                         <tr className="bg-[#F5F5F5]">
                           {["Nom", "Auteur", ""].map((h) => (
-                            <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-black/50">{h}</th>
+                            <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-800">{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -10945,11 +11248,11 @@ function PlanchesSection() {
                           <tr key={p.id} className={`border-t border-black/5 ${assignModal.planche_id === p.id ? "bg-blue-50" : "hover:bg-black/[0.012]"}`}>
                             <td className="px-4 py-2.5 font-medium">
                               <div className="flex items-center gap-2">
-                                <FileText className="h-4 w-4 text-black/30 shrink-0" />
+                                <FileText className="h-4 w-4 text-gray-700 shrink-0" />
                                 {p.nom}
                               </div>
                             </td>
-                            <td className="px-4 py-2.5 text-black/50 text-xs">{p.examinateur_nom ?? "—"}</td>
+                            <td className="px-4 py-2.5 text-gray-800 text-xs">{p.examinateur_nom ?? "—"}</td>
                             <td className="px-4 py-2.5 text-right">
                               {assignModal.planche_id === p.id ? (
                                 <span className="text-xs text-blue-600 font-medium">Actuelle</span>
@@ -10988,24 +11291,38 @@ function PlanchesSection() {
                 {plannings.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
               </Select>
             </Field>
-            {impPlanningId !== "" && (
-              <Field label="Date">
-                <Input
-                  type="date"
+            {impPlanningId !== "" && impDatesPlanches.length > 0 && (
+              <Field label="Date (planches assignées)">
+                <Select
                   value={impDate}
-                  onChange={(e) => setImpDate(e.target.value)}
-                />
+                  onChange={(e) => { setImpDate(e.target.value); setImpMatiere(""); }}
+                  className="min-w-[200px]"
+                >
+                  <option value="">Toutes les dates ({impAvecPlanche.length})</option>
+                  {impDatesPlanches.map(([d, n]) => (
+                    <option key={d} value={d}>{formatDateCourte(d)} — {n} planche{n > 1 ? "s" : ""}</option>
+                  ))}
+                </Select>
               </Field>
             )}
-            {impEpreuves.length > 0 && (
+            {impMatieresOptions.length > 0 && (
               <Field label="Matière">
                 <Select value={impMatiere} onChange={(e) => setImpMatiere(e.target.value)}>
                   <option value="">Toutes</option>
-                  {Array.from(new Set(impEpreuves.map((e) => e.matiere))).sort().map((m) => (
+                  {impMatieresOptions.map((m) => (
                     <option key={m} value={m}>{m}</option>
                   ))}
                 </Select>
               </Field>
+            )}
+            {(impDate || impMatiere) && (
+              <button
+                onClick={() => { setImpDate(""); setImpMatiere(""); }}
+                className="text-sm font-medium hover:underline pb-2"
+                style={{ color: RED }}
+              >
+                Réinitialiser
+              </button>
             )}
           </div>
 
@@ -11027,7 +11344,7 @@ function PlanchesSection() {
           {!impPlanningId ? (
             <Empty message="Sélectionnez un planning" />
           ) : impLoading ? (
-            <div className="flex justify-center py-12 text-black/30"><Spinner /></div>
+            <div className="flex justify-center py-12 text-gray-700"><Spinner /></div>
           ) : impEpreuves.length === 0 ? (
             <Empty
               message="Aucune planche assignée pour cette sélection"
@@ -11052,8 +11369,8 @@ function PlanchesSection() {
                         className="rounded"
                       />
                     </th>
-                    {["Matière", "Heure prépa", "Heure passage", "Candidat", "Planche", "Examinateur"].map((h) => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-black/50 tracking-wide">{h}</th>
+                    {["Matière", "Heure prépa", "Heure passage", "Candidat", "Planche", "Examinateur", "Examinateur 2"].map((h) => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-800 tracking-wide">{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -11089,22 +11406,27 @@ function PlanchesSection() {
                           />
                         </td>
                         <td className="px-4 py-3 font-medium">{ep.matiere}</td>
-                        <td className="px-4 py-3 text-sm text-black/60">{heurePrepa}</td>
-                        <td className="px-4 py-3 text-sm text-black/60">{hm(ep.heure_debut)}</td>
+                        <td className="px-4 py-3 text-sm text-gray-800">{heurePrepa}</td>
+                        <td className="px-4 py-3 text-sm text-gray-800">{hm(ep.heure_debut)}</td>
                         <td className="px-4 py-3 text-sm">
                           {ep.candidat_nom
                             ? <span className="font-medium">{ep.candidat_nom} {ep.candidat_prenom}</span>
-                            : <span className="text-black/30 italic">Non attribué</span>}
+                            : <span className="text-gray-700 italic">Non attribué</span>}
                         </td>
                         <td className="px-4 py-3">
                           {ep.planche_nom
                             ? <div className="flex items-center gap-1.5"><FileText className="h-3.5 w-3.5 text-blue-400 shrink-0" /><span className="text-sm">{ep.planche_nom}</span></div>
-                            : <span className="text-black/30 italic text-xs">—</span>}
+                            : <span className="text-gray-700 italic text-xs">—</span>}
                         </td>
-                        <td className="px-4 py-3 text-sm text-black/60">
+                        <td className="px-4 py-3 text-sm text-gray-900">
                           {ep.examinateur_nom
                             ? `${ep.examinateur_prenom ?? ""} ${ep.examinateur_nom}`.trim()
-                            : <span className="text-black/30 italic">—</span>}
+                            : <span className="text-gray-700 italic">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900">
+                          {ep.examinateur2_nom
+                            ? `${ep.examinateur2_prenom ?? ""} ${ep.examinateur2_nom}`.trim()
+                            : <span className="text-gray-700 italic">—</span>}
                         </td>
                       </tr>
                     );
@@ -11452,18 +11774,18 @@ function SallesSection() {
           <Building2 className="h-5 w-5" />
         </div>
         <div>
-          <h2 className="text-xl font-bold text-black/90">Gestion des salles</h2>
-          <p className="text-xs text-black/40">Affectez une salle d'examen et une salle de préparation à chaque créneau</p>
+          <h2 className="text-xl font-bold text-gray-900">Gestion des salles</h2>
+          <p className="text-xs text-gray-700">Affectez une salle d'examen et une salle de préparation à chaque créneau</p>
         </div>
       </div>
 
-      <div className="flex gap-5 items-start">
+      <div className="space-y-5">
         {/* Panneau salles */}
-        <div className="w-64 shrink-0 bg-white rounded-2xl border border-black/5 shadow-sm p-4 space-y-3">
-          <p className="text-xs font-semibold text-black/40 uppercase tracking-wide">Salles disponibles</p>
+        <div className="w-full bg-white rounded-2xl border border-black/5 shadow-sm p-4 space-y-3">
+          <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Salles disponibles</p>
 
           {/* Ajouter une salle */}
-          <div className="flex gap-1.5">
+          <div className="flex gap-1.5 max-w-sm">
             <input
               type="text"
               value={newSalle}
@@ -11484,12 +11806,12 @@ function SallesSection() {
           {addErr && <p className="text-xs text-red-500">{addErr}</p>}
 
           {/* Liste */}
-          <div className="divide-y divide-black/5 rounded-xl border border-black/8 overflow-hidden">
+          <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
             {salles.length === 0 && (
-              <p className="text-sm text-black/30 text-center py-4">Aucune salle</p>
+              <p className="col-span-full text-sm text-gray-800 py-2">Aucune salle</p>
             )}
             {salles.map((s) => (
-              <div key={s.id} className="flex items-center gap-2 px-3 py-2 bg-white hover:bg-black/[0.01]">
+              <div key={s.id} className="flex items-center gap-2 px-3 py-2 bg-white rounded-xl border border-black/10 hover:bg-black/[0.02]">
                 <button
                   onClick={() => toggleSalle(s)}
                   title={s.active ? "Désactiver" : "Activer"}
@@ -11497,7 +11819,7 @@ function SallesSection() {
                 >
                   {s.active && <CheckCircle2 className="h-3 w-3 text-white m-auto" />}
                 </button>
-                <span className={`flex-1 text-sm font-mono ${s.active ? "text-black/80" : "text-black/30 line-through"}`}>
+                <span className={`flex-1 text-sm font-mono ${s.active ? "text-gray-900" : "text-gray-700 line-through"}`}>
                   {s.intitule}
                 </span>
                 <button
@@ -11509,21 +11831,21 @@ function SallesSection() {
               </div>
             ))}
           </div>
-          <p className="text-[11px] text-black/30">
+          <p className="text-[11px] text-gray-700">
             {activeSalles.length} salle(s) active(s) · Cochez pour activer/désactiver
           </p>
         </div>
 
         {/* Panneau épreuves */}
-        <div className="flex-1 min-w-0 space-y-4">
+        <div className="w-full min-w-0 space-y-4">
 
           {/* Salles par défaut */}
           {planningId !== "" && (
             <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-semibold text-black/50 uppercase tracking-wide">Salles par défaut par matière</p>
-                  <p className="text-[11px] text-black/30 mt-0.5">Appliquées automatiquement à la génération et à l'ajout de créneau</p>
+                  <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Salles par défaut par matière</p>
+                  <p className="text-[11px] text-gray-700 mt-0.5">Appliquées automatiquement à la génération et à l'ajout de créneau</p>
                 </div>
                 <button onClick={applyDefaults} disabled={savingDefaults} className="text-xs px-3 py-1.5 rounded-lg text-white font-medium hover:opacity-90 transition disabled:opacity-40 flex items-center gap-1.5" style={{ backgroundColor: RED }}>
                   {savingDefaults && <Loader2 className="h-3 w-3 animate-spin" />}
@@ -11531,17 +11853,17 @@ function SallesSection() {
                 </button>
               </div>
               {matieres.length === 0 ? (
-                <p className="text-xs text-black/30">Aucune matière trouvée pour ce planning.</p>
+                <p className="text-xs text-gray-700">Aucune matière trouvée pour ce planning.</p>
               ) : (
                 <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-black/5">
-                      <th className="text-left py-1.5 text-black/40 font-medium w-36">Matière</th>
-                      <th className="text-left py-1.5 text-black/60 font-semibold">Salle d'examen</th>
-                      <th className="text-left py-1.5 text-black/40 font-medium">Salle de préparation</th>
-                      <th className="text-left py-1.5 text-black/40 font-medium">Surveillant</th>
-                      <th className="text-left py-1.5 text-black/40 font-medium">Surveillant 2</th>
+                      <th className="text-left py-1.5 text-gray-700 font-medium w-36">Matière</th>
+                      <th className="text-left py-1.5 text-gray-800 font-semibold">Salle d'examen</th>
+                      <th className="text-left py-1.5 text-gray-700 font-medium">Salle de préparation</th>
+                      <th className="text-left py-1.5 text-gray-700 font-medium">Surveillant</th>
+                      <th className="text-left py-1.5 text-gray-700 font-medium">Surveillant 2</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -11554,7 +11876,7 @@ function SallesSection() {
                         });
                       return (
                         <tr key={m} className="border-b border-black/[0.04] last:border-0">
-                          <td className="py-2 font-medium text-black/70">{m}</td>
+                          <td className="py-2 font-medium text-gray-900">{m}</td>
                           <td className="py-2 pr-3">
                             <select
                               value={d?.salle_id ?? ""}
@@ -11612,7 +11934,7 @@ function SallesSection() {
           {/* Sélection planning + filtre matière */}
           <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-4 flex gap-3 flex-wrap">
             <div className="flex-1 min-w-[180px]">
-              <label className="text-xs text-black/40 mb-1 block">Planning</label>
+              <label className="text-xs text-gray-700 mb-1 block">Planning</label>
               <select
                 value={planningId}
                 onChange={(e) => setPlanningId(e.target.value ? Number(e.target.value) : "")}
@@ -11626,7 +11948,7 @@ function SallesSection() {
             </div>
             {matieres.length > 0 && (
               <div className="flex-1 min-w-[140px]">
-                <label className="text-xs text-black/40 mb-1 block">Filtrer par matière</label>
+                <label className="text-xs text-gray-700 mb-1 block">Filtrer par matière</label>
                 <select
                   value={filterMatiere}
                   onChange={(e) => setFilterMatiere(e.target.value)}
@@ -11639,7 +11961,7 @@ function SallesSection() {
             )}
             {dates.length > 0 && (
               <div className="flex-1 min-w-[160px]">
-                <label className="text-xs text-black/40 mb-1 block">Filtrer par journée</label>
+                <label className="text-xs text-gray-700 mb-1 block">Filtrer par journée</label>
                 <select
                   value={filterDate}
                   onChange={(e) => setFilterDate(e.target.value)}
@@ -11656,7 +11978,7 @@ function SallesSection() {
             )}
             {heures.length > 0 && (
               <div className="flex-1 min-w-[140px]">
-                <label className="text-xs text-black/40 mb-1 block">Filtrer par heure</label>
+                <label className="text-xs text-gray-700 mb-1 block">Filtrer par heure</label>
                 <select
                   value={filterHeure}
                   onChange={(e) => setFilterHeure(e.target.value)}
@@ -11671,7 +11993,7 @@ function SallesSection() {
             )}
             {epreuves.length > 0 && (
               <div className="flex-1 min-w-[160px]">
-                <label className="text-xs text-black/40 mb-1 block">Filtrer par salle d&apos;examen</label>
+                <label className="text-xs text-gray-700 mb-1 block">Filtrer par salle d&apos;examen</label>
                 <select
                   value={filterSalle}
                   onChange={(e) => setFilterSalle(e.target.value)}
@@ -11688,7 +12010,7 @@ function SallesSection() {
             {epreuves.length > 0 && (
               <div className="flex items-end pb-0.5">
                 <label
-                  className="flex items-center gap-1.5 text-sm text-black/60 px-3 py-2 rounded-lg border bg-white cursor-pointer whitespace-nowrap"
+                  className="flex items-center gap-1.5 text-sm text-gray-800 px-3 py-2 rounded-lg border bg-white cursor-pointer whitespace-nowrap"
                   title="Doublons (plusieurs salles en parallèle sur le même créneau) dont les salles ne sont pas toutes distinctes — non affectées ou affectées à la même salle physique, donc à risque de conflit"
                 >
                   <input type="checkbox" checked={filterAVerifier} onChange={(e) => setFilterAVerifier(e.target.checked)} className="cursor-pointer" />
@@ -11701,7 +12023,7 @@ function SallesSection() {
           {/* Barre de sélection groupée */}
           {selected.size > 0 && (
             <div className="bg-white rounded-2xl border border-black/5 shadow-sm px-4 py-3 flex items-center gap-3 flex-wrap">
-              <span className="text-xs font-semibold text-black/60">{selected.size} créneau(x) sélectionné(s)</span>
+              <span className="text-xs font-semibold text-gray-800">{selected.size} créneau(x) sélectionné(s)</span>
               <select
                 value={bulkSalleId}
                 onChange={(e) => setBulkSalleId(e.target.value)}
@@ -11728,7 +12050,7 @@ function SallesSection() {
               >
                 Appliquer
               </button>
-              <button onClick={() => setSelected(new Set())} className="text-xs text-black/40 hover:text-black/60 transition ml-auto">
+              <button onClick={() => setSelected(new Set())} className="text-xs text-gray-700 hover:text-black transition ml-auto">
                 Annuler
               </button>
             </div>
@@ -11737,7 +12059,7 @@ function SallesSection() {
           {/* Modifications ponctuelles */}
           {planningId !== "" && dates.length > 0 && (
             <div className="flex items-center gap-2 pt-1">
-              <p className="text-xs font-semibold text-black/40 uppercase tracking-wide">Modifications ponctuelles</p>
+              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Modifications ponctuelles</p>
               <div className="flex-1 h-px bg-black/[0.06]" />
             </div>
           )}
@@ -11745,16 +12067,16 @@ function SallesSection() {
           {/* Tableau */}
           {loading ? (
             <div className="flex items-center justify-center py-20">
-              <Loader2 className="h-6 w-6 animate-spin text-black/20" />
+              <Loader2 className="h-6 w-6 animate-spin text-gray-700" />
             </div>
           ) : !planningId ? (
             <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-12 text-center">
-              <Building2 className="h-10 w-10 mx-auto mb-3 text-black/10" />
-              <p className="text-sm text-black/40">Sélectionnez un planning pour affecter les salles</p>
+              <Building2 className="h-10 w-10 mx-auto mb-3 text-gray-700" />
+              <p className="text-sm text-gray-700">Sélectionnez un planning pour affecter les salles</p>
             </div>
           ) : dates.length === 0 ? (
             <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-12 text-center">
-              <p className="text-sm text-black/30">
+              <p className="text-sm text-gray-700">
                 {filterAVerifier ? "Aucun doublon à vérifier — toutes les salles en parallèle sont bien distinctes." : "Aucun créneau trouvé pour ce planning."}
               </p>
             </div>
@@ -11765,7 +12087,7 @@ function SallesSection() {
                 return (
                   <div key={date} className="bg-white rounded-2xl border border-black/5 shadow-sm overflow-hidden">
                     <div className="px-4 py-2.5 bg-black/[0.02] border-b border-black/5">
-                      <span className="text-xs font-semibold text-black/50">
+                      <span className="text-xs font-semibold text-gray-800">
                         {new Date(date + "T12:00:00").toLocaleDateString("fr-FR", {
                           weekday: "long", day: "numeric", month: "long",
                         })}
@@ -11792,13 +12114,13 @@ function SallesSection() {
                               className="cursor-pointer"
                             />
                           </th>
-                          <th className="text-left px-4 py-2 text-black/40 font-medium w-36">Matière</th>
-                          <th className="text-left px-4 py-2 text-black/40 font-medium w-40">Horaire (prépa → oral)</th>
-                          <th className="text-left px-4 py-2 text-black/40 font-medium w-20">Salles</th>
-                          <th className="text-left px-4 py-2 text-black/60 font-semibold">Salle d'examen</th>
-                          <th className="text-left px-4 py-2 text-black/40 font-medium">Salle de préparation</th>
-                          <th className="text-left px-4 py-2 text-black/40 font-medium">Surveillant</th>
-                          <th className="text-left px-4 py-2 text-black/40 font-medium">Surveillant 2</th>
+                          <th className="text-left px-4 py-2 text-gray-700 font-medium w-36">Matière</th>
+                          <th className="text-left px-4 py-2 text-gray-700 font-medium w-40">Horaire (prépa → oral)</th>
+                          <th className="text-left px-4 py-2 text-gray-700 font-medium w-20">Salles</th>
+                          <th className="text-left px-4 py-2 text-gray-800 font-semibold">Salle d'examen</th>
+                          <th className="text-left px-4 py-2 text-gray-700 font-medium">Salle de préparation</th>
+                          <th className="text-left px-4 py-2 text-gray-700 font-medium">Surveillant</th>
+                          <th className="text-left px-4 py-2 text-gray-700 font-medium">Surveillant 2</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -11806,8 +12128,8 @@ function SallesSection() {
                         const heureGroups = dayGroups.filter((g) => g.heure_debut === h);
                         return [
                           <tr key={`h-${h}`} className={hIdx > 0 ? "border-t-2 border-black/10" : undefined}>
-                            <td colSpan={8} className="px-4 py-1.5 bg-black/[0.035] text-[11px] font-bold text-black/60 tracking-wide sticky top-0">
-                              {h.slice(0, 5)} <span className="font-normal text-black/35">— {heureGroups.reduce((n, g) => n + g.epreuves.length, 0)} créneau(x)</span>
+                            <td colSpan={8} className="px-4 py-1.5 bg-black/[0.035] text-[11px] font-bold text-gray-800 tracking-wide sticky top-0">
+                              {h.slice(0, 5)} <span className="font-normal text-gray-700">— {heureGroups.reduce((n, g) => n + g.epreuves.length, 0)} créneau(x)</span>
                             </td>
                           </tr>,
                           ...heureGroups.flatMap((g) => {
@@ -11849,15 +12171,15 @@ function SallesSection() {
                                       className="cursor-pointer"
                                     />
                                   </td>
-                                  <td className="px-4 py-2.5 align-top font-medium text-black/70" rowSpan={rowSpan}>{g.matiere}</td>
+                                  <td className="px-4 py-2.5 align-top font-medium text-gray-900" rowSpan={rowSpan}>{g.matiere}</td>
                                   <td className="px-4 py-2.5 align-top font-mono text-xs whitespace-nowrap" rowSpan={rowSpan}>
-                                    <span className="text-black/35">{heurePrepa}</span>
-                                    <span className="text-black/20 mx-1">→</span>
-                                    <span className="text-black/80 font-semibold">{g.heure_debut?.slice(0, 5)}</span>
-                                    <span className="text-black/20 mx-1">→</span>
-                                    <span className="text-black/50">{ep.heure_fin?.slice(0, 5) ?? "—"}</span>
+                                    <span className="text-gray-700">{heurePrepa}</span>
+                                    <span className="text-gray-700 mx-1">→</span>
+                                    <span className="text-gray-900 font-semibold">{g.heure_debut?.slice(0, 5)}</span>
+                                    <span className="text-gray-700 mx-1">→</span>
+                                    <span className="text-gray-800">{ep.heure_fin?.slice(0, 5) ?? "—"}</span>
                                   </td>
-                                  <td className="px-4 py-2.5 align-top text-black/40" rowSpan={rowSpan} title={hasDoublons ? "Plusieurs salles en parallèle pour ce créneau — une salle par ligne ci-dessous" : ""}>
+                                  <td className="px-4 py-2.5 align-top text-gray-700" rowSpan={rowSpan} title={hasDoublons ? "Plusieurs salles en parallèle pour ce créneau — une salle par ligne ci-dessous" : ""}>
                                     <div className="flex items-center gap-1.5">
                                       <span>{g.epreuves.length}</span>
                                       {hasDoublons && (
@@ -11882,7 +12204,7 @@ function SallesSection() {
                               )}
                               <td className="px-4 py-2.5">
                                 {hasDoublons && (
-                                  <span className="text-[9px] text-black/30 font-mono mr-1.5 align-middle">#{epIdx + 1}</span>
+                                  <span className="text-[9px] text-gray-700 font-mono mr-1.5 align-middle">#{epIdx + 1}</span>
                                 )}
                                 <select
                                   value={ep.salle_id ?? ""}
@@ -12030,13 +12352,13 @@ export default function AdminPage() {
           >
             <Menu className="h-4 w-4" />
           </button>
-          <span className="text-sm font-semibold text-black/70">
+          <span className="text-sm font-semibold text-gray-900">
             ENSAE — Admin
           </span>
         </div>
 
         <main className="flex-1 overflow-auto">
-          <div className="max-w-6xl mx-auto px-4 md:px-8 py-8">
+          <div className={`${(section === "plannings" && selectedPlanning) || section === "salles" ? "max-w-none" : "max-w-6xl"} mx-auto px-4 md:px-8 py-8`}>
             {section === "plannings" && !selectedPlanning && (
               <PlanningsSection onSelect={setSelectedPlanning} />
             )}

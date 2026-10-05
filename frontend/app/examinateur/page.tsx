@@ -51,7 +51,7 @@ export default function ExaminateurLoginPage() {
             <KeyRound className="h-7 w-7 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Espace examinateur</h1>
-          <p className="text-sm text-gray-500 mt-1">Entrez votre code d&apos;accès personnel</p>
+          <p className="text-sm text-gray-700 mt-1">Entrez votre code d&apos;accès personnel</p>
         </div>
 
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
@@ -83,7 +83,7 @@ export default function ExaminateurLoginPage() {
           </button>
         </form>
 
-        <p className="text-center text-xs text-gray-400 mt-4">
+        <p className="text-center text-xs text-gray-700 mt-4">
           Votre code d&apos;accès vous a été communiqué par le service des admissions.
         </p>
         <p className="text-center mt-2">

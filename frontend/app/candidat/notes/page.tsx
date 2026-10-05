@@ -69,7 +69,7 @@ export default function NotesPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-65px)]">
-        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+        <Loader2 className="h-6 w-6 animate-spin text-gray-700" />
       </div>
     );
   }
@@ -87,7 +87,7 @@ export default function NotesPage() {
         <Star className="h-6 w-6" style={{ color: RED }} />
         <h1 className="text-xl font-bold text-gray-900">Mes notes</h1>
       </div>
-      <p className="text-sm text-gray-500 mb-6">
+      <p className="text-sm text-gray-700 mb-6">
         Les notes affichées ont été publiées par le service des admissions.
       </p>
 
@@ -99,9 +99,9 @@ export default function NotesPage() {
 
       {notes.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-gray-200 p-12 text-center">
-          <Lock className="h-8 w-8 mx-auto mb-3 text-gray-300" />
-          <p className="text-sm font-medium text-gray-400">Vos notes ne sont pas encore disponibles</p>
-          <p className="text-xs text-gray-300 mt-1">
+          <Lock className="h-8 w-8 mx-auto mb-3 text-gray-700" />
+          <p className="text-sm font-medium text-gray-700">Vos notes ne sont pas encore disponibles</p>
+          <p className="text-xs text-gray-700 mt-1">
             Elles apparaîtront ici dès leur publication.
           </p>
         </div>
@@ -135,7 +135,7 @@ export default function NotesPage() {
                 <div>
                   <p className="text-sm font-medium text-gray-800">{note.matiere}</p>
                   {note.published_at && (
-                    <p className="text-xs text-gray-400 mt-0.5">
+                    <p className="text-xs text-gray-700 mt-0.5">
                       Publiée le{" "}
                       {new Date(note.published_at).toLocaleDateString("fr-FR", {
                         day: "numeric", month: "long", year: "numeric",
@@ -167,7 +167,7 @@ export default function NotesPage() {
       <div className="mt-8 pt-6 border-t border-gray-100 text-center">
         <button
           onClick={() => router.push("/candidat/accueil")}
-          className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2"
+          className="text-xs text-gray-700 hover:text-black underline underline-offset-2"
         >
           ← Retour à l&apos;accueil
         </button>

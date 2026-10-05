@@ -70,7 +70,7 @@ export default function ConflitsPage() {
           <AlertTriangle className="h-6 w-6 text-amber-500" />
           <div>
             <h1 className="text-xl font-bold text-gray-900">Conflits établissement</h1>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-700">
               Épreuves où le candidat et l&apos;examinateur sont issus du même lycée (code UAI identique).
             </p>
           </div>
@@ -78,7 +78,7 @@ export default function ConflitsPage() {
         <button
           onClick={load}
           disabled={loading}
-          className="flex items-center gap-2 text-sm text-gray-500 border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50 transition disabled:opacity-50"
+          className="flex items-center gap-2 text-sm text-gray-700 border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50 transition disabled:opacity-50"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           Actualiser
@@ -93,13 +93,13 @@ export default function ConflitsPage() {
 
       {loading ? (
         <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+          <Loader2 className="h-6 w-6 animate-spin text-gray-700" />
         </div>
       ) : conflits.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-gray-200 p-16 text-center">
           <CheckCircle className="h-10 w-10 mx-auto mb-3 text-green-400" />
-          <p className="text-base font-medium text-gray-500">Aucun conflit détecté</p>
-          <p className="text-sm text-gray-400 mt-1">
+          <p className="text-base font-medium text-gray-700">Aucun conflit détecté</p>
+          <p className="text-sm text-gray-700 mt-1">
             Tous les candidats inscrits sont affectés à des examinateurs d&apos;un autre établissement.
           </p>
         </div>
@@ -121,7 +121,7 @@ export default function ConflitsPage() {
           <div className="space-y-6">
             {Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b)).map(([date, cs]) => (
               <div key={date}>
-                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3 capitalize">
+                <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3 capitalize">
                   {formatDate(date)}
                 </h2>
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -135,7 +135,7 @@ export default function ConflitsPage() {
                           {/* Matière + heure */}
                           <div className="flex items-center gap-2 mb-2">
                             <span className="text-sm font-semibold text-gray-900">{c.matiere}</span>
-                            <span className="text-xs text-gray-400 font-mono">
+                            <span className="text-xs text-gray-700 font-mono">
                               {c.heure_debut} – {c.heure_fin}
                             </span>
                           </div>

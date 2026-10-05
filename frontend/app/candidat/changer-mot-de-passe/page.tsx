@@ -70,7 +70,7 @@ export default function ChangerMotDePassePage() {
         <div className="w-full max-w-sm bg-white rounded-2xl shadow-md border border-gray-100 p-8 text-center">
           <CheckCircle className="h-10 w-10 mx-auto mb-4" style={{ color: "#16a34a" }} />
           <h1 className="text-lg font-semibold text-gray-900 mb-2">Mot de passe modifié</h1>
-          <p className="text-sm text-gray-500 mb-6">
+          <p className="text-sm text-gray-700 mb-6">
             Votre mot de passe a été mis à jour avec succès.
           </p>
           <button
@@ -89,7 +89,7 @@ export default function ChangerMotDePassePage() {
     <div className="flex items-center justify-center min-h-[calc(100vh-65px)] px-4">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-md border border-gray-100 p-8">
         <h1 className="text-xl font-semibold text-gray-900 mb-1">Changer mon mot de passe</h1>
-        <p className="text-sm text-gray-500 mb-6">
+        <p className="text-sm text-gray-700 mb-6">
           Choisissez un mot de passe d&apos;au moins 8 caractères.
         </p>
 
@@ -100,7 +100,7 @@ export default function ChangerMotDePassePage() {
             { label: "Confirmer le nouveau mot de passe", value: confirm, set: setConfirm, auto: "new-password" },
           ].map(({ label, value, set, auto }, i) => (
             <div key={label} className="space-y-1">
-              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">
+              <label className="block text-xs font-medium text-gray-700 uppercase tracking-wide">
                 {label}
               </label>
               <div className="relative">
@@ -118,7 +118,7 @@ export default function ChangerMotDePassePage() {
                   onClick={() => toggleVisible(i)}
                   tabIndex={-1}
                   title={visible.has(i) ? "Masquer le mot de passe" : "Afficher le mot de passe"}
-                  className="absolute right-0 top-0 h-full px-3 flex items-center text-gray-400 hover:text-gray-600 transition"
+                  className="absolute right-0 top-0 h-full px-3 flex items-center text-gray-700 hover:text-black transition"
                 >
                   {visible.has(i) ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>

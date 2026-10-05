@@ -200,8 +200,8 @@ function DraggableCandidatChip({ candidat }: { candidat: Candidat }) {
       {...listeners} {...attributes}
       className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-black/10 bg-white hover:border-black/20 hover:shadow-sm text-xs font-medium select-none transition"
     >
-      <GripVertical className="h-3 w-3 text-black/20 shrink-0" />
-      <User className="h-3 w-3 text-black/40 shrink-0" />
+      <GripVertical className="h-3 w-3 text-gray-700 shrink-0" />
+      <User className="h-3 w-3 text-gray-700 shrink-0" />
       <span className="truncate">{candidat.nom} {candidat.prenom}</span>
     </div>
   );
@@ -236,7 +236,7 @@ function DraggableTripletRowHandle({
       <td className="px-2 py-1.5 border-b border-black/5">
         <button
           {...listeners} {...attributes}
-          className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-black/5 text-black/25 hover:text-black/50 transition"
+          className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-black/5 text-gray-700 hover:text-black transition"
           title="Déplacer ce triplet"
         >
           <GripVertical className="h-3.5 w-3.5" />
@@ -283,7 +283,7 @@ function DroppableEpreuveCell({ epreuve, onUnassign, pending }: {
     >
       {pending && (
         <div className="absolute inset-0 z-10 bg-white/70 rounded-lg grid place-items-center">
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-black/30" />
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-700" />
         </div>
       )}
       {epreuve.candidat_nom ? (
@@ -294,17 +294,17 @@ function DroppableEpreuveCell({ epreuve, onUnassign, pending }: {
               {epreuve.candidat_nom} {epreuve.candidat_prenom}
             </span>
           </div>
-          <button onClick={() => onUnassign(epreuve.id)} className="shrink-0 text-black/20 hover:text-red-500 transition mt-0.5">
+          <button onClick={() => onUnassign(epreuve.id)} className="shrink-0 text-gray-700 hover:text-red-500 transition mt-0.5">
             <X className="h-3 w-3" />
           </button>
         </div>
       ) : (
-        <div className={`flex-1 flex items-center justify-center rounded border border-dashed text-[10px] transition min-h-[28px] ${isOver ? "border-blue-400 text-blue-500 bg-blue-50" : "border-black/15 text-black/25"}`}>
+        <div className={`flex-1 flex items-center justify-center rounded border border-dashed text-[10px] transition min-h-[28px] ${isOver ? "border-blue-400 text-blue-500 bg-blue-50" : "border-black/15 text-gray-700"}`}>
           {isOver ? "Déposer ici" : "—"}
         </div>
       )}
       {epreuve.examinateur_nom && (
-        <div className="text-[10px] text-black/35 truncate mt-1">
+        <div className="text-[10px] text-gray-700 truncate mt-1">
           {epreuve.examinateur_nom} {epreuve.examinateur_prenom}
         </div>
       )}
@@ -318,7 +318,7 @@ function EmptyCell() {
       className="rounded-lg h-full min-h-[52px] border border-dashed border-black/10 flex items-center justify-center"
       title="Matière absente à ce créneau (Niveau 3)"
     >
-      <span className="text-[10px] text-black/20">—</span>
+      <span className="text-[10px] text-gray-700">—</span>
     </div>
   );
 }
@@ -402,7 +402,7 @@ function SessionConfigPanel({
   };
 
   const field = "text-xs border rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-300 w-full";
-  const label = "text-[10px] font-semibold text-black/50 uppercase tracking-wide mb-1";
+  const label = "text-[10px] font-semibold text-gray-800 uppercase tracking-wide mb-1";
 
   return (
     <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-4 space-y-3">
@@ -410,7 +410,7 @@ function SessionConfigPanel({
         <p className="text-xs font-semibold text-amber-700">
           {djId ? "Reconfigurer la session" : `Nouvelle session — ${djType === "MATIN" ? "Matin" : "Après-midi"}`}
         </p>
-        <button onClick={onCancel} className="text-black/30 hover:text-black/60"><X className="h-3.5 w-3.5" /></button>
+        <button onClick={onCancel} className="text-gray-700 hover:text-black"><X className="h-3.5 w-3.5" /></button>
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -465,7 +465,7 @@ function SessionConfigPanel({
       )}
 
       <div className="flex gap-2 justify-end">
-        <button onClick={onCancel} className="text-xs text-black/40 hover:text-black/70 px-3 py-1.5">Annuler</button>
+        <button onClick={onCancel} className="text-xs text-gray-700 hover:text-black px-3 py-1.5">Annuler</button>
         <button
           onClick={handleGenerate}
           disabled={loading}
@@ -526,9 +526,9 @@ function DemiJourneeGrid({
           <span className="font-semibold text-sm" style={{ color: accentColor }}>
             {isMatin ? "Matin" : "Après-midi"}
           </span>
-          <span className="text-xs text-black/40 ml-2">{hm(dj.heure_debut)} – {hm(dj.heure_fin)}</span>
+          <span className="text-xs text-gray-700 ml-2">{hm(dj.heure_debut)} – {hm(dj.heure_fin)}</span>
           {rows.length > 0 && (
-            <span className="text-[10px] text-black/30 ml-2">
+            <span className="text-[10px] text-gray-700 ml-2">
               {rows.length} positions · {matieres.length} mat. · {dj.epreuves.filter(e => e.candidat_id == null && e.statut !== "ANNULEE").length > 0
                 ? <span style={{ color: accentColor }}>{dj.epreuves.filter(e => e.candidat_id == null && e.statut !== "ANNULEE").length} libres</span>
                 : "complet ✓"}
@@ -584,10 +584,10 @@ function DemiJourneeGrid({
             <tr style={{ backgroundColor: accentColor + "10" }}>
               {/* Drag handle column */}
               <th className="w-8 border-b border-black/8" />
-              <th className="text-left px-3 py-2 text-xs font-semibold text-black/40 border-b border-black/8 whitespace-nowrap">Dép. prépa</th>
-              <th className="text-left px-3 py-2 text-xs font-semibold text-black/60 border-b border-black/8 whitespace-nowrap">Dép. exam</th>
-              <th className="text-left px-3 py-2 text-xs font-semibold text-black/40 border-b border-black/8 whitespace-nowrap">Fin</th>
-              <th className="px-2 py-2 text-xs font-semibold border-b border-black/8 text-center text-black/30 w-[44px]">Triplet</th>
+              <th className="text-left px-3 py-2 text-xs font-semibold text-gray-700 border-b border-black/8 whitespace-nowrap">Dép. prépa</th>
+              <th className="text-left px-3 py-2 text-xs font-semibold text-gray-800 border-b border-black/8 whitespace-nowrap">Dép. exam</th>
+              <th className="text-left px-3 py-2 text-xs font-semibold text-gray-700 border-b border-black/8 whitespace-nowrap">Fin</th>
+              <th className="px-2 py-2 text-xs font-semibold border-b border-black/8 text-center text-gray-700 w-[44px]">Triplet</th>
               {matieres.map(m => (
                 <th key={m} className="px-3 py-2 text-xs font-semibold border-b border-black/8 text-center" style={{ color: accentColor }}>{m}</th>
               ))}
@@ -606,15 +606,15 @@ function DemiJourneeGrid({
                     <>
                       {/* Dép. prépa */}
                       <td className="px-3 py-1.5 border-b border-black/5 whitespace-nowrap">
-                        <span className="font-mono text-xs text-black/40">{debPrepa}</span>
+                        <span className="font-mono text-xs text-gray-700">{debPrepa}</span>
                       </td>
                       {/* Dép. exam */}
                       <td className="px-3 py-1.5 border-b border-black/5 whitespace-nowrap">
-                        <span className="font-mono text-xs font-semibold text-black/75">{debExam}</span>
+                        <span className="font-mono text-xs font-semibold text-gray-900">{debExam}</span>
                       </td>
                       {/* Fin */}
                       <td className="px-3 py-1.5 border-b border-black/5 whitespace-nowrap">
-                        <span className="font-mono text-xs text-black/50">{finExam}</span>
+                        <span className="font-mono text-xs text-gray-800">{finExam}</span>
                       </td>
                       {/* Triplet T-chip */}
                       {(() => {
@@ -672,7 +672,7 @@ function DemiJourneeGrid({
           {rows.length === 0 && (
             <tbody>
               <tr>
-                <td colSpan={matieres.length + 5} className="text-center text-xs text-black/30 py-6">
+                <td colSpan={matieres.length + 5} className="text-center text-xs text-gray-700 py-6">
                   Aucun créneau — cliquez sur ⚙ pour configurer et générer
                 </td>
               </tr>
@@ -839,7 +839,7 @@ export default function PlanificationView({ planning, onBack }: { planning: Plan
         </button>
 
         <div className="flex-1 min-w-0">
-          <div className="text-[10px] text-black/40 uppercase tracking-widest font-medium">Planification</div>
+          <div className="text-[10px] text-gray-700 uppercase tracking-widest font-medium">Planification</div>
           <div className="font-semibold text-sm truncate">{planning.nom}</div>
         </div>
 
@@ -858,7 +858,7 @@ export default function PlanificationView({ planning, onBack }: { planning: Plan
           </button>
         </div>
 
-        <span className="text-sm text-black/50 hidden md:block capitalize">{formatDate(date)}</span>
+        <span className="text-sm text-gray-800 hidden md:block capitalize">{formatDate(date)}</span>
 
         <button onClick={loadDay} className="h-8 w-8 rounded-lg border bg-white shadow-sm grid place-items-center hover:bg-black/[0.02] transition">
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
@@ -902,17 +902,17 @@ export default function PlanificationView({ planning, onBack }: { planning: Plan
           {/* Panneau gauche : candidats */}
           <div className="w-[200px] shrink-0 flex flex-col border-r bg-gray-50/80 overflow-y-auto">
             <div className="p-3 border-b bg-white sticky top-0 z-10">
-              <div className="text-[10px] font-semibold text-black/50 uppercase tracking-widest mb-0.5">Candidats</div>
-              <div className="text-[11px] text-black/35">{unassigned.length} non assigné(s)</div>
+              <div className="text-[10px] font-semibold text-gray-800 uppercase tracking-widest mb-0.5">Candidats</div>
+              <div className="text-[11px] text-gray-700">{unassigned.length} non assigné(s)</div>
             </div>
             <div className="p-2.5 space-y-1.5 flex-1">
-              {unassigned.length === 0 && <div className="text-xs text-black/30 text-center py-6">Tous assignés ✓</div>}
+              {unassigned.length === 0 && <div className="text-xs text-gray-700 text-center py-6">Tous assignés ✓</div>}
               {unassigned.map(c => <DraggableCandidatChip key={c.id} candidat={c} />)}
               {assigned.length > 0 && (
                 <>
-                  <div className="pt-3 pb-1 text-[10px] font-semibold text-black/30 uppercase tracking-widest">Assignés ({assigned.length})</div>
+                  <div className="pt-3 pb-1 text-[10px] font-semibold text-gray-700 uppercase tracking-widest">Assignés ({assigned.length})</div>
                   {assigned.map(c => (
-                    <div key={c.id} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-black/40 bg-black/[0.03]">
+                    <div key={c.id} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-gray-700 bg-black/[0.03]">
                       <User className="h-3 w-3 shrink-0" />
                       <span className="truncate">{c.nom} {c.prenom}</span>
                     </div>
@@ -926,7 +926,7 @@ export default function PlanificationView({ planning, onBack }: { planning: Plan
           <div className="flex-1 overflow-auto p-4 bg-gray-50/50">
             {loading ? (
               <div className="flex items-center justify-center h-full">
-                <Loader2 className="h-8 w-8 animate-spin text-black/20" />
+                <Loader2 className="h-8 w-8 animate-spin text-gray-700" />
               </div>
             ) : (
               <>
@@ -956,7 +956,7 @@ export default function PlanificationView({ planning, onBack }: { planning: Plan
                     {idx < (dayData?.demi_journees ?? []).length - 1 && (
                       <div className="flex items-center gap-3 my-4 px-1">
                         <div className="flex-1 border-t border-dashed border-black/15" />
-                        <span className="text-[11px] text-black/35 font-medium px-2">Pause méridienne</span>
+                        <span className="text-[11px] text-gray-700 font-medium px-2">Pause méridienne</span>
                         <div className="flex-1 border-t border-dashed border-black/15" />
                       </div>
                     )}
@@ -1002,8 +1002,8 @@ export default function PlanificationView({ planning, onBack }: { planning: Plan
                 {(dayData?.demi_journees ?? []).length === 0 && !newSessionType && (
                   <div className="flex flex-col items-center justify-center min-h-[200px] text-center">
                     <div className="text-4xl mb-3">📅</div>
-                    <div className="text-sm font-medium text-black/40">Aucune session pour cette date</div>
-                    <div className="text-xs text-black/30 mt-1">Cliquez sur "Session Matin" ou "Session Après-midi" ci-dessus</div>
+                    <div className="text-sm font-medium text-gray-700">Aucune session pour cette date</div>
+                    <div className="text-xs text-gray-700 mt-1">Cliquez sur "Session Matin" ou "Session Après-midi" ci-dessus</div>
                   </div>
                 )}
               </>

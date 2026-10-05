@@ -52,14 +52,14 @@ export default function CandidatLoginPage() {
             <div className="h-6 w-6 rounded-full border-2" style={{ borderColor: RED }} />
           </div>
           <h1 className="text-xl font-semibold text-gray-900">Espace Candidat</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-gray-700 mt-1">
             Connectez-vous avec les identifiants reçus par email.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
-            <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wide">
               Login
             </label>
             <input
@@ -75,7 +75,7 @@ export default function CandidatLoginPage() {
           </div>
 
           <div className="space-y-1">
-            <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">
+            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wide">
               Mot de passe
             </label>
             <div className="relative">
@@ -93,7 +93,7 @@ export default function CandidatLoginPage() {
                 onClick={() => setShowPassword((v) => !v)}
                 tabIndex={-1}
                 title={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
-                className="absolute right-0 top-0 h-full px-3 flex items-center text-gray-400 hover:text-gray-600 transition"
+                className="absolute right-0 top-0 h-full px-3 flex items-center text-gray-700 hover:text-black transition"
               >
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
@@ -118,7 +118,7 @@ export default function CandidatLoginPage() {
         <div className="mt-5 text-center">
           <Link
             href="/candidat/mot-de-passe-oublie"
-            className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2"
+            className="text-xs text-gray-700 hover:text-black underline underline-offset-2"
           >
             Mot de passe oublié ?
           </Link>

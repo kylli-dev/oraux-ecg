@@ -84,7 +84,7 @@ export default function AccueilCandidatPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[calc(100vh-65px)]">
-        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+        <Loader2 className="h-6 w-6 animate-spin text-gray-700" />
       </div>
     );
   }
@@ -94,7 +94,7 @@ export default function AccueilCandidatPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 py-10">
       <div className="mb-8">
-        <p className="text-sm text-gray-500 mb-1">Bienvenue,</p>
+        <p className="text-sm text-gray-700 mb-1">Bienvenue,</p>
         <h1 className="text-2xl font-bold text-gray-900">
           {me.prenom} {me.nom}
         </h1>
@@ -133,7 +133,7 @@ export default function AccueilCandidatPage() {
             </div>
             <div>
               <p className="text-sm font-semibold text-gray-900">{a.label}</p>
-              <p className="text-xs text-gray-500 mt-0.5">{a.desc}</p>
+              <p className="text-xs text-gray-700 mt-0.5">{a.desc}</p>
             </div>
           </Link>
         ))}
@@ -145,7 +145,7 @@ export default function AccueilCandidatPage() {
             sessionStorage.removeItem("candidat_token");
             router.push("/candidat");
           }}
-          className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2"
+          className="text-xs text-gray-700 hover:text-black underline underline-offset-2"
         >
           Se déconnecter
         </button>
