@@ -309,7 +309,8 @@ export default function ExaminateurPlanningPage() {
         ) : epreuves.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-gray-200 p-16 text-center">
             <Clock className="h-10 w-10 mx-auto mb-3 text-gray-700" />
-            <p className="text-base font-medium text-gray-700">Aucune épreuve assignée</p>
+            <p className="text-base font-medium text-gray-900">Aucune épreuve pour l&apos;instant</p>
+            <p className="text-sm text-gray-700 mt-1">Vos épreuves apparaîtront ici dès qu&apos;un candidat y sera affecté.</p>
           </div>
         ) : Object.keys(byDate).length === 0 ? (
           <div className="rounded-2xl border border-dashed border-gray-200 p-10 text-center">

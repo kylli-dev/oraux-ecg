@@ -148,6 +148,9 @@ def mes_epreuves(
         db.query(Epreuve, DemiJournee)
         .join(DemiJournee, Epreuve.demi_journee_id == DemiJournee.id)
         .filter(or_(Epreuve.examinateur_id == ex.id, Epreuve.examinateur2_id == ex.id))
+        # Une épreuve n'apparaît dans l'espace examinateur (liste, exports PDF/Excel) qu'une
+        # fois qu'un candidat y est affecté — les créneaux encore vides restent masqués.
+        .filter(Epreuve.candidat_id.isnot(None))
         .order_by(DemiJournee.date, Epreuve.heure_debut)
         .all()
     )
@@ -202,6 +205,9 @@ def voir_planche(
     from fastapi.responses import StreamingResponse
     epreuve = db.get(Epreuve, epreuve_id)
     if not epreuve or (epreuve.examinateur_id != ex.id and epreuve.examinateur2_id != ex.id):
+        raise HTTPException(status_code=404, detail="Épreuve introuvable")
+    if not epreuve.candidat_id:
+        # Cohérent avec mes_epreuves : une épreuve sans candidat n'est pas visible
         raise HTTPException(status_code=404, detail="Épreuve introuvable")
     if not epreuve.planche_id:
         raise HTTPException(status_code=404, detail="Aucun sujet assigné à cette épreuve")
