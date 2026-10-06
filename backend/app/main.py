@@ -237,11 +237,25 @@ def _bootstrap_admin():
         print(f"[startup] Compte admin initial créé : {username}", flush=True)
 
 
+def _nettoyer_inscriptions_orphelines():
+    """Annule les inscriptions restées ACTIVE sans aucune épreuve (journées supprimées)."""
+    from app.services.inscriptions import annuler_inscriptions_orphelines
+    db = SessionLocal()
+    try:
+        n = annuler_inscriptions_orphelines(db)
+        db.commit()
+        if n:
+            print(f"[startup] {n} inscription(s) sans épreuve annulée(s)", flush=True)
+    finally:
+        db.close()
+
+
 def _init_db():
     try:
         Base.metadata.create_all(bind=engine)
         _run_migrations()
         _bootstrap_admin()
+        _nettoyer_inscriptions_orphelines()
         print("[startup] DB init OK", flush=True)
     except Exception as e:
         print(f"[startup] DB init error: {e}", flush=True)

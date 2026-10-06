@@ -9,6 +9,7 @@ from app.models.demi_journee import DemiJournee
 from app.schemas.demi_journee import DemiJourneeCreate, DemiJourneeOut, DemiJourneeUpdate
 from app.schemas.generation import GenerateEpreuvesIn
 from app.services.generation import generate_for_demi_journee
+from app.services.inscriptions import annuler_inscriptions_orphelines
 
 router = APIRouter(
     prefix="/admin/demi-journees",
@@ -52,6 +53,7 @@ def delete_demi_journee(dj_id: int, db: Session = Depends(get_db)):
     if not dj:
         raise HTTPException(status_code=404, detail="DemiJournee not found")
     db.delete(dj)
+    annuler_inscriptions_orphelines(db)
     db.commit()
 
 

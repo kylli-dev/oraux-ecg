@@ -41,6 +41,7 @@ from app.core.auth import (
 )
 from app.core.portal_guard import require_candidat
 from app.services.email import build_reset_password_candidat, send_reset_password_candidat
+from app.services.inscriptions import annuler_inscriptions_orphelines, epreuves_valides
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 
@@ -600,10 +601,15 @@ def get_inscription(
     )
     if not insc:
         return None
+    eps = epreuves_valides(insc)
+    if not eps:
+        # Inscription vidée par la suppression de ses épreuves : annulée, pas affichée
+        annuler_inscriptions_orphelines(db)
+        db.commit()
+        return None
 
     epreuves_out = []
-    for ie in insc.epreuves:
-        e = ie.epreuve
+    for e in eps:
         dj = db.get(DemiJournee, e.demi_journee_id)
         epreuves_out.append(
             TripletEpreuveOut(
@@ -620,7 +626,7 @@ def get_inscription(
     epreuves_out.sort(key=lambda x: x.heure_prepa or x.heure_debut)
 
     # Récupérer la date depuis la première épreuve
-    first_dj = db.get(DemiJournee, insc.epreuves[0].epreuve.demi_journee_id)
+    first_dj = db.get(DemiJournee, eps[0].demi_journee_id)
     return InscriptionActiveOut(
         id=insc.id,
         date=first_dj.date,
@@ -762,9 +768,9 @@ def s_inscrire_triplet(
         .first()
     )
     if ancienne:
-        for ie in ancienne.epreuves:
-            ie.epreuve.candidat_id = None
-            ie.epreuve.statut = "LIBRE"
+        for e in epreuves_valides(ancienne):
+            e.candidat_id = None
+            e.statut = "LIBRE"
         ancienne.statut = "ANNULEE"
         ancienne.cancelled_at = _now_utc()
 
@@ -828,17 +834,18 @@ def annuler_inscription(
     if now > _ensure_naive(planning.date_fermeture_inscriptions):
         raise HTTPException(status_code=403, detail="La période d'inscription est terminée.")
     # Vérifier le préavis sur la date du triplet
-    first_dj = db.get(DemiJournee, insc.epreuves[0].epreuve.demi_journee_id)
+    eps = epreuves_valides(insc)
+    first_dj = db.get(DemiJournee, eps[0].demi_journee_id) if eps else None
     cutoff = _cutoff_date(planning)
-    if first_dj.date < cutoff:
+    if first_dj is not None and first_dj.date < cutoff:
         raise HTTPException(
             status_code=400,
             detail="La date de préavis est dépassée, vous ne pouvez plus vous désinscrire.",
         )
 
-    for ie in insc.epreuves:
-        ie.epreuve.candidat_id = None
-        ie.epreuve.statut = "LIBRE"
+    for e in eps:
+        e.candidat_id = None
+        e.statut = "LIBRE"
     insc.statut = "ANNULEE"
     insc.cancelled_at = _now_utc()
     db.get(Candidat, candidat_id).statut = "IMPORTE"

@@ -19,6 +19,7 @@ from app.models.epreuve import Epreuve
 from app.models.planning import Planning
 from app.models.inscription import Inscription, InscriptionEpreuve
 from app.models.liste_attente import ListeAttente
+from app.services.inscriptions import annuler_inscriptions_orphelines, epreuves_valides
 
 router = APIRouter(
     prefix="/admin/gestion-candidats",
@@ -150,13 +151,20 @@ def _parse_time(s: str) -> time:
 
 
 def _get_active_inscription(candidat_id: int, db: Session) -> Optional[Inscription]:
-    return db.query(Inscription).filter_by(candidat_id=candidat_id, statut="ACTIVE").first()
+    insc = db.query(Inscription).filter_by(candidat_id=candidat_id, statut="ACTIVE").first()
+    if insc is not None and not epreuves_valides(insc):
+        # Inscription vidée par la suppression de ses épreuves : on l'annule plutôt que de
+        # la traiter comme une inscription réelle (sinon fiche en erreur 500).
+        annuler_inscriptions_orphelines(db)
+        db.commit()
+        return None
+    return insc
 
 
 def _cancel_inscription(insc: Inscription, new_statut: str, db: Session) -> None:
-    for ie in insc.epreuves:
-        ie.epreuve.candidat_id = None
-        ie.epreuve.statut = new_statut
+    for e in epreuves_valides(insc):
+        e.candidat_id = None
+        e.statut = new_statut
     insc.statut = "ANNULEE"
     insc.cancelled_at = _now()
 
@@ -164,8 +172,7 @@ def _cancel_inscription(insc: Inscription, new_statut: str, db: Session) -> None
 def _build_inscription_out(insc: Inscription, db: Session) -> InscriptionOut:
     epreuves_out = []
     date_val = None
-    for ie in insc.epreuves:
-        e = ie.epreuve
+    for e in epreuves_valides(insc):
         dj = db.get(DemiJournee, e.demi_journee_id)
         if date_val is None:
             date_val = dj.date
@@ -537,7 +544,7 @@ def _triplets_attribues(planning_id: int, db: Session) -> list:
     )
     covered_epreuve_ids: set = set()
     for insc in inscriptions:
-        eps = [ie.epreuve for ie in insc.epreuves]
+        eps = epreuves_valides(insc)
         if not eps:
             continue
         covered_epreuve_ids.update(e.id for e in eps)

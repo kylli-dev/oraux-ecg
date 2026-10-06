@@ -11,6 +11,7 @@ from app.models.demi_journee import DemiJournee
 from app.models.epreuve import Epreuve
 from app.models.planning_salle_defaut import PlanningMatiereSalleDefaut
 from app.schemas.epreuve import EpreuveCreate, EpreuveOut, EpreuveUpdate
+from app.services.inscriptions import annuler_inscriptions_orphelines
 
 
 class SwapRowsIn(BaseModel):
@@ -142,4 +143,5 @@ def delete_epreuve(epreuve_id: int, db: Session = Depends(get_db)):
     if not e:
         raise HTTPException(status_code=404, detail="Epreuve not found")
     db.delete(e)
+    annuler_inscriptions_orphelines(db)
     db.commit()

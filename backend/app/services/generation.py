@@ -36,6 +36,7 @@ from app.models.journee_type import JourneeType
 from app.models.journee_type_bloc import JourneeTypeBloc
 from app.models.planning_salle_defaut import PlanningMatiereSalleDefaut
 from app.schemas.generation import GenerateEpreuvesIn, SkipRange
+from app.services.inscriptions import annuler_inscriptions_orphelines
 
 # ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -390,6 +391,7 @@ def _apply_periode_plan(
     Retourne le nombre d'épreuves créées.
     """
     db.query(Epreuve).filter(Epreuve.demi_journee_id == dj.id).delete()
+    annuler_inscriptions_orphelines(db)
 
     matiere_offset = 0
     total = 0
@@ -465,6 +467,7 @@ def generate_for_demi_journee(
     """
     matieres = params.resolved_matieres()
     db.query(Epreuve).filter(Epreuve.demi_journee_id == demi_journee.id).delete()
+    annuler_inscriptions_orphelines(db)
 
     count, _ = generate_in_range(
         db=db,

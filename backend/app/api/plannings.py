@@ -21,6 +21,7 @@ from app.schemas.generation import GenerateEpreuvesIn, SkipRange
 from app.schemas.planning import PlanningCreate, PlanningOut, PlanningUpdate
 from app.services.excel import export_planning, export_template, import_epreuves
 from app.services.generation import apply_journee_type, generate_for_demi_journee
+from app.services.inscriptions import annuler_inscriptions_orphelines
 
 
 class CreateSessionIn(BaseModel):
@@ -520,6 +521,9 @@ def delete_day(planning_id: int, date: Date = Query(...), db: Session = Depends(
     )
     for dj in demi_journees:
         db.delete(dj)
+    # Les candidats dont toutes les épreuves étaient sur cette journée perdent leur
+    # inscription (sinon elle restait ACTIVE et vide → fiche/portail en erreur 500).
+    annuler_inscriptions_orphelines(db)
     db.commit()
     return {
         "date": str(date),
