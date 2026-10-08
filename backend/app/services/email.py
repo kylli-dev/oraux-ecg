@@ -1,7 +1,13 @@
 """
-Service d'envoi d'emails (SMTP).
+Service d'envoi d'emails — via l'API HTTP de Brevo si BREVO_API_KEY est défini, sinon SMTP.
+
+L'API HTTP (HTTPS, port 443) est à privilégier en production : l'hébergeur du backend
+(Render) bloque les connexions SMTP sortantes (« [Errno 101] Network is unreachable »).
 
 Configuration via variables d'environnement :
+  BREVO_API_KEY — clé d'API Brevo (https://app.brevo.com → SMTP & API → Clés API)
+  EMAIL_FROM    — adresse expéditrice (doit être validée dans Brevo ; défaut = SMTP_FROM)
+  EMAIL_FROM_NAME — nom affiché de l'expéditeur (défaut « Oraux ECG — ENSAE »)
   SMTP_SERVER   — ex: smtp.gmail.com
   SMTP_PORT     — défaut 587 (STARTTLS)
   SMTP_USER     — adresse d'expédition / login SMTP
@@ -9,12 +15,15 @@ Configuration via variables d'environnement :
   SMTP_FROM     — adresse d'expédition affichée (défaut = SMTP_USER)
   SITE_URL      — URL publique de la plateforme (pour les liens dans les emails)
 
-Si SMTP_SERVER n'est pas défini, les envois sont ignorés (mode dev).
+Si ni BREVO_API_KEY ni SMTP_SERVER ne sont définis, les envois sont ignorés (mode dev).
 """
 from __future__ import annotations
 
+import json
 import os
 import smtplib
+import urllib.error
+import urllib.request
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Optional
@@ -25,15 +34,55 @@ SMTP_USER = os.environ.get("SMTP_USER", "")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_FROM = os.environ.get("SMTP_FROM", SMTP_USER)
 SITE_URL = os.environ.get("SITE_URL", "https://oraux-tau.vercel.app")
+BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
+EMAIL_FROM = os.environ.get("EMAIL_FROM", "") or SMTP_FROM
+EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "Oraux ECG — ENSAE")
+
+
+def email_configure() -> bool:
+    """Vrai si un moyen d'envoi (API Brevo ou SMTP complet) est configuré."""
+    return bool(BREVO_API_KEY) or bool(SMTP_SERVER and SMTP_USER and SMTP_PASSWORD)
+
+
+def _send_brevo(to: str, subject: str, body_html: str) -> bool:
+    """Envoi via l'API transactionnelle de Brevo (HTTPS)."""
+    payload = {
+        "sender": {"email": EMAIL_FROM, "name": EMAIL_FROM_NAME},
+        "to": [{"email": to}],
+        "subject": subject,
+        "htmlContent": body_html,
+    }
+    req = urllib.request.Request(
+        "https://api.brevo.com/v3/smtp/email",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"api-key": BREVO_API_KEY, "Content-Type": "application/json", "Accept": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            print(f"[email] Envoyé (Brevo) → {to} | {subject} [{resp.status}]", flush=True)
+            return True
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:300]
+        print(f"[email] Erreur envoi (Brevo {exc.code}) → {to} : {detail}", flush=True)
+        return False
+    except Exception as exc:
+        print(f"[email] Erreur envoi (Brevo) → {to} : {exc}", flush=True)
+        return False
 
 
 def send_email(to: str, subject: str, body_html: str) -> bool:
     """
     Envoie un email HTML.
-    Retourne True si l'envoi a réussi, False sinon (SMTP non configuré ou erreur).
+    Retourne True si l'envoi a réussi, False sinon (rien de configuré ou erreur).
     """
+    if BREVO_API_KEY:
+        if not EMAIL_FROM:
+            print("[email] EMAIL_FROM manquant — requis pour l'envoi via Brevo", flush=True)
+            return False
+        return _send_brevo(to, subject, body_html)
     if not SMTP_SERVER or not SMTP_USER or not SMTP_PASSWORD:
-        print(f"[email] SMTP non configuré — email ignoré vers {to} | {subject}", flush=True)
+        print(f"[email] Envoi non configuré (ni BREVO_API_KEY ni SMTP) — email ignoré vers {to} | {subject}", flush=True)
         return False
     try:
         msg = MIMEMultipart("alternative")
@@ -192,7 +241,7 @@ def build_reset_password_candidat(
 def send_reset_password_candidat(to_email: str, login: str, subject: str, body: str, url: str) -> bool:
     """Envoie l'email de réinitialisation construit par build_reset_password_candidat."""
     sent = send_email(to_email, subject, body)
-    if not sent and not SMTP_SERVER:
+    if not sent and not email_configure():
         # Mode dev uniquement (SMTP non configuré) : le lien est affiché dans la console
         # du backend pour pouvoir tester le parcours sans serveur mail.
         print(f"[email][dev] Lien de réinitialisation pour {login} : {url}", flush=True)
