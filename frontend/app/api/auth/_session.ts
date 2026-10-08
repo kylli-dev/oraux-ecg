@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
-import { SignJWT } from "jose";
+import { NextRequest, NextResponse } from "next/server";
+import { SignJWT, jwtVerify } from "jose";
 
 type AdminSession = {
   id: number | string;
@@ -28,4 +28,17 @@ export async function setAdminSessionCookie(res: NextResponse, admin: AdminSessi
     maxAge: 60 * 60 * 24,
     path: "/",
   });
+}
+
+// Vrai si la requête porte un cookie de session admin valide (signé, non expiré).
+// À appeler dans toute route /api/* qui relaie vers l'API admin avec ADMIN_API_KEY.
+export async function estAdminConnecte(req: NextRequest): Promise<boolean> {
+  const token = req.cookies.get("admin_session")?.value;
+  if (!token || !process.env.JWT_SECRET) return false;
+  try {
+    await jwtVerify(token, new TextEncoder().encode(process.env.JWT_SECRET));
+    return true;
+  } catch {
+    return false;
+  }
 }

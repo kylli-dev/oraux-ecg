@@ -24,6 +24,14 @@ async function fetchBackend(url: string, init: RequestInit): Promise<Response> {
   }
 }
 
+// Toute requête vers l'API admin doit venir d'un admin connecté (cookie de session valide).
+// Sans ce contrôle, ce proxy — qui ajoute lui-même la clé ADMIN_API_KEY — exposait toute
+// l'API d'administration (lecture ET modification) à n'importe qui sur Internet : le
+// middleware ne protège que les PAGES /admin, pas les routes /api/*.
+function nonAuthentifie() {
+  return NextResponse.json({ detail: "Authentification administrateur requise" }, { status: 401 });
+}
+
 function wakingUpResponse() {
   return NextResponse.json(
     { detail: "Le serveur redémarre, veuillez réessayer dans quelques instants.", code: "backend_waking_up" },
@@ -52,8 +60,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
   if (!KEY)  return NextResponse.json({ detail: "ADMIN_API_KEY manquant" },  { status: 500 });
   if (!BASE) return NextResponse.json({ detail: "API_BASE_URL manquant" }, { status: 500 });
 
+  const role = await currentAdminRole(req);
+  if (!role) return nonAuthentifie();
+
   try {
-    const role = await currentAdminRole(req);
     const headers: Record<string, string> = { "X-Admin-Api-Key": KEY };
     if (role) headers["X-Admin-Role"] = role;
     const r = await fetchBackend(url, { headers, cache: "no-store" });
@@ -81,10 +91,12 @@ async function mut(req: NextRequest, { params }: { params: Promise<{ path: strin
   if (!KEY)  return NextResponse.json({ detail: "ADMIN_API_KEY manquant" },  { status: 500 });
   if (!BASE) return NextResponse.json({ detail: "API_BASE_URL manquant" }, { status: 500 });
 
+  const role = await currentAdminRole(req);
+  if (!role) return nonAuthentifie();
+
   try {
     const ct   = req.headers.get("content-type") ?? "";
     const body = ct.includes("multipart") ? await req.arrayBuffer() : await req.text();
-    const role = await currentAdminRole(req);
     const hdrs: Record<string, string> = { "X-Admin-Api-Key": KEY };
     if (role) hdrs["X-Admin-Role"] = role;
     if (body) hdrs["Content-Type"] = ct.includes("multipart") ? ct : "application/json";

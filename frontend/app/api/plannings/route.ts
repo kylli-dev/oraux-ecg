@@ -1,9 +1,13 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { estAdminConnecte } from "../auth/_session";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 10;
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  if (!(await estAdminConnecte(req))) {
+    return NextResponse.json({ detail: "Authentification administrateur requise" }, { status: 401 });
+  }
   const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL!;
   const adminKey = process.env.ADMIN_API_KEY!;
 
