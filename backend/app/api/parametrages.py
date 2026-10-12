@@ -281,6 +281,12 @@ def reset_password_examinateur(examinateur_id: int, db: Session = Depends(get_db
         raise HTTPException(status_code=404, detail="Examinateur introuvable")
 
     new_pwd = secrets.token_urlsafe(8)
+    # Le mot de passe généré était renvoyé sans être enregistré : il ne permettait pas de
+    # se connecter. Il est désormais réellement appliqué au compte de l'examinateur.
+    ex.password_hash = hash_password(new_pwd)
+    ex.reset_token = None
+    ex.reset_token_expires_at = None
+    db.commit()
     return ResetPasswordOut(login=ex.email, new_password=new_pwd)
 
 

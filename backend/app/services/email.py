@@ -217,6 +217,7 @@ def build_reset_password_candidat(
     token: str,
     minutes: int,
     db=None,
+    espace: str = "candidat",
 ) -> tuple:
     """
     Construit (sujet, corps_html, url) de l'email « mot de passe oublié » — à partir du
@@ -224,7 +225,8 @@ def build_reset_password_candidat(
     Séparé de l'envoi pour que l'envoi SMTP (lent) puisse partir en tâche de fond, après
     la réponse HTTP, sans garder la session DB ouverte.
     """
-    url = f"{SITE_URL.rstrip('/')}/candidat/reinitialiser-mot-de-passe?token={token}"
+    # espace = "candidat" ou "examinateur" : chaque espace a sa page de réinitialisation
+    url = f"{SITE_URL.rstrip('/')}/{espace}/reinitialiser-mot-de-passe?token={token}"
     variables = {"prenom": prenom, "nom": nom, "login": login, "url": url, "minutes": minutes}
     subject, body = _RESET_MDP_SUBJECT, _RESET_MDP_BODY
     if db is not None:
@@ -246,3 +248,22 @@ def send_reset_password_candidat(to_email: str, login: str, subject: str, body: 
         # du backend pour pouvoir tester le parcours sans serveur mail.
         print(f"[email][dev] Lien de réinitialisation pour {login} : {url}", flush=True)
     return sent
+
+
+def build_code_acces_examinateur(prenom: str, nom: str, code: str) -> tuple:
+    """(sujet, corps_html) de l'email « code d'accès perdu » d'un examinateur."""
+    url = f"{SITE_URL.rstrip('/')}/examinateur"
+    sujet = "Votre code d'accès — espace examinateur, oraux ECG"
+    corps = f"""\
+<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#111">
+  <h2 style="color:#C62828">Oraux ECG — Espace examinateur</h2>
+  <p>Bonjour <strong>{prenom} {nom}</strong>,</p>
+  <p>Votre code d'accès personnel à l'espace examinateur est :</p>
+  <p style="font-size:20px;font-weight:bold;letter-spacing:3px;font-family:monospace">{code}</p>
+  <p><a href="{url}" style="background:#C62828;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold">Accéder à mon espace</a></p>
+  <p style="font-size:13px;margin-top:24px">Vous pouvez aussi vous connecter avec votre adresse email et un mot de passe
+     (lien « Mot de passe oublié ? » sur la page de connexion pour le créer).</p>
+  <p style="font-size:13px">Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.</p>
+</div>
+"""
+    return sujet, corps

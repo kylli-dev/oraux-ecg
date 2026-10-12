@@ -1,6 +1,6 @@
 import json
 import secrets
-from sqlalchemy import Boolean, String, Text
+from sqlalchemy import Boolean, DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from typing import Optional
 from app.db.base import Base
@@ -32,6 +32,11 @@ class Examinateur(Base):
 
     # Code for the examiner portal (public access)
     code_acces: Mapped[str] = mapped_column(String(20), unique=True, nullable=False, default=_gen_code)
+
+    # Connexion par email + mot de passe (en plus du code d'accès) et « mot de passe oublié »
+    password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    reset_token: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    reset_token_expires_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     @property
     def matieres(self):

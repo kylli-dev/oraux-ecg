@@ -200,6 +200,10 @@ def _run_migrations():
         "ALTER TABLE planning_matiere_salle_defaut ADD COLUMN surveillant2_id INTEGER REFERENCES surveillant(id) ON DELETE SET NULL",
         # Validation explicite d'un doublon de salle par l'admin (jamais automatique)
         "ALTER TABLE epreuve ADD COLUMN salle_verifiee BOOLEAN NOT NULL DEFAULT FALSE",
+        # Examinateur : mot de passe + « mot de passe oublié » (comme l'espace candidat)
+        "ALTER TABLE examinateur ADD COLUMN password_hash VARCHAR(255)",
+        "ALTER TABLE examinateur ADD COLUMN reset_token VARCHAR(100)",
+        "ALTER TABLE examinateur ADD COLUMN reset_token_expires_at TIMESTAMP WITH TIME ZONE",
     ]
     with engine.connect() as conn:
         for sql in migrations:

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, LogOut, Loader2, User } from "lucide-react";
+import { CalendarDays, LogOut, Loader2, User, KeyRound } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
 
@@ -12,6 +12,7 @@ type ExaminateurMe = {
   prenom: string;
   email: string;
   matieres: string[];
+  a_un_mot_de_passe?: boolean;
 };
 
 function authHeaders() {
@@ -93,6 +94,23 @@ export default function ExaminateurAccueilPage() {
             </div>
             <p className="font-semibold text-gray-900 mb-1">Mon planning & notes</p>
             <p className="text-sm text-gray-700">Consultez vos créneaux d&apos;oral et saisissez les notes des candidats.</p>
+          </button>
+
+          <button
+            onClick={() => router.push("/examinateur/changer-mot-de-passe")}
+            className="group bg-white rounded-2xl border border-gray-100 shadow-sm p-6 text-left hover:shadow-md hover:border-red-200 transition"
+          >
+            <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center mb-4 group-hover:bg-red-100 transition">
+              <KeyRound className="h-5 w-5 text-[#C62828]" />
+            </div>
+            <p className="font-semibold text-gray-900 mb-1">
+              {me.a_un_mot_de_passe ? "Changer mon mot de passe" : "Définir mon mot de passe"}
+            </p>
+            <p className="text-sm text-gray-700">
+              {me.a_un_mot_de_passe
+                ? "Modifiez le mot de passe de votre compte examinateur."
+                : "Créez un mot de passe pour vous connecter avec votre adresse email, en plus de votre code d'accès."}
+            </p>
           </button>
         </div>
       </main>
