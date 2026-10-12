@@ -93,9 +93,11 @@ class EpreuveExaminateur(BaseModel):
     planche_nom: Optional[str]
     conflit_etablissement: bool = False
     note_commentaire: Optional[str] = None
-    # True si l'examinateur connecté est le 2e examinateur de l'épreuve : il la voit et
-    # consulte le sujet, mais la saisie de la note reste réservée à l'examinateur principal.
+    # True si l'examinateur connecté est le 2e examinateur de l'épreuve. Les deux examinateurs
+    # du jury saisissent, modifient et valident la MÊME note (une note par candidat et matière).
     est_second_examinateur: bool = False
+    # « Prénom Nom » de l'autre examinateur du jury, s'il y en a un
+    co_examinateur: Optional[str] = None
 
 
 class NoterIn(BaseModel):
@@ -228,6 +230,12 @@ def me(ex: Examinateur = Depends(get_current_examinateur)):
     )
 
 
+def _nom_co_examinateur(db: Session, epreuve, ex) -> Optional[str]:
+    autre_id = epreuve.examinateur2_id if epreuve.examinateur_id == ex.id else epreuve.examinateur_id
+    autre = db.get(Examinateur, autre_id) if autre_id else None
+    return f"{autre.prenom} {autre.nom}".strip() if autre else None
+
+
 @router.get("/me/epreuves", response_model=List[EpreuveExaminateur])
 def mes_epreuves(
     ex: Examinateur = Depends(get_current_examinateur),
@@ -279,6 +287,7 @@ def mes_epreuves(
             conflit_etablissement=conflit,
             note_commentaire=note.commentaire if note else None,
             est_second_examinateur=epreuve.examinateur_id != ex.id,
+            co_examinateur=_nom_co_examinateur(db, epreuve, ex),
         ))
     return result
 
@@ -518,7 +527,11 @@ def mes_stats(
         mes_rows = (
             db.query(Note)
             .join(Epreuve, (Epreuve.candidat_id == Note.candidat_id) & (Epreuve.matiere == Note.matiere))
-            .filter(Epreuve.examinateur_id == ex.id, Note.matiere == matiere, Note.valeur.isnot(None))
+            .filter(
+                or_(Epreuve.examinateur_id == ex.id, Epreuve.examinateur2_id == ex.id),
+                Note.matiere == matiere,
+                Note.valeur.isnot(None),
+            )
             .all()
         )
         # Toutes les notes pour cette matière
@@ -539,7 +552,8 @@ def noter(
     db: Session = Depends(get_db),
 ):
     epreuve = db.get(Epreuve, epreuve_id)
-    if not epreuve or epreuve.examinateur_id != ex.id:
+    # Les deux examinateurs du jury (principal et 2e) peuvent saisir la note commune
+    if not epreuve or ex.id not in (epreuve.examinateur_id, epreuve.examinateur2_id):
         raise HTTPException(status_code=404, detail="Épreuve introuvable")
     if not epreuve.candidat_id:
         raise HTTPException(status_code=400, detail="Aucun candidat assigné à cette épreuve")

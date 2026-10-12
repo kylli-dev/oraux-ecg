@@ -24,6 +24,7 @@ type Epreuve = {
   planche_nom: string | null;
   conflit_etablissement: boolean;
   est_second_examinateur?: boolean;
+  co_examinateur?: string | null;
 };
 
 type StatsMatiere = {
@@ -388,9 +389,11 @@ export default function ExaminateurPlanningPage() {
                               Même établissement que le candidat
                             </span>
                           )}
-                          {ep.est_second_examinateur && (
+                          {ep.co_examinateur && (
                             <span className="flex items-center gap-1 text-xs bg-blue-50 border border-blue-200 text-blue-800 rounded-full px-2 py-0.5 font-medium">
-                              2ᵉ examinateur — la note est saisie par l&apos;examinateur principal
+                              Jury avec {ep.co_examinateur}
+                              {ep.est_second_examinateur ? " (examinateur principal)" : " (2ᵉ examinateur)"}
+                              {" "}— note commune, saisissable par chacun
                             </span>
                           )}
                           {locked && (
@@ -402,7 +405,7 @@ export default function ExaminateurPlanningPage() {
                         </div>
 
                         {/* Zone notation */}
-                        {ep.candidat_id && !ep.est_second_examinateur && (
+                        {ep.candidat_id && (
                           <div className="mt-3 space-y-2">
                             <div className="flex items-center gap-2">
                               <div className="relative">
