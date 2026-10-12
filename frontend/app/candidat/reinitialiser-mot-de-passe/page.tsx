@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Loader2, CheckCircle, AlertCircle } from "lucide-react";
+import { Loader2, CheckCircle, AlertCircle, Eye, EyeOff } from "lucide-react";
 
 const RED = "#C62828";
 const API_BASE = process.env.NEXT_PUBLIC_PORTAL_API_URL ?? "http://localhost:8000";
@@ -18,6 +18,8 @@ function ResetForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  // Affichage en clair, champ par champ (bouton « œil »)
+  const [visible, setVisible] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!token) setError("Lien invalide. Veuillez redemander un email de réinitialisation.");
@@ -103,22 +105,36 @@ function ResetForm() {
         {[
           { label: "Nouveau mot de passe", value: password, set: setPassword },
           { label: "Confirmer le mot de passe", value: confirm, set: setConfirm },
-        ].map(({ label, value, set }) => (
-          <div key={label} className="space-y-1">
-            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wide">
-              {label}
-            </label>
-            <input
-              type="password"
-              value={value}
-              onChange={(e) => set(e.target.value)}
-              placeholder="••••••••"
-              autoComplete="new-password"
-              className="w-full px-4 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
-              style={{ "--tw-ring-color": RED } as React.CSSProperties}
-            />
-          </div>
-        ))}
+        ].map(({ label, value, set }) => {
+          const shown = !!visible[label];
+          return (
+            <div key={label} className="space-y-1">
+              <label className="block text-xs font-medium text-gray-700 uppercase tracking-wide">
+                {label}
+              </label>
+              <div className="relative">
+                <input
+                  type={shown ? "text" : "password"}
+                  value={value}
+                  onChange={(e) => set(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="new-password"
+                  className="w-full pl-4 pr-11 py-2.5 rounded-lg border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:border-transparent"
+                  style={{ "--tw-ring-color": RED } as React.CSSProperties}
+                />
+                <button
+                  type="button"
+                  onClick={() => setVisible((v) => ({ ...v, [label]: !v[label] }))}
+                  aria-label={shown ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+                  title={shown ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+                  className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-700 hover:text-black transition"
+                >
+                  {shown ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+          );
+        })}
 
         {error && (
           <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
