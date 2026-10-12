@@ -2805,11 +2805,25 @@ function ApplyForm({
       setError("Sélectionnez au moins une date");
       return;
     }
+    // Les champs date n'empêchent pas de SAISIR une date hors bornes : on écarte ici les
+    // dates hors de la période du planning (le serveur les refuserait avec une erreur 422).
+    const horsPeriode = dates.filter((d) => d < dateDebut || d > dateFin);
+    if (horsPeriode.length === dates.length) {
+      setError(
+        `${horsPeriode.length > 1 ? "Ces dates sont" : "Cette date est"} en dehors de la période du planning ` +
+        `(du ${formatDateCourte(dateDebut)} au ${formatDateCourte(dateFin)}) : ` +
+        `${horsPeriode.map(formatDateCourte).join(", ")}. Modifiez d'abord les dates du planning (Plannings → Modifier).`
+      );
+      return;
+    }
     setLoading(true);
     setError("");
     const newResults: ApplyResult[] = [];
-    const newFailed: { date: string; message: string }[] = [];
-    for (const d of dates) {
+    const newFailed: { date: string; message: string }[] = horsPeriode.map((d) => ({
+      date: d,
+      message: `en dehors de la période du planning (du ${formatDateCourte(dateDebut)} au ${formatDateCourte(dateFin)})`,
+    }));
+    for (const d of dates.filter((x) => !horsPeriode.includes(x))) {
       try {
         const r = await post<any>(`plannings/${planningId}/apply-journee-type`, {
           journee_type_id: jtId,
@@ -2932,7 +2946,10 @@ function ApplyForm({
                 small
                 variant="ghost"
                 disabled={rangeFrom > rangeTo}
-                onClick={() => setSelectedDates(new Set(enumerateDates(rangeFrom, rangeTo)))}
+                onClick={() => setSelectedDates(new Set(
+                  // limitée à la période du planning, même si une date hors bornes a été saisie
+                  enumerateDates(rangeFrom < dateDebut ? dateDebut : rangeFrom, rangeTo > dateFin ? dateFin : rangeTo)
+                ))}
               />
             </div>
           </div>
@@ -5480,9 +5497,20 @@ function CandidatGestionDrawer({
   const [selection, setSelection] = useState<Record<string, number>>({});
   const [loadingLibres, setLoadingLibres] = useState(false);
 
+  // Cassage partiel + assignation directe : créneaux compatibles avec les épreuves restantes
+  type CreneauCompatible = {
+    id: number; matiere: string; heure_prepa: string | null; heure_debut: string; heure_fin: string;
+    statut: string; salle: string | null; compatible: boolean; motif: string | null;
+  };
+  const [compat, setCompat] = useState<{ date: string | null; matieres_manquantes: string[]; creneaux: CreneauCompatible[] } | null>(null);
+  const [voirIncompatibles, setVoirIncompatibles] = useState(false);
+
   const loadData = useCallback(() => {
     get<FicheCandidat>(`gestion-candidats/candidat/${candidatId}/fiche`).then(setFiche).catch(() => {});
     get<TripletDisponible[]>(`gestion-candidats/${planningId}/triplets`).then(setTriplets).catch(() => {});
+    get<{ date: string | null; matieres_manquantes: string[]; creneaux: CreneauCompatible[] }>(
+      `gestion-candidats/candidat/${candidatId}/creneaux-compatibles`
+    ).then(setCompat).catch(() => setCompat(null));
   }, [candidatId, planningId]);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -5505,6 +5533,32 @@ function CandidatGestionDrawer({
     try {
       await post(`gestion-candidats/candidat/${candidatId}/${endpoint}`, {});
       toast.success(successMsg);
+      refresh();
+    } catch (e) { toast.error(e instanceof Error ? e.message : String(e)); }
+    finally { setLoadingAction(false); }
+  };
+
+  const doRetirerEpreuve = async (ep: { id: number; matiere: string; heure_debut: string }, libererEn: "LIBRE" | "PRERESERVEE") => {
+    const quoi = libererEn === "LIBRE" ? "redeviendra libre pour tous" : "sera préréservé (mis de côté)";
+    if (!await confirm(
+      `Retirer l'épreuve de ${ep.matiere} (${ep.heure_debut}) du triplet de ${fiche?.nom} ${fiche?.prenom} ? ` +
+      `Ses autres épreuves restent réservées ; ce créneau ${quoi}.`,
+      { confirmLabel: "Retirer", danger: true }
+    )) return;
+    setLoadingAction(true);
+    try {
+      await post(`gestion-candidats/candidat/${candidatId}/epreuve/${ep.id}/retirer`, { liberer_en: libererEn });
+      toast.success(`${ep.matiere} retiré — les autres épreuves sont conservées`);
+      refresh();
+    } catch (e) { toast.error(e instanceof Error ? e.message : String(e)); }
+    finally { setLoadingAction(false); }
+  };
+
+  const doAssignerEpreuve = async (cr: { id: number; matiere: string; heure_debut: string }) => {
+    setLoadingAction(true);
+    try {
+      await post(`gestion-candidats/candidat/${candidatId}/epreuve/${cr.id}/assigner`, {});
+      toast.success(`${cr.matiere} ${cr.heure_debut} assigné`);
       refresh();
     } catch (e) { toast.error(e instanceof Error ? e.message : String(e)); }
     finally { setLoadingAction(false); }
@@ -5689,27 +5743,90 @@ function CandidatGestionDrawer({
             {/* Inscription courante */}
             {fiche?.inscription ? (
               <div className="rounded-xl border bg-white shadow-sm p-4">
-                <p className="text-xs font-semibold text-green-700 mb-3">✓ Inscrit(e) pour les créneaux suivants</p>
-                <div className="rounded-lg border overflow-hidden text-xs mb-3">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="bg-gray-50 text-left">
-                        <th className="px-3 py-2 text-gray-700 font-semibold">Jour</th>
-                        {fiche.inscription.epreuves.map(e => (
-                          <th key={e.id} className="px-3 py-2 text-gray-700 font-semibold">{e.matiere}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td className="px-3 py-2 font-medium capitalize">{fmt_date(fiche.inscription.date)}</td>
-                        {fiche.inscription.epreuves.map(e => (
-                          <td key={e.id} className="px-3 py-2">{e.heure_debut}</td>
-                        ))}
-                      </tr>
-                    </tbody>
-                  </table>
+                <p className="text-xs font-semibold text-green-700 mb-3">
+                  ✓ Inscrit(e) le <span className="capitalize">{fmt_date(fiche.inscription.date)}</span>
+                </p>
+                <div className="rounded-lg border overflow-hidden text-sm mb-3 divide-y">
+                  {fiche.inscription.epreuves.map(e => (
+                    <div key={e.id} className="flex flex-wrap items-center gap-2 px-3 py-2">
+                      <span className="font-semibold text-gray-900 w-20">{e.matiere}</span>
+                      <span className="text-gray-900 tabular-nums">{e.heure_debut} – {e.heure_fin}</span>
+                      <div className="ml-auto flex gap-1.5">
+                        <button
+                          onClick={() => doRetirerEpreuve(e, "LIBRE")}
+                          disabled={loadingAction}
+                          title="Retirer cette épreuve ; le créneau redevient libre"
+                          className="text-[11px] px-2 py-1 rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 transition disabled:opacity-50"
+                        >
+                          Retirer
+                        </button>
+                        <button
+                          onClick={() => doRetirerEpreuve(e, "PRERESERVEE")}
+                          disabled={loadingAction}
+                          title="Retirer cette épreuve ; le créneau est préréservé (mis de côté)"
+                          className="text-[11px] px-2 py-1 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 transition disabled:opacity-50"
+                        >
+                          Retirer + préréserver
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
+
+                {/* Assignation directe : compléter le triplet avec un créneau compatible */}
+                {compat && compat.matieres_manquantes.length > 0 && (
+                  <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-3 mb-3 space-y-2">
+                    <p className="text-xs font-semibold text-gray-900">
+                      Triplet incomplet — à compléter : {compat.matieres_manquantes.join(", ")}
+                    </p>
+                    <p className="text-[11px] text-gray-800">
+                      Créneaux libres ou préréservés du même jour, compatibles avec ses autres épreuves
+                      (préparation et changement de salle compris). Cliquez sur un horaire pour l&apos;assigner.
+                    </p>
+                    {compat.matieres_manquantes.map(m => {
+                      const crs = compat.creneaux.filter(c => c.matiere === m && (voirIncompatibles || c.compatible));
+                      return (
+                        <div key={m}>
+                          <p className="text-xs font-semibold text-gray-900 mb-1">{m}</p>
+                          {crs.length === 0 ? (
+                            <p className="text-xs italic text-gray-700">Aucun créneau compatible disponible ce jour-là.</p>
+                          ) : (
+                            <div className="flex flex-wrap gap-1.5">
+                              {crs.map(c => (
+                                <button
+                                  key={c.id}
+                                  onClick={() => c.compatible && doAssignerEpreuve(c)}
+                                  disabled={loadingAction || !c.compatible}
+                                  title={c.compatible
+                                    ? `Assigner ${m} ${c.heure_debut}${c.salle ? ` — salle ${c.salle}` : ""}`
+                                    : `Incompatible : ${c.motif}`}
+                                  className={`text-xs px-2.5 py-1 rounded-lg border tabular-nums transition ${
+                                    c.compatible
+                                      ? c.statut === "PRERESERVEE"
+                                        ? "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+                                        : "border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
+                                      : "border-gray-200 bg-gray-50 text-gray-700 line-through cursor-not-allowed"
+                                  } disabled:opacity-60`}
+                                >
+                                  {c.heure_debut}{c.salle ? ` · ${c.salle}` : ""}{c.statut === "PRERESERVEE" ? " (préréservé)" : ""}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {compat.creneaux.some(c => !c.compatible) && (
+                      <button
+                        onClick={() => setVoirIncompatibles(v => !v)}
+                        className="text-[11px] text-gray-800 underline hover:text-black"
+                      >
+                        {voirIncompatibles ? "Masquer les créneaux incompatibles" : "Afficher aussi les créneaux incompatibles"}
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => doAction("desinscrire", `Désinscrire ${fiche.nom} ${fiche.prenom} ?`, "Candidat désinscrit", true)}

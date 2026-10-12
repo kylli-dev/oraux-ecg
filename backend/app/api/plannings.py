@@ -129,7 +129,11 @@ def apply_jt(planning_id: int, body: ApplyJourneeTypeIn, db: Session = Depends(g
     if not (p.date_debut <= body.date <= p.date_fin):
         raise HTTPException(
             status_code=422,
-            detail=f"date must be within planning range [{p.date_debut}, {p.date_fin}]",
+            detail=(
+                f"Le {body.date.strftime('%d-%m-%Y')} est en dehors de la période du planning "
+                f"(du {p.date_debut.strftime('%d-%m-%Y')} au {p.date_fin.strftime('%d-%m-%Y')}). "
+                "Modifiez les dates du planning pour l'inclure."
+            ),
         )
     result = apply_journee_type(db, planning_id, jt, body.date)
     return {"planning_id": planning_id, "date": body.date, **result}

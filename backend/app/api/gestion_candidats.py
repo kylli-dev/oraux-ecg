@@ -1156,3 +1156,208 @@ def admin_annuler_absent(candidat_id: int, epreuve_id: int, db: Session = Depend
     ep.statut = "ATTRIBUEE"
     db.commit()
     return {"epreuve_id": epreuve_id, "statut": "ATTRIBUEE"}
+
+
+# ── Cassage partiel d'un triplet + assignation directe d'une épreuve ──────────
+#
+# « Casser le triplet » libère les 3 épreuves d'un coup. Ici on agit épreuve par épreuve :
+# retirer UNE épreuve en conservant les autres réservations du candidat, puis lui en
+# assigner une autre, choisie parmi les créneaux réellement compatibles avec son emploi
+# du temps (même journée, matière manquante, profil ESH/HGG, pas de chevauchement en
+# tenant compte de la préparation et du temps de changement de salle).
+
+def _plage_occupee(e) -> tuple:
+    """(début de préparation, fin de passage) d'une épreuve, en minutes depuis minuit."""
+    debut = e.heure_debut.hour * 60 + e.heure_debut.minute
+    fin = e.heure_fin.hour * 60 + e.heure_fin.minute
+    return debut - (e.preparation_minutes or 0), fin
+
+
+def _conflit_horaire(e, autres: list) -> Optional[str]:
+    """Motif du conflit entre l'épreuve e et les épreuves déjà réservées, ou None."""
+    from app.api.portal import MARGIN_TRANSITION_MINUTES
+    d1, f1 = _plage_occupee(e)
+    for o in autres:
+        d2, f2 = _plage_occupee(o)
+        if d1 < f2 + MARGIN_TRANSITION_MINUTES and d2 < f1 + MARGIN_TRANSITION_MINUTES:
+            return (
+                f"chevauche {o.matiere} {str(o.heure_debut)[:5]}–{str(o.heure_fin)[:5]} "
+                f"(préparation et {MARGIN_TRANSITION_MINUTES} min de changement de salle comprises)"
+            )
+    return None
+
+
+def _matiere_exclue(c: Candidat) -> Optional[str]:
+    from app.api.portal import _profil_effectif, _PROFIL_EXCLUSION
+    return _PROFIL_EXCLUSION.get(_profil_effectif(c))
+
+
+class CreneauCompatibleOut(BaseModel):
+    id: int
+    matiere: str
+    heure_prepa: Optional[str] = None
+    heure_debut: str
+    heure_fin: str
+    statut: str
+    salle: Optional[str] = None
+    compatible: bool
+    motif: Optional[str] = None
+
+
+class CreneauxCompatiblesOut(BaseModel):
+    date: Optional[Date] = None
+    matieres_reservees: List[str] = []
+    matieres_manquantes: List[str] = []
+    creneaux: List[CreneauCompatibleOut] = []
+
+
+class RetirerEpreuveIn(BaseModel):
+    # LIBRE = le créneau retourne à tous ; PRERESERVEE = mis de côté (ex. liste d'attente)
+    liberer_en: str = "LIBRE"
+
+
+@router.get("/candidat/{candidat_id}/creneaux-compatibles", response_model=CreneauxCompatiblesOut)
+def get_creneaux_compatibles(
+    candidat_id: int,
+    date: Optional[Date] = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    """
+    Créneaux libres ou préréservés que l'on peut assigner directement au candidat pour
+    compléter son triplet. Journée = celle de son inscription (ou `date` s'il n'en a pas).
+    Seules les matières qui lui manquent sont proposées ; chaque créneau indique s'il est
+    compatible avec ses épreuves déjà réservées, et sinon pourquoi.
+    """
+    c = db.get(Candidat, candidat_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Candidat introuvable")
+
+    insc = _get_active_inscription(candidat_id, db)
+    reservees = epreuves_valides(insc) if insc else []
+    if reservees:
+        date = db.get(DemiJournee, reservees[0].demi_journee_id).date
+    if date is None:
+        return CreneauxCompatiblesOut()
+
+    djs = {dj.id: dj for dj in db.query(DemiJournee).filter_by(planning_id=c.planning_id, date=date).all()}
+    if not djs:
+        return CreneauxCompatiblesOut(date=date, matieres_reservees=sorted(e.matiere for e in reservees))
+    epreuves_jour = db.query(Epreuve).filter(Epreuve.demi_journee_id.in_(list(djs.keys()))).all()
+
+    exclue = _matiere_exclue(c)
+    matieres_jour = sorted({e.matiere for e in epreuves_jour if not exclue or e.matiere.upper() != exclue})
+    deja = {e.matiere for e in reservees}
+    manquantes = [m for m in matieres_jour if m not in deja]
+
+    creneaux = []
+    for e in sorted(epreuves_jour, key=lambda x: (x.matiere, x.heure_debut)):
+        if e.matiere not in manquantes or e.statut not in ("LIBRE", "PRERESERVEE"):
+            continue
+        motif = _conflit_horaire(e, reservees)
+        debut, _ = _plage_occupee(e)
+        creneaux.append(CreneauCompatibleOut(
+            id=e.id,
+            matiere=e.matiere,
+            heure_prepa=f"{debut // 60:02d}:{debut % 60:02d}" if e.preparation_minutes else None,
+            heure_debut=str(e.heure_debut)[:5],
+            heure_fin=str(e.heure_fin)[:5],
+            statut=e.statut,
+            salle=e.salle.intitule if e.salle else None,
+            compatible=motif is None,
+            motif=motif,
+        ))
+    return CreneauxCompatiblesOut(
+        date=date,
+        matieres_reservees=sorted(deja),
+        matieres_manquantes=manquantes,
+        creneaux=creneaux,
+    )
+
+
+@router.post("/candidat/{candidat_id}/epreuve/{epreuve_id}/retirer")
+def admin_retirer_epreuve(
+    candidat_id: int,
+    epreuve_id: int,
+    body: RetirerEpreuveIn = RetirerEpreuveIn(),
+    db: Session = Depends(get_db),
+):
+    """
+    Retire UNE épreuve de l'inscription du candidat (cassage partiel du triplet) : les
+    autres épreuves restent réservées. Le créneau retiré redevient LIBRE ou PRERESERVEE.
+    S'il ne reste plus aucune épreuve, l'inscription est annulée.
+    """
+    if body.liberer_en not in ("LIBRE", "PRERESERVEE"):
+        raise HTTPException(status_code=422, detail="liberer_en doit valoir LIBRE ou PRERESERVEE")
+    insc = _get_active_inscription(candidat_id, db)
+    if not insc:
+        raise HTTPException(status_code=404, detail="Aucune inscription active")
+    lien = next((ie for ie in insc.epreuves if ie.epreuve_id == epreuve_id), None)
+    if lien is None:
+        raise HTTPException(status_code=404, detail="Cette épreuve ne fait pas partie de l'inscription du candidat")
+
+    ep = lien.epreuve
+    ep.candidat_id = None
+    ep.statut = body.liberer_en
+    db.delete(lien)
+    db.flush()
+    db.refresh(insc)
+
+    restantes = epreuves_valides(insc)
+    if not restantes:
+        insc.statut = "ANNULEE"
+        insc.cancelled_at = _now()
+        db.get(Candidat, candidat_id).statut = "IMPORTE"
+    db.commit()
+    return {
+        "epreuve_id": epreuve_id,
+        "statut": body.liberer_en,
+        "epreuves_restantes": len(restantes),
+        "inscription_annulee": not restantes,
+    }
+
+
+@router.post("/candidat/{candidat_id}/epreuve/{epreuve_id}/assigner")
+def admin_assigner_epreuve(candidat_id: int, epreuve_id: int, db: Session = Depends(get_db)):
+    """
+    Assigne directement UNE épreuve au candidat, en l'ajoutant à son inscription (créée si
+    besoin) sans toucher à ses autres réservations. Revérifie côté serveur : disponibilité,
+    même journée, matière manquante, profil, absence de chevauchement horaire.
+    """
+    c = db.get(Candidat, candidat_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Candidat introuvable")
+    ep = db.get(Epreuve, epreuve_id)
+    if not ep:
+        raise HTTPException(status_code=404, detail="Épreuve introuvable")
+    dj = db.get(DemiJournee, ep.demi_journee_id)
+    if dj.planning_id != c.planning_id:
+        raise HTTPException(status_code=403, detail="Cette épreuve n'appartient pas au planning du candidat")
+    if ep.statut not in ("LIBRE", "PRERESERVEE"):
+        raise HTTPException(status_code=409, detail=f"Créneau {ep.matiere} {str(ep.heure_debut)[:5]} non disponible (statut : {ep.statut})")
+    exclue = _matiere_exclue(c)
+    if exclue and ep.matiere.upper() == exclue:
+        raise HTTPException(status_code=409, detail=f"{ep.matiere} ne correspond pas au profil du candidat")
+
+    insc = _get_active_inscription(candidat_id, db)
+    reservees = epreuves_valides(insc) if insc else []
+    if reservees:
+        date_insc = db.get(DemiJournee, reservees[0].demi_journee_id).date
+        if dj.date != date_insc:
+            raise HTTPException(status_code=409, detail="Le créneau doit être le même jour que les autres épreuves du candidat")
+        if any(e.matiere == ep.matiere for e in reservees):
+            raise HTTPException(status_code=409, detail=f"Le candidat a déjà une épreuve de {ep.matiere}")
+        motif = _conflit_horaire(ep, reservees)
+        if motif:
+            raise HTTPException(status_code=409, detail=f"Créneau incompatible : {motif}")
+
+    if insc is None:
+        insc = Inscription(candidat_id=candidat_id, statut="ACTIVE")
+        db.add(insc)
+        db.flush()
+    ep.candidat_id = candidat_id
+    ep.statut = "ATTRIBUEE"
+    db.add(InscriptionEpreuve(inscription_id=insc.id, epreuve_id=ep.id))
+    db.query(ListeAttente).filter_by(candidat_id=candidat_id).delete()
+    c.statut = "INSCRIT"
+    db.commit()
+    return {"epreuve_id": ep.id, "statut": "ATTRIBUEE", "inscription_id": insc.id}
