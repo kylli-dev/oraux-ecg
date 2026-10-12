@@ -13,6 +13,7 @@ import {
   ChevronRight,
   Plus,
   Trash2,
+  KeyRound,
   X,
   Loader2,
   RefreshCw,
@@ -7765,6 +7766,20 @@ function ExaminateurFiche({
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   const [showIdentifiants, setShowIdentifiants] = useState(false);
+  const [mdpProvisoire, setMdpProvisoire] = useState<string | null>(null);
+  const [generationMdp, setGenerationMdp] = useState(false);
+  const genererMotDePasse = async () => {
+    if (!await confirm(
+      `Générer un nouveau mot de passe provisoire pour ${ex.prenom} ${ex.nom} ? Son mot de passe actuel ne fonctionnera plus.`,
+      { confirmLabel: "Générer", danger: true }
+    )) return;
+    setGenerationMdp(true);
+    try {
+      const r = await post<{ login: string; new_password: string }>(`parametrages/examinateurs/${ex.id}/reset-password`, {});
+      setMdpProvisoire(r.new_password);
+    } catch (e) { toast.error(e instanceof Error ? e.message : String(e)); }
+    finally { setGenerationMdp(false); }
+  };
   const [indisponibilites, setIndisponibilites] = useState<Indisponibilite[]>([]);
   const [etablissements, setEtablissements] = useState<EtablissementItem[]>([]);
   const [searchEtab, setSearchEtab] = useState(ex.etablissement ? `${ex.etablissement}${ex.code_uai ? ` (${ex.code_uai})` : ""}` : "");
@@ -7934,25 +7949,48 @@ function ExaminateurFiche({
       </div>
 
       {/* Modal identifiants */}
-      <Modal open={showIdentifiants} onClose={() => setShowIdentifiants(false)} title="Identifiants examinateur">
+      <Modal open={showIdentifiants} onClose={() => { setShowIdentifiants(false); setMdpProvisoire(null); }} title="Identifiants examinateur">
         <div className="space-y-4">
-          <p className="text-sm text-gray-800">
-            Communiquez ces informations à <strong>{ex.prenom} {ex.nom}</strong> pour accéder à son espace.
+          <p className="text-sm text-gray-900">
+            <strong>{ex.prenom} {ex.nom}</strong> se connecte à l&apos;espace examinateur avec son adresse email
+            et son mot de passe.
           </p>
           <div className="rounded-lg bg-black/[0.03] p-4 space-y-2.5 font-mono text-sm border">
             <div className="flex justify-between gap-4 items-center">
-              <span className="text-gray-800 text-xs uppercase tracking-wide">Login</span>
+              <span className="text-gray-900 text-xs uppercase tracking-wide">Login</span>
               <span className="font-semibold select-all">{ex.email}</span>
             </div>
-            <div className="h-px bg-black/5" />
-            <div className="flex justify-between gap-4 items-center">
-              <span className="text-gray-800 text-xs uppercase tracking-wide">Code d&apos;accès</span>
-              <span className="font-semibold select-all tracking-widest text-lg">{ex.code_acces}</span>
-            </div>
+            {mdpProvisoire && (
+              <>
+                <div className="h-px bg-black/5" />
+                <div className="flex justify-between gap-4 items-center">
+                  <span className="text-gray-900 text-xs uppercase tracking-wide">Mot de passe provisoire</span>
+                  <span className="font-semibold select-all text-lg">{mdpProvisoire}</span>
+                </div>
+              </>
+            )}
           </div>
-          <p className="text-xs text-gray-700">
-            Pour réinitialiser le code d&apos;accès, utilisez Paramétrages → Réinitialisation.
-          </p>
+          {mdpProvisoire ? (
+            <p className="text-xs text-gray-900">
+              Communiquez ce mot de passe à l&apos;examinateur : il ne sera plus affiché après fermeture de cette fenêtre.
+              Il pourra le modifier depuis « Changer mon mot de passe ».
+            </p>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs text-gray-900">
+                Première connexion ou mot de passe oublié : l&apos;examinateur clique sur « Mot de passe oublié ? »
+                sur la page de connexion et reçoit un lien par email. Vous pouvez aussi lui générer un mot de passe provisoire.
+              </p>
+              <Btn
+                label={generationMdp ? "Génération…" : "Générer un mot de passe provisoire"}
+                icon={generationMdp ? Loader2 : KeyRound}
+                small
+                variant="ghost"
+                disabled={generationMdp}
+                onClick={genererMotDePasse}
+              />
+            </div>
+          )}
         </div>
       </Modal>
     </div>
@@ -8255,23 +8293,26 @@ function ExaminateursSection() {
         onSuccess={loadExaminateurs}
         resultRenderer={(r) => r.examinateurs?.length > 0 && (
           <div className="mt-3 max-h-40 overflow-y-auto">
-            <p className="text-xs font-medium text-green-700 mb-1">Codes d&apos;accès générés :</p>
+            <p className="text-xs font-medium text-green-700 mb-1">Examinateurs importés :</p>
             <table className="w-full text-xs">
               <thead><tr>
                 <th className="text-left text-green-700">Nom</th>
-                <th className="text-left text-green-700">Code accès</th>
                 <th className="text-left text-green-700">Matières</th>
               </tr></thead>
               <tbody>
-                {r.examinateurs.map((e: {id: number; prenom: string; nom: string; code_acces: string; matieres: string[]}) => (
+                {r.examinateurs.map((e: {id: number; prenom: string; nom: string; matieres: string[]}) => (
                   <tr key={e.id}>
                     <td>{e.prenom} {e.nom}</td>
-                    <td className="font-mono font-bold">{e.code_acces}</td>
                     <td>{e.matieres.join(", ")}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            <p className="text-xs text-gray-900 mt-2">
+              Pour leur première connexion, les examinateurs cliquent sur « Mot de passe oublié ? » dans
+              l&apos;espace examinateur (lien envoyé par email), ou utilisent un mot de passe provisoire généré
+              depuis leur fiche (bouton « Identifiants »).
+            </p>
           </div>
         )}
       />

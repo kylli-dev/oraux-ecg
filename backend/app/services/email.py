@@ -248,22 +248,3 @@ def send_reset_password_candidat(to_email: str, login: str, subject: str, body: 
         # du backend pour pouvoir tester le parcours sans serveur mail.
         print(f"[email][dev] Lien de réinitialisation pour {login} : {url}", flush=True)
     return sent
-
-
-def build_code_acces_examinateur(prenom: str, nom: str, code: str) -> tuple:
-    """(sujet, corps_html) de l'email « code d'accès perdu » d'un examinateur."""
-    url = f"{SITE_URL.rstrip('/')}/examinateur"
-    sujet = "Votre code d'accès — espace examinateur, oraux ECG"
-    corps = f"""\
-<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#111">
-  <h2 style="color:#C62828">Oraux ECG — Espace examinateur</h2>
-  <p>Bonjour <strong>{prenom} {nom}</strong>,</p>
-  <p>Votre code d'accès personnel à l'espace examinateur est :</p>
-  <p style="font-size:20px;font-weight:bold;letter-spacing:3px;font-family:monospace">{code}</p>
-  <p><a href="{url}" style="background:#C62828;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:bold">Accéder à mon espace</a></p>
-  <p style="font-size:13px;margin-top:24px">Vous pouvez aussi vous connecter avec votre adresse email et un mot de passe
-     (lien « Mot de passe oublié ? » sur la page de connexion pour le créer).</p>
-  <p style="font-size:13px">Si vous n'êtes pas à l'origine de cette demande, ignorez cet email.</p>
-</div>
-"""
-    return sujet, corps

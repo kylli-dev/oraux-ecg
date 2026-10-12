@@ -103,14 +103,8 @@ export default function ExaminateurAccueilPage() {
             <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center mb-4 group-hover:bg-red-100 transition">
               <KeyRound className="h-5 w-5 text-[#C62828]" />
             </div>
-            <p className="font-semibold text-gray-900 mb-1">
-              {me.a_un_mot_de_passe ? "Changer mon mot de passe" : "Définir mon mot de passe"}
-            </p>
-            <p className="text-sm text-gray-700">
-              {me.a_un_mot_de_passe
-                ? "Modifiez le mot de passe de votre compte examinateur."
-                : "Créez un mot de passe pour vous connecter avec votre adresse email, en plus de votre code d'accès."}
-            </p>
+            <p className="font-semibold text-gray-900 mb-1">Changer mon mot de passe</p>
+            <p className="text-sm text-gray-700">Modifiez le mot de passe de votre compte examinateur.</p>
           </button>
         </div>
       </main>

@@ -133,34 +133,30 @@ class ChangerMotDePasseIn(BaseModel):
 
 @router.post("/code-perdu")
 def code_perdu(body: CodePerduIn, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    """Envoie le code d'accès par email si l'adresse est connue (réponse neutre)."""
-    ex = db.query(Examinateur).filter(
-        Examinateur.email == body.email.strip().lower()
-    ).first()
-    if ex:
-        from app.services.email import build_code_acces_examinateur, send_email
-        sujet, corps = build_code_acces_examinateur(ex.prenom, ex.nom, ex.code_acces)
-        background_tasks.add_task(send_email, ex.email, sujet, corps)
+    """Ancienne route « code perdu » : redirigée vers « mot de passe oublié » (réponse neutre)."""
+    # Les codes d'accès ne servent plus : on envoie le lien pour (re)définir le mot de passe.
+    mot_de_passe_oublie(MotDePasseOublieIn(email=body.email), background_tasks, db)
     return {"sent": True}
 
 
 @router.post("/login", response_model=LoginOut)
 def login(body: LoginIn, db: Session = Depends(get_db)):
     from sqlalchemy import func as _func
-    if body.email and body.password:
-        ex = db.query(Examinateur).filter(
-            _func.lower(Examinateur.email) == body.email.strip().lower()
-        ).first()
-        if not ex or not ex.password_hash or not verify_password(body.password, ex.password_hash):
-            raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
-    elif body.code_acces:
-        ex = db.query(Examinateur).filter(
-            _func.upper(Examinateur.code_acces) == body.code_acces.strip().upper()
-        ).first()
-        if not ex:
-            raise HTTPException(status_code=401, detail="Code d'accès invalide")
-    else:
-        raise HTTPException(status_code=422, detail="Saisissez votre code d'accès, ou votre email et votre mot de passe")
+    # Connexion par email + mot de passe uniquement, comme l'espace candidat. La connexion par
+    # code d'accès est désactivée : première connexion via « Mot de passe oublié ? ».
+    if body.code_acces and not body.email:
+        raise HTTPException(
+            status_code=401,
+            detail="La connexion par code d'accès n'est plus disponible. Connectez-vous avec votre email "
+                   "et votre mot de passe (utilisez « Mot de passe oublié ? » pour le créer).",
+        )
+    if not body.email or not body.password:
+        raise HTTPException(status_code=422, detail="Saisissez votre email et votre mot de passe")
+    ex = db.query(Examinateur).filter(
+        _func.lower(Examinateur.email) == body.email.strip().lower()
+    ).first()
+    if not ex or not ex.password_hash or not verify_password(body.password, ex.password_hash):
+        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
     token = create_examinateur_token(ex.id)
     return LoginOut(access_token=token)
 
@@ -211,13 +207,9 @@ def changer_mot_de_passe(
     ex: Examinateur = Depends(get_current_examinateur),
     db: Session = Depends(get_db),
 ):
-    """
-    Change le mot de passe de l'examinateur connecté. S'il n'en a encore aucun (connexion
-    par code d'accès), il le définit directement sans « mot de passe actuel ».
-    """
-    if ex.password_hash:
-        if not body.current_password or not verify_password(body.current_password, ex.password_hash):
-            raise HTTPException(status_code=401, detail="Mot de passe actuel incorrect")
+    """Change le mot de passe de l'examinateur connecté (mot de passe actuel requis)."""
+    if not ex.password_hash or not body.current_password or not verify_password(body.current_password, ex.password_hash):
+        raise HTTPException(status_code=401, detail="Mot de passe actuel incorrect")
     if len(body.new_password) < 8:
         raise HTTPException(status_code=422, detail="Le mot de passe doit contenir au moins 8 caractères")
     ex.password_hash = hash_password(body.new_password)
