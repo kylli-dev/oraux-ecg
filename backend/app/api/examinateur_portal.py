@@ -241,16 +241,32 @@ def mes_epreuves(
     ex: Examinateur = Depends(get_current_examinateur),
     db: Session = Depends(get_db),
 ):
-    rows = (
+    # Espace examinateur : une épreuve n'apparaît (liste, exports PDF/Excel) qu'une fois
+    # qu'un candidat y est affecté — les créneaux encore vides restent masqués.
+    return _epreuves_examinateur(ex, db)
+
+
+def _epreuves_examinateur(
+    ex: Examinateur,
+    db: Session,
+    inclure_sans_candidat: bool = False,
+    planning_id: Optional[int] = None,
+) -> List[EpreuveExaminateur]:
+    """
+    Épreuves de l'examinateur (principal ou 2e). L'espace examinateur n'affiche que celles
+    qui ont un candidat ; l'export depuis l'admin peut inclure les créneaux encore vides et
+    se limiter à un planning.
+    """
+    q = (
         db.query(Epreuve, DemiJournee)
         .join(DemiJournee, Epreuve.demi_journee_id == DemiJournee.id)
         .filter(or_(Epreuve.examinateur_id == ex.id, Epreuve.examinateur2_id == ex.id))
-        # Une épreuve n'apparaît dans l'espace examinateur (liste, exports PDF/Excel) qu'une
-        # fois qu'un candidat y est affecté — les créneaux encore vides restent masqués.
-        .filter(Epreuve.candidat_id.isnot(None))
-        .order_by(DemiJournee.date, Epreuve.heure_debut)
-        .all()
     )
+    if not inclure_sans_candidat:
+        q = q.filter(Epreuve.candidat_id.isnot(None))
+    if planning_id is not None:
+        q = q.filter(DemiJournee.planning_id == planning_id)
+    rows = q.order_by(DemiJournee.date, Epreuve.heure_debut).all()
 
     result = []
     for epreuve, dj in rows:
@@ -324,13 +340,19 @@ _MOIS_FR = ["", "janvier", "février", "mars", "avril", "mai", "juin",
             "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
 
 
-def _planning_examinateur(ex: Examinateur, db: Session, date: Optional[Date]) -> list:
+def _planning_examinateur(
+    ex: Examinateur,
+    db: Session,
+    date: Optional[Date],
+    inclure_sans_candidat: bool = False,
+    planning_id: Optional[int] = None,
+) -> list:
     """
     Lignes du planning de l'examinateur (communes aux exports Excel et PDF), triées par
     date puis heure — filtrées sur une journée si `date` est fourni (filtre de la page).
     """
     lignes = []
-    for ep in mes_epreuves(ex=ex, db=db):
+    for ep in _epreuves_examinateur(ex, db, inclure_sans_candidat, planning_id):
         if date and ep.date != date:
             continue
         heure_prep = ""
@@ -362,12 +384,23 @@ def export_planning(
     db: Session = Depends(get_db),
 ):
     """Export Excel du planning + notes de l'examinateur (une journée si `date` est fourni)."""
+    return exporter_planning_excel(ex, db, date)
+
+
+def exporter_planning_excel(
+    ex: Examinateur,
+    db: Session,
+    date: Optional[Date] = None,
+    inclure_sans_candidat: bool = False,
+    planning_id: Optional[int] = None,
+):
+    """Construit l'export Excel (utilisé par l'espace examinateur et par l'admin)."""
     import io as _io
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment
     from fastapi.responses import Response as _Response
 
-    lignes = _planning_examinateur(ex, db, date)
+    lignes = _planning_examinateur(ex, db, date, inclure_sans_candidat, planning_id)
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -422,6 +455,17 @@ def export_planning_pdf(
     Les notes n'y figurent pas : c'est un document d'organisation, à emporter le jour J —
     elles restent dans l'export Excel.
     """
+    return exporter_planning_pdf(ex, db, date)
+
+
+def exporter_planning_pdf(
+    ex: Examinateur,
+    db: Session,
+    date: Optional[Date] = None,
+    inclure_sans_candidat: bool = False,
+    planning_id: Optional[int] = None,
+):
+    """Construit l'export PDF (utilisé par l'espace examinateur et par l'admin)."""
     import io as _io
     from datetime import datetime as _dt
     from fastapi.responses import Response as _Response
@@ -431,7 +475,7 @@ def export_planning_pdf(
     from reportlab.lib.units import mm
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-    lignes = _planning_examinateur(ex, db, date)
+    lignes = _planning_examinateur(ex, db, date, inclure_sans_candidat, planning_id)
     rouge = colors.HexColor("#C62828")
 
     titre_st = ParagraphStyle("titre", fontName="Helvetica-Bold", fontSize=16, leading=20, textColor=colors.black, spaceAfter=4)

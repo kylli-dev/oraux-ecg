@@ -7767,6 +7767,34 @@ function ExaminateurFiche({
   const [err, setErr] = useState("");
   const [showIdentifiants, setShowIdentifiants] = useState(false);
   const [mdpProvisoire, setMdpProvisoire] = useState<string | null>(null);
+  // Export du planning de l'examinateur (mêmes documents que dans son espace)
+  const [showExport, setShowExport] = useState(false);
+  const [exportPerimetre, setExportPerimetre] = useState<"planning" | "tous">("planning");
+  const [exportDate, setExportDate] = useState("");
+  const [exportVides, setExportVides] = useState(true);
+  const [exportEnCours, setExportEnCours] = useState<"pdf" | "xlsx" | null>(null);
+  const exporterPlanning = async (format: "pdf" | "xlsx") => {
+    setExportEnCours(format);
+    try {
+      const params = new URLSearchParams({ format, inclure_sans_candidat: String(exportVides) });
+      if (exportPerimetre === "planning") params.set("planning_id", String(planningId));
+      if (exportDate) params.set("date", exportDate);
+      const res = await fetch(`/api/backend/examinateurs/${ex.id}/planning-export?${params}`);
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.detail ?? "Erreur lors de l'export");
+      }
+      const blob = await res.blob();
+      const cd = res.headers.get("content-disposition") ?? "";
+      const nom = cd.match(/filename="([^"]+)"/)?.[1] ?? `planning_${ex.nom}.${format}`;
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = nom;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    } catch (e) { toast.error(e instanceof Error ? e.message : String(e)); }
+    finally { setExportEnCours(null); }
+  };
   const [generationMdp, setGenerationMdp] = useState(false);
   const genererMotDePasse = async () => {
     if (!await confirm(
@@ -7865,6 +7893,12 @@ function ExaminateurFiche({
           >
             <Send className="h-3 w-3" /> Identifiants
           </button>
+          <button
+            onClick={() => setShowExport(true)}
+            className="text-xs px-2.5 py-1.5 rounded-lg border border-red-200 text-[#C62828] hover:bg-red-50 transition font-medium flex items-center gap-1"
+          >
+            <Download className="h-3 w-3" /> Exporter le planning
+          </button>
           <button onClick={deleteEx} className="p-1.5 text-red-400 hover:text-red-600 transition" title="Supprimer">
             <Trash2 className="h-4 w-4" />
           </button>
@@ -7949,6 +7983,44 @@ function ExaminateurFiche({
       </div>
 
       {/* Modal identifiants */}
+      <Modal open={showExport} onClose={() => setShowExport(false)} title={`Planning de ${ex.prenom} ${ex.nom}`}>
+        <div className="space-y-4">
+          <p className="text-sm text-gray-900">
+            Mêmes documents que ceux que l&apos;examinateur télécharge depuis son espace : PDF prêt à imprimer,
+            ou Excel (avec les notes).
+          </p>
+          <Field label="Périmètre">
+            <Select value={exportPerimetre} onChange={(e) => setExportPerimetre(e.target.value as "planning" | "tous")}>
+              <option value="planning">Ce planning uniquement</option>
+              <option value="tous">Tous les plannings</option>
+            </Select>
+          </Field>
+          <Field label="Journée (facultatif)">
+            <Input type="date" value={exportDate} onChange={(e) => setExportDate(e.target.value)} />
+          </Field>
+          <label className="flex items-center gap-2 text-sm text-gray-900 cursor-pointer">
+            <input type="checkbox" checked={exportVides} onChange={(e) => setExportVides(e.target.checked)} />
+            Inclure les créneaux sans candidat
+          </label>
+          <p className="text-xs text-gray-700">
+            L&apos;espace examinateur, lui, n&apos;affiche que les épreuves qui ont un candidat.
+          </p>
+          <div className="flex gap-2 justify-end">
+            {(["pdf", "xlsx"] as const).map((f) => (
+              <Btn
+                key={f}
+                label={exportEnCours === f ? "Génération…" : f === "pdf" ? "Télécharger le PDF" : "Télécharger l'Excel"}
+                icon={exportEnCours === f ? Loader2 : Download}
+                small
+                variant={f === "pdf" ? "primary" : "ghost"}
+                disabled={exportEnCours !== null}
+                onClick={() => exporterPlanning(f)}
+              />
+            ))}
+          </div>
+        </div>
+      </Modal>
+
       <Modal open={showIdentifiants} onClose={() => { setShowIdentifiants(false); setMdpProvisoire(null); }} title="Identifiants examinateur">
         <div className="space-y-4">
           <p className="text-sm text-gray-900">

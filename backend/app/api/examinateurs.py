@@ -259,3 +259,38 @@ def delete_indisponibilite(
         raise HTTPException(status_code=404, detail="Indisponibilité introuvable")
     db.delete(indispo)
     db.commit()
+
+
+# ── Export du planning d'un examinateur (depuis l'admin) ──────────────────────
+
+@router.get("/{examinateur_id}/planning-export")
+def export_planning_examinateur(
+    examinateur_id: int,
+    format: str = "pdf",
+    planning_id: Optional[int] = None,
+    date: Optional[str] = None,
+    inclure_sans_candidat: bool = True,
+    db: Session = Depends(get_db),
+):
+    """
+    Planning d'un examinateur en PDF ou Excel, généré depuis l'admin — mêmes documents que
+    ceux de l'espace examinateur. Par défaut, inclut aussi les créneaux sans candidat (vue
+    d'organisation complète), et peut se limiter à un planning et/ou une journée.
+    """
+    from datetime import date as _date
+    from app.api.examinateur_portal import exporter_planning_excel, exporter_planning_pdf
+
+    ex = db.get(Examinateur, examinateur_id)
+    if not ex:
+        raise HTTPException(status_code=404, detail="Examinateur introuvable")
+    jour = None
+    if date:
+        try:
+            jour = _date.fromisoformat(date)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Date invalide (format AAAA-MM-JJ)")
+    if format == "xlsx":
+        return exporter_planning_excel(ex, db, jour, inclure_sans_candidat, planning_id)
+    if format == "pdf":
+        return exporter_planning_pdf(ex, db, jour, inclure_sans_candidat, planning_id)
+    raise HTTPException(status_code=422, detail="format doit valoir pdf ou xlsx")
