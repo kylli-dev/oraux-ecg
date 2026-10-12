@@ -10691,11 +10691,187 @@ function LogoutButton() {
 }
 
 // ── Gestion des planches ───────────────────────────────────────────────────────
+// ── Historique des planches (journal en ajout seul, jamais réécrit) ──────────
+type PlancheHistoriqueItem = {
+  id: number;
+  created_at: string;
+  action: string;
+  planning_id: number | null;
+  planche_nom: string | null;
+  ancienne_planche_nom: string | null;
+  matiere: string | null;
+  date_epreuve: string | null;
+  heure_debut: string | null;
+  candidat_nom: string | null;
+  examinateur_nom: string | null;
+};
+
+const ACTION_PLANCHE: Record<string, { label: string; cls: string }> = {
+  ASSIGNEE: { label: "Assignée", cls: "bg-emerald-50 text-emerald-800 border-emerald-200" },
+  REMPLACEE: { label: "Remplacée", cls: "bg-blue-50 text-blue-800 border-blue-200" },
+  RETIREE: { label: "Retirée", cls: "bg-gray-100 text-gray-800 border-gray-300" },
+  PLANCHE_SUPPRIMEE: { label: "Planche supprimée", cls: "bg-red-50 text-red-700 border-red-200" },
+  IMPRIMEE: { label: "Imprimée", cls: "bg-purple-50 text-purple-800 border-purple-200" },
+  REPRISE: { label: "Déjà assignée (reprise)", cls: "bg-amber-50 text-amber-800 border-amber-200" },
+};
+
+function HistoriquePlanches() {
+  const [items, setItems] = useState<PlancheHistoriqueItem[]>([]);
+  const [plannings, setPlannings] = useState<Planning[]>([]);
+  const [planningId, setPlanningId] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [recherche, setRecherche] = useState("");
+  const [fAction, setFAction] = useState("");
+  const [fMatiere, setFMatiere] = useState("");
+  const [fDate, setFDate] = useState("");
+
+  useEffect(() => { get<Planning[]>("plannings/").then(setPlannings).catch(() => {}); }, []);
+  useEffect(() => {
+    setLoading(true);
+    get<PlancheHistoriqueItem[]>(`planches/historique${planningId ? `?planning_id=${planningId}` : ""}`)
+      .then(setItems)
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false));
+  }, [planningId]);
+
+  const horodatage = (iso: string) =>
+    new Date(iso.endsWith("Z") || iso.includes("+") ? iso : iso + "Z").toLocaleString("fr-FR", {
+      day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+
+  const q = recherche.trim().toLowerCase();
+  const filtres = items
+    .filter((h) => !fAction || h.action === fAction)
+    .filter((h) => !fMatiere || h.matiere === fMatiere)
+    .filter((h) => !fDate || h.date_epreuve === fDate)
+    .filter((h) => !q || `${h.planche_nom ?? ""} ${h.ancienne_planche_nom ?? ""} ${h.candidat_nom ?? ""} ${h.examinateur_nom ?? ""}`.toLowerCase().includes(q));
+  const matieres = [...new Set(items.map((h) => h.matiere).filter((m): m is string => !!m))].sort((a, b) => a.localeCompare(b, "fr"));
+  const dates = [...new Set(items.map((h) => h.date_epreuve).filter((d): d is string => !!d))].sort();
+  const actifs = !!(recherche || fAction || fMatiere || fDate);
+
+  // Export CSV (séparateur « ; » + BOM : s'ouvre directement dans Excel en français)
+  const exporter = () => {
+    const entetes = ["Date de l'action", "Action", "Planche", "Ancienne planche", "Matière", "Date épreuve", "Heure", "Candidat", "Examinateur"];
+    const cell = (v: string | null | undefined) => `"${(v ?? "").replace(/"/g, '""')}"`;
+    const lignes = filtres.map((h) => [
+      horodatage(h.created_at), ACTION_PLANCHE[h.action]?.label ?? h.action, h.planche_nom, h.ancienne_planche_nom,
+      h.matiere, h.date_epreuve ? formatDateCourte(h.date_epreuve) : "", h.heure_debut, h.candidat_nom, h.examinateur_nom,
+    ].map(cell).join(";"));
+    const blob = new Blob(["\ufeff" + [entetes.map(cell).join(";"), ...lignes].join("\r\n")], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `historique_planches_${new Date().toLocaleDateString("sv-SE")}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-800">
+        Journal complet de chaque planche, du début à la fin : assignation, remplacement, retrait, suppression et impression.
+        Chaque ligne est conservée telle quelle — elle n&apos;est jamais modifiée ni effacée.
+      </p>
+
+      <div className="bg-white rounded-xl border border-black/10 shadow-sm p-4 space-y-3">
+        <div className="grid gap-3 grid-cols-2 md:grid-cols-5">
+          <Field label="Planning">
+            <Select value={planningId} onChange={(e) => setPlanningId(e.target.value)}>
+              <option value="">Tous</option>
+              {plannings.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
+            </Select>
+          </Field>
+          <Field label="Recherche">
+            <Input value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Planche, candidat, examinateur…" />
+          </Field>
+          <Field label="Action">
+            <Select value={fAction} onChange={(e) => setFAction(e.target.value)}>
+              <option value="">Toutes</option>
+              {Object.entries(ACTION_PLANCHE).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            </Select>
+          </Field>
+          <Field label="Matière">
+            <Select value={fMatiere} onChange={(e) => setFMatiere(e.target.value)}>
+              <option value="">Toutes</option>
+              {matieres.map((m) => <option key={m} value={m}>{m}</option>)}
+            </Select>
+          </Field>
+          <Field label="Date de l'épreuve">
+            <Select value={fDate} onChange={(e) => setFDate(e.target.value)}>
+              <option value="">Toutes</option>
+              {dates.map((d) => <option key={d} value={d}>{formatDateCourte(d)}</option>)}
+            </Select>
+          </Field>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-sm text-gray-900">
+            <span className="font-semibold">{filtres.length}</span> événement{filtres.length > 1 ? "s" : ""}
+            {actifs && <> sur {items.length}</>}
+            {actifs && (
+              <button
+                onClick={() => { setRecherche(""); setFAction(""); setFMatiere(""); setFDate(""); }}
+                className="ml-3 font-medium hover:underline" style={{ color: RED }}
+              >
+                Réinitialiser
+              </button>
+            )}
+          </span>
+          <Btn label="Exporter (Excel / CSV)" icon={Download} small variant="ghost" onClick={exporter} disabled={filtres.length === 0} />
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-12 text-gray-700"><Spinner /></div>
+      ) : filtres.length === 0 ? (
+        <Empty
+          message={items.length === 0 ? "Aucun événement enregistré" : "Aucun événement ne correspond aux filtres"}
+          sub={items.length === 0 ? "L'historique démarre à partir de maintenant : chaque assignation, retrait ou impression sera tracé ici." : undefined}
+        />
+      ) : (
+        <div className="rounded-xl border bg-white shadow-sm overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-[#F5F5F5]">
+                {["Date de l'action", "Action", "Planche", "Matière", "Épreuve", "Candidat", "Examinateur"].map((h) => (
+                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-900 whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtres.map((h) => {
+                const a = ACTION_PLANCHE[h.action] ?? { label: h.action, cls: "bg-gray-50 text-gray-800 border-gray-200" };
+                return (
+                  <tr key={h.id} className="border-t border-black/5">
+                    <td className="px-4 py-2.5 text-gray-900 tabular-nums whitespace-nowrap">{horodatage(h.created_at)}</td>
+                    <td className="px-4 py-2.5">
+                      <span className={`inline-block px-2 py-0.5 rounded-full border text-xs font-semibold whitespace-nowrap ${a.cls}`}>{a.label}</span>
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-900">
+                      {h.ancienne_planche_nom && <span className="text-gray-700 line-through mr-1">{h.ancienne_planche_nom}</span>}
+                      {h.ancienne_planche_nom && <span className="text-gray-700 mr-1">→</span>}
+                      <span className="font-medium">{h.planche_nom ?? "—"}</span>
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-900">{h.matiere ?? "—"}</td>
+                    <td className="px-4 py-2.5 text-gray-900 tabular-nums whitespace-nowrap">
+                      {h.date_epreuve ? formatDateCourte(h.date_epreuve) : "—"}{h.heure_debut ? ` · ${h.heure_debut}` : ""}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-900">{h.candidat_nom ?? <span className="italic text-gray-700">aucun</span>}</td>
+                    <td className="px-4 py-2.5 text-gray-900">{h.examinateur_nom ?? <span className="italic text-gray-700">—</span>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PlanchesSection() {
   const toast = useToast();
   const confirm = useConfirm();
   const matieres = useMatieres();
-  const [tab, setTab] = useState<"sujets" | "assignation" | "impression">("sujets");
+  const [tab, setTab] = useState<"sujets" | "assignation" | "impression" | "historique">("sujets");
 
   // ── Onglet Sujets ────────────────────────────────────────────────────────────
   const [planches, setPlanches] = useState<PlancheItem[]>([]);
@@ -11032,7 +11208,7 @@ function PlanchesSection() {
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 bg-black/5 p-1 rounded-xl w-fit">
-        {(["sujets", "assignation", "impression"] as const).map((t) => (
+        {(["sujets", "assignation", "impression", "historique"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -11040,7 +11216,7 @@ function PlanchesSection() {
               tab === t ? "bg-white shadow text-black" : "text-gray-800 hover:text-black"
             }`}
           >
-            {t === "sujets" ? "Gestion des sujets" : t === "assignation" ? "Assignation" : "Impression"}
+            {t === "sujets" ? "Gestion des sujets" : t === "assignation" ? "Assignation" : t === "impression" ? "Impression" : "Historique"}
           </button>
         ))}
       </div>
@@ -11475,6 +11651,8 @@ function PlanchesSection() {
       )}
 
       {/* ── Onglet Impression ────────────────────────────────────────────────── */}
+      {tab === "historique" && <HistoriquePlanches />}
+
       {tab === "impression" && (
         <div className="space-y-5">
           {/* Filtres */}

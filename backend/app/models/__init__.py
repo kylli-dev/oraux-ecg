@@ -16,6 +16,7 @@ from app.models.examinateur_planning import ExaminateurPlanning
 from app.models.surveillant import Surveillant
 from app.models.surveillant_planning import SurveillantPlanning
 from app.models.planche import Planche
+from app.models.planche_historique import PlancheHistorique
 from app.models.planning_salle_defaut import PlanningMatiereSalleDefaut
 from app.models.etablissement import Etablissement
 from app.models.admin import Admin
@@ -40,6 +41,7 @@ __all__ = [
     "Surveillant",
     "SurveillantPlanning",
     "Planche",
+    "PlancheHistorique",
     "PlanningMatiereSalleDefaut",
     "Etablissement",
     "Admin",

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import io
 import zipfile
-from datetime import datetime
+from datetime import date as Date, datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
@@ -21,6 +21,8 @@ from app.models.epreuve import Epreuve
 from app.models.examinateur import Examinateur
 from app.models.matiere import Matiere
 from app.models.planche import Planche
+from app.models.planche_historique import PlancheHistorique
+from app.services.planche_historique import journaliser_planche
 
 def _nom_examinateur(db: Session, exam_id: Optional[int]) -> Optional[str]:
     if not exam_id:
@@ -196,8 +198,11 @@ def delete_planche(planche_id: int, db: Session = Depends(get_db)):
     p = db.get(Planche, planche_id)
     if not p:
         raise HTTPException(status_code=404, detail="Planche introuvable")
-    # Désassigner de toutes les épreuves avant suppression
-    db.query(Epreuve).filter(Epreuve.planche_id == planche_id).update({"planche_id": None})
+    # Désassigner de toutes les épreuves avant suppression — en le journalisant
+    for ep in db.query(Epreuve).filter(Epreuve.planche_id == planche_id).all():
+        journaliser_planche(db, "PLANCHE_SUPPRIMEE", ep, p)
+        ep.planche_id = None
+    db.flush()
     db.delete(p)
     db.commit()
 
@@ -226,6 +231,13 @@ def assigner_planche(epreuve_id: int, body: AssignerPlancheIn, db: Session = Dep
     p = db.get(Planche, body.planche_id)
     if not p:
         raise HTTPException(status_code=404, detail="Planche introuvable")
+    if ep.planche_id == body.planche_id:
+        return {"epreuve_id": epreuve_id, "planche_id": body.planche_id}
+    ancienne = db.get(Planche, ep.planche_id) if ep.planche_id else None
+    journaliser_planche(
+        db, "REMPLACEE" if ancienne else "ASSIGNEE", ep, p,
+        ancienne_planche_nom=ancienne.nom if ancienne else None,
+    )
     ep.planche_id = body.planche_id
     db.commit()
     return {"epreuve_id": epreuve_id, "planche_id": body.planche_id}
@@ -236,6 +248,8 @@ def desassigner_planche(epreuve_id: int, db: Session = Depends(get_db)):
     ep = db.get(Epreuve, epreuve_id)
     if not ep:
         raise HTTPException(status_code=404, detail="Épreuve introuvable")
+    if ep.planche_id:
+        journaliser_planche(db, "RETIREE", ep, db.get(Planche, ep.planche_id))
     ep.planche_id = None
     db.commit()
 
@@ -297,6 +311,8 @@ def download_cartouche(epreuve_id: int, db: Session = Depends(get_db)):
             detail=f"Le fichier PDF de la planche « {planche.nom} » est invalide ou corrompu ({e}) — réimportez-le.",
         )
 
+    journaliser_planche(db, "IMPRIMEE", ep, planche)
+    db.commit()
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
@@ -374,10 +390,12 @@ def batch_cartouche(body: BatchCartoucheIn, db: Session = Depends(get_db)):
                 heure_str = str(ep.heure_debut)[:5].replace(":", "-")
                 filename = f"{heure_str}_{safe_nom}_{safe_prenom}_{matiere_label or 'matiere'}.pdf"
                 zf.writestr(filename, pdf_bytes)
+                journaliser_planche(db, "IMPRIMEE", ep, planche)
                 count += 1
             except Exception as e:
                 errors.append(f"Épreuve {epreuve_id}: erreur de génération — {e}")
 
+    db.commit()  # lignes « IMPRIMEE » du journal
     if count == 0:
         raise HTTPException(status_code=400, detail="Aucun PDF généré. " + " | ".join(errors))
 
@@ -392,3 +410,38 @@ def batch_cartouche(body: BatchCartoucheIn, db: Session = Depends(get_db)):
 
 # Import tardif (évite la circularité)
 from pathlib import Path  # noqa: E402
+
+
+# ── Historique des planches (journal en ajout seul) ───────────────────────────
+
+class PlancheHistoriqueOut(BaseModel):
+    id: int
+    created_at: datetime
+    action: str
+    epreuve_id: Optional[int] = None
+    planche_id: Optional[int] = None
+    planning_id: Optional[int] = None
+    planche_nom: Optional[str] = None
+    ancienne_planche_nom: Optional[str] = None
+    matiere: Optional[str] = None
+    date_epreuve: Optional[Date] = None
+    heure_debut: Optional[str] = None
+    candidat_id: Optional[int] = None
+    candidat_nom: Optional[str] = None
+    examinateur_nom: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/historique", response_model=List[PlancheHistoriqueOut])
+def historique_planches(planning_id: Optional[int] = None, db: Session = Depends(get_db)):
+    """
+    Journal complet des planches, du plus récent au plus ancien : assignations,
+    remplacements, retraits, suppressions de planche et impressions. Jamais modifié ni
+    purgé — c'est la trace de « qui a eu quel sujet, quand » du début à la fin.
+    """
+    q = db.query(PlancheHistorique)
+    if planning_id is not None:
+        q = q.filter(PlancheHistorique.planning_id == planning_id)
+    return q.order_by(PlancheHistorique.created_at.desc(), PlancheHistorique.id.desc()).all()

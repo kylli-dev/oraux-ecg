@@ -250,12 +250,36 @@ def _nettoyer_inscriptions_orphelines():
         db.close()
 
 
+def _reprise_historique_planches():
+    """
+    Une seule fois (journal vide) : inscrit au journal les planches déjà assignées avant sa
+    mise en place, pour que l'historique parte bien du début.
+    """
+    from app.models.epreuve import Epreuve
+    from app.models.planche import Planche
+    from app.models.planche_historique import PlancheHistorique
+    from app.services.planche_historique import journaliser_planche
+    db = SessionLocal()
+    try:
+        if db.query(PlancheHistorique.id).first() is not None:
+            return
+        eps = db.query(Epreuve).filter(Epreuve.planche_id.isnot(None)).all()
+        for ep in eps:
+            journaliser_planche(db, "REPRISE", ep, db.get(Planche, ep.planche_id))
+        db.commit()
+        if eps:
+            print(f"[startup] Historique des planches : {len(eps)} assignation(s) existante(s) reprise(s)", flush=True)
+    finally:
+        db.close()
+
+
 def _init_db():
     try:
         Base.metadata.create_all(bind=engine)
         _run_migrations()
         _bootstrap_admin()
         _nettoyer_inscriptions_orphelines()
+        _reprise_historique_planches()
         print("[startup] DB init OK", flush=True)
     except Exception as e:
         print(f"[startup] DB init error: {e}", flush=True)
