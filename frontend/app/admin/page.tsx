@@ -5504,6 +5504,12 @@ function CandidatGestionDrawer({
   };
   const [compat, setCompat] = useState<{ date: string | null; matieres_manquantes: string[]; creneaux: CreneauCompatible[] } | null>(null);
   const [voirIncompatibles, setVoirIncompatibles] = useState(false);
+  // Filtres de la liste « Créneaux disponibles »
+  const [fDate, setFDate] = useState("");
+  const [fPeriode, setFPeriode] = useState<"" | "matin" | "apres-midi">("");
+  const [fHeure, setFHeure] = useState("");
+  const [fStatut, setFStatut] = useState("");
+  const [fAVenir, setFAVenir] = useState(true);
 
   const loadData = useCallback(() => {
     get<FicheCandidat>(`gestion-candidats/candidat/${candidatId}/fiche`).then(setFiche).catch(() => {});
@@ -5616,12 +5622,27 @@ function CandidatGestionDrawer({
     (classeUp.includes("ESH") ? "ESH" : classeUp.includes("HGG") ? "HGG" : "");
   const matiereExclue = PROFIL_EXCLUSION[profilUpper];
 
+  // Triplets compatibles avec le profil du candidat, puis filtres de la fenêtre
+  const aujourdhui = new Date().toLocaleDateString("sv-SE"); // AAAA-MM-JJ, heure locale
+  const tripletsProfil = triplets.filter(t =>
+    !matiereExclue || !t.epreuves.some(e => e.matiere.toUpperCase() === matiereExclue)
+  );
+  const tripletsFiltres = tripletsProfil
+    .filter(t => !fAVenir || t.date >= aujourdhui)
+    .filter(t => !fDate || t.date === fDate)
+    .filter(t => !fPeriode || (fPeriode === "matin" ? t.heure_debut < "13:00" : t.heure_debut >= "13:00"))
+    .filter(t => !fHeure || t.heure_debut === fHeure)
+    .filter(t => !fStatut || t.type_slot === fStatut)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.heure_debut.localeCompare(b.heure_debut));
+  const datesDispo = [...new Set(tripletsProfil.filter(t => !fAVenir || t.date >= aujourdhui).map(t => t.date))].sort();
+  const heuresDispo = [...new Set(
+    tripletsProfil.filter(t => (!fAVenir || t.date >= aujourdhui) && (!fDate || t.date === fDate)).map(t => t.heure_debut)
+  )].sort();
+  const filtresActifs = !!(fDate || fPeriode || fHeure || fStatut) || !fAVenir;
+  const resetFiltres = () => { setFDate(""); setFPeriode(""); setFHeure(""); setFStatut(""); setFAVenir(true); };
+
   const tripletsByDate: Record<string, TripletDisponible[]> = {};
-  for (const t of triplets) {
-    if (matiereExclue) {
-      const matieres = t.epreuves.map(e => e.matiere.toUpperCase());
-      if (matieres.includes(matiereExclue)) continue;
-    }
+  for (const t of tripletsFiltres) {
     if (!tripletsByDate[t.date]) tripletsByDate[t.date] = [];
     tripletsByDate[t.date].push(t);
   }
@@ -5871,9 +5892,63 @@ function CandidatGestionDrawer({
                 </button>
               </div>
 
+              {!modeLibre && tripletsProfil.length > 0 && (
+                <div className="mb-3 rounded-lg border border-black/10 bg-gray-50 p-2.5 space-y-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <select value={fDate} onChange={(e) => { setFDate(e.target.value); setFHeure(""); }}
+                      className="text-xs border border-black/15 rounded-lg px-2 py-1.5 bg-white text-gray-900" title="Date">
+                      <option value="">Toutes les dates</option>
+                      {datesDispo.map(d => <option key={d} value={d}>{formatDateCourte(d)}</option>)}
+                    </select>
+                    <select value={fPeriode} onChange={(e) => setFPeriode(e.target.value as "" | "matin" | "apres-midi")}
+                      className="text-xs border border-black/15 rounded-lg px-2 py-1.5 bg-white text-gray-900" title="Période">
+                      <option value="">Matin et après-midi</option>
+                      <option value="matin">Matin (avant 13h)</option>
+                      <option value="apres-midi">Après-midi (13h et après)</option>
+                    </select>
+                    <select value={fHeure} onChange={(e) => setFHeure(e.target.value)}
+                      className="text-xs border border-black/15 rounded-lg px-2 py-1.5 bg-white text-gray-900" title="Heure de début">
+                      <option value="">Toutes les heures</option>
+                      {heuresDispo.map(h => <option key={h} value={h}>{h}</option>)}
+                    </select>
+                    <select value={fStatut} onChange={(e) => setFStatut(e.target.value)}
+                      className="text-xs border border-black/15 rounded-lg px-2 py-1.5 bg-white text-gray-900" title="Statut">
+                      <option value="">Tous les statuts</option>
+                      <option value="LIBRE">Libre</option>
+                      <option value="PRERESERVEE">Préréservé</option>
+                      <option value="INDISPONIBLE">Indisponible</option>
+                    </select>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="inline-flex items-center gap-1.5 text-xs text-gray-900 cursor-pointer">
+                      <input type="checkbox" checked={fAVenir} onChange={(e) => { setFAVenir(e.target.checked); setFDate(""); }} />
+                      À venir uniquement (à partir d&apos;aujourd&apos;hui)
+                    </label>
+                    <span className="text-xs text-gray-900">
+                      <span className="font-semibold">{tripletsFiltres.length}</span> créneau{tripletsFiltres.length > 1 ? "x" : ""}
+                      {filtresActifs && <> sur {tripletsProfil.length}</>}
+                      {filtresActifs && (
+                        <button onClick={resetFiltres} className="ml-2 font-medium hover:underline" style={{ color: RED }}>
+                          Réinitialiser
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {!modeLibre ? (
                 Object.keys(tripletsByDate).length === 0 ? (
-                  <p className="text-xs text-gray-700">Aucun créneau disponible</p>
+                  <p className="text-xs text-gray-700">
+                    {tripletsProfil.length === 0
+                      ? "Aucun créneau disponible"
+                      : "Aucun créneau ne correspond aux filtres."}
+                    {tripletsProfil.length > 0 && filtresActifs && (
+                      <button onClick={resetFiltres} className="ml-1 font-medium hover:underline" style={{ color: RED }}>
+                        Réinitialiser
+                      </button>
+                    )}
+                  </p>
                 ) : (
                   <div className="space-y-4">
                     {Object.entries(tripletsByDate).map(([date, trips]) => {
@@ -5908,6 +5983,11 @@ function CandidatGestionDrawer({
                                       {t.type_slot === "PRERESERVEE" && (
                                         <span className="mr-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
                                           Préréservé
+                                        </span>
+                                      )}
+                                      {t.type_slot === "INDISPONIBLE" && (
+                                        <span className="mr-2 text-[10px] text-gray-800 bg-gray-100 border border-gray-300 px-1.5 py-0.5 rounded" title={t.motif ?? undefined}>
+                                          Indisponible
                                         </span>
                                       )}
                                       <button
