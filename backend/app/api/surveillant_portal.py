@@ -5,14 +5,22 @@ import io
 from datetime import date as Date
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Security
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Security
 from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.auth import create_surveillant_token, decode_surveillant_token, verify_password
+from app.core.auth import (
+    create_surveillant_token,
+    decode_surveillant_token,
+    generate_reset_token,
+    hash_password,
+    reset_token_expiry,
+    verify_password,
+    RESET_TOKEN_EXPIRE_MINUTES,
+)
 from app.db.deps import get_db
 from app.models.surveillant import Surveillant
 from app.models.epreuve import Epreuve
@@ -89,6 +97,75 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
     if not s or not s.password_hash or not verify_password(body.password, s.password_hash):
         raise HTTPException(status_code=401, detail="Identifiants invalides")
     return LoginOut(access_token=create_surveillant_token(s.id))
+
+
+# ── Mot de passe (comme les espaces candidat et examinateur) ──────────────────
+
+class SurvMotDePasseOublieIn(BaseModel):
+    email: str
+
+
+class SurvReinitialiserIn(BaseModel):
+    token: str
+    new_password: str
+
+
+class SurvChangerMotDePasseIn(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.post("/forgot-password", status_code=204)
+def surveillant_mot_de_passe_oublie(
+    body: SurvMotDePasseOublieIn, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
+):
+    """Envoie un lien de réinitialisation (réponse toujours 204, envoi en tâche de fond)."""
+    from sqlalchemy import func as _func
+    from app.services.email import build_reset_password_candidat, send_reset_password_candidat
+    saisie = body.email.strip().lower()
+    if not saisie:
+        return
+    s = db.query(Surveillant).filter(_func.lower(Surveillant.email) == saisie).first()
+    if s and s.email:
+        s.reset_token = generate_reset_token()
+        s.reset_token_expires_at = reset_token_expiry()
+        sujet, corps, url = build_reset_password_candidat(
+            s.prenom, s.nom, s.email, s.reset_token, RESET_TOKEN_EXPIRE_MINUTES, db=db, espace="surveillant",
+        )
+        background_tasks.add_task(send_reset_password_candidat, s.email, s.email, sujet, corps, url)
+        db.commit()
+
+
+@router.post("/reset-password", status_code=204)
+def surveillant_reinitialiser(body: SurvReinitialiserIn, db: Session = Depends(get_db)):
+    """Définit le mot de passe avec le lien reçu par email (30 min, usage unique)."""
+    from datetime import datetime, timezone
+    s = db.query(Surveillant).filter_by(reset_token=body.token).first() if body.token else None
+    if not s or not s.reset_token_expires_at:
+        raise HTTPException(status_code=400, detail="Lien invalide ou expiré")
+    if s.reset_token_expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Lien invalide ou expiré")
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=422, detail="Le mot de passe doit contenir au moins 8 caractères")
+    s.password_hash = hash_password(body.new_password)
+    s.reset_token = None
+    s.reset_token_expires_at = None
+    db.commit()
+
+
+@router.post("/me/change-password", status_code=204)
+def surveillant_changer_mot_de_passe(
+    body: SurvChangerMotDePasseIn,
+    s: Surveillant = Depends(get_current_surveillant),
+    db: Session = Depends(get_db),
+):
+    """Change le mot de passe du surveillant connecté (mot de passe actuel requis)."""
+    if not s.password_hash or not verify_password(body.current_password, s.password_hash):
+        raise HTTPException(status_code=401, detail="Mot de passe actuel incorrect")
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=422, detail="Le mot de passe doit contenir au moins 8 caractères")
+    s.password_hash = hash_password(body.new_password)
+    db.commit()
 
 
 @router.get("/me", response_model=SurveillantMe)

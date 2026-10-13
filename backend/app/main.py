@@ -204,6 +204,13 @@ def _run_migrations():
         "ALTER TABLE examinateur ADD COLUMN password_hash VARCHAR(255)",
         "ALTER TABLE examinateur ADD COLUMN reset_token VARCHAR(100)",
         "ALTER TABLE examinateur ADD COLUMN reset_token_expires_at TIMESTAMP WITH TIME ZONE",
+        # Surveillant : « mot de passe oublié »
+        "ALTER TABLE surveillant ADD COLUMN reset_token VARCHAR(100)",
+        "ALTER TABLE surveillant ADD COLUMN reset_token_expires_at TIMESTAMP WITH TIME ZONE",
+        # Admin : email + « mot de passe oublié »
+        "ALTER TABLE admin_user ADD COLUMN email VARCHAR(255)",
+        "ALTER TABLE admin_user ADD COLUMN reset_token VARCHAR(100)",
+        "ALTER TABLE admin_user ADD COLUMN reset_token_expires_at TIMESTAMP WITH TIME ZONE",
     ]
     with engine.connect() as conn:
         for sql in migrations:

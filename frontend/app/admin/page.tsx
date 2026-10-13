@@ -344,6 +344,7 @@ type AdminAccount = {
   username: string;
   actif: boolean;
   role: "admin" | "super_admin";
+  email?: string | null;
 };
 
 type Conflit = {
@@ -9771,6 +9772,10 @@ function ParametragesSection() {
   const [loadingAdmins, setLoadingAdmins] = useState(true);
   const [newAdminUsername, setNewAdminUsername] = useState("");
   const [newAdminPassword, setNewAdminPassword] = useState("");
+  const [newAdminEmail, setNewAdminEmail] = useState("");
+  // Édition de l'adresse email d'un compte (nécessaire au « mot de passe oublié »)
+  const [emailFor, setEmailFor] = useState<number | null>(null);
+  const [emailValue, setEmailValue] = useState("");
   const [creatingAdmin, setCreatingAdmin] = useState(false);
   const [adminErr, setAdminErr] = useState("");
   const [resetPwFor, setResetPwFor] = useState<number | null>(null);
@@ -9877,9 +9882,11 @@ function ParametragesSection() {
         username: newAdminUsername.trim(),
         password: newAdminPassword,
         role: newAdminSuperAdmin ? "super_admin" : "admin",
+        email: newAdminEmail.trim() || null,
       });
       setNewAdminUsername("");
       setNewAdminPassword("");
+      setNewAdminEmail("");
       setNewAdminSuperAdmin(false);
       toastAdmins.success("Compte admin créé");
       loadAdmins();
@@ -9915,6 +9922,23 @@ function ParametragesSection() {
       toastAdmins.success("Mot de passe réinitialisé");
       setResetPwFor(null);
       setResetPwValue("");
+    } catch (e: unknown) {
+      toastAdmins.error(e instanceof Error ? e.message : "Erreur");
+    }
+  };
+
+  const submitEmail = async (a: AdminAccount) => {
+    const v = emailValue.trim();
+    if (v && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) {
+      toastAdmins.error("Adresse email invalide");
+      return;
+    }
+    try {
+      await patch<AdminAccount>(`comptes/${a.id}`, { email: v });
+      toastAdmins.success(v ? "Adresse email enregistrée" : "Adresse email retirée");
+      setEmailFor(null);
+      setEmailValue("");
+      loadAdmins();
     } catch (e: unknown) {
       toastAdmins.error(e instanceof Error ? e.message : "Erreur");
     }
@@ -10125,6 +10149,14 @@ function ParametragesSection() {
                 disabled={creatingAdmin || !newAdminUsername.trim() || newAdminPassword.length < 8}
               />
             </div>
+            <Field label="Adresse email (recommandé)" hint="Permet d'utiliser « Mot de passe oublié » sur la page de connexion">
+              <Input
+                type="email"
+                value={newAdminEmail}
+                onChange={(e) => setNewAdminEmail(e.target.value)}
+                placeholder="prenom.nom@ensae.fr"
+              />
+            </Field>
             <label className="flex items-center gap-2 text-sm text-gray-700">
               <input
                 type="checkbox"
@@ -10144,17 +10176,40 @@ function ParametragesSection() {
             ) : (
               adminAccounts.map((a, i) => (
                 <div key={a.id} className={`px-5 py-4 flex items-center justify-between gap-3 ${i > 0 ? "border-t border-gray-100" : ""}`}>
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Shield className={`h-4 w-4 shrink-0 ${a.role === "super_admin" ? "text-amber-500" : "text-gray-700"}`} />
-                    <span className="text-sm font-medium text-gray-900 truncate">{a.username}</span>
-                    {a.role === "super_admin" && (
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 shrink-0">
-                        Super-admin
-                      </span>
-                    )}
+                  <div className="flex items-start gap-2 min-w-0">
+                    <Shield className={`h-4 w-4 shrink-0 mt-0.5 ${a.role === "super_admin" ? "text-amber-500" : "text-gray-700"}`} />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-900 truncate">{a.username}</span>
+                        {a.role === "super_admin" && (
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 shrink-0">
+                            Super-admin
+                          </span>
+                        )}
+                      </div>
+                      {a.email ? (
+                        <p className="text-xs text-gray-800 truncate">{a.email}</p>
+                      ) : (
+                        <p className="text-xs text-amber-800">Aucun email — « Mot de passe oublié » indisponible</p>
+                      )}
+                    </div>
                   </div>
 
-                  {resetPwFor === a.id ? (
+                  {emailFor === a.id ? (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="w-52">
+                        <Input
+                          type="email"
+                          autoFocus
+                          value={emailValue}
+                          onChange={(e) => setEmailValue(e.target.value)}
+                          placeholder="prenom.nom@ensae.fr"
+                        />
+                      </div>
+                      <Btn label="Enregistrer" small onClick={() => submitEmail(a)} />
+                      <Btn label="Annuler" small variant="ghost" onClick={() => { setEmailFor(null); setEmailValue(""); }} />
+                    </div>
+                  ) : resetPwFor === a.id ? (
                     <div className="flex items-center gap-2 shrink-0">
                       <div className="w-40">
                         <Input
@@ -10182,11 +10237,17 @@ function ParametragesSection() {
                         {a.actif ? "Actif" : "Inactif"}
                       </button>
                       <Btn
+                        label="Email"
+                        small
+                        variant="ghost"
+                        onClick={() => { setEmailFor(a.id); setEmailValue(a.email ?? ""); setResetPwFor(null); }}
+                      />
+                      <Btn
                         label="Mot de passe"
                         icon={Key}
                         small
                         variant="ghost"
-                        onClick={() => { setResetPwFor(a.id); setResetPwValue(""); }}
+                        onClick={() => { setResetPwFor(a.id); setResetPwValue(""); setEmailFor(null); }}
                       />
                       <Btn
                         label={a.role === "super_admin" ? "Rétrograder" : "Promouvoir"}

@@ -1,4 +1,6 @@
-from sqlalchemy import String, Boolean
+from typing import Optional
+
+from sqlalchemy import String, Boolean, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -17,3 +19,8 @@ class Admin(Base):
     # True tant que le mot de passe a été défini par quelqu'un d'autre (création, réinitialisation,
     # amorçage) : force un changement de mot de passe à la prochaine connexion.
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    # Adresse email (facultative) : nécessaire pour « Mot de passe oublié »
+    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    reset_token: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    reset_token_expires_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)

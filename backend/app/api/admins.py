@@ -35,6 +35,7 @@ def create_admin(body: AdminCreate, db: Session = Depends(get_db)):
         username=body.username.strip(),
         password_hash=hash_password(body.password),
         role=body.role,
+        email=(body.email or "").strip().lower() or None,
         must_change_password=True,
     )
     db.add(a)
@@ -66,6 +67,8 @@ def update_admin(admin_id: int, body: AdminUpdate, db: Session = Depends(get_db)
     if body.role is not None:
         a.role = body.role
 
+    if body.email is not None:
+        a.email = body.email.strip().lower() or None
     if body.password:
         a.password_hash = hash_password(body.password)
         a.must_change_password = True

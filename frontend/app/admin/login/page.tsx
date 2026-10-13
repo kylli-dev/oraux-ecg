@@ -142,7 +142,12 @@ function LoginForm() {
           </form>
         </div>
 
-        <p className="text-center text-xs text-gray-700 mt-6">
+        <p className="text-center mt-4">
+          <a href="/admin/mot-de-passe-oublie" className="text-sm font-medium hover:underline" style={{ color: RED }}>
+            Mot de passe oublié ?
+          </a>
+        </p>
+        <p className="text-center text-xs text-gray-700 mt-4">
           Oraux ENSAE — Back-office
         </p>
       </div>
