@@ -22,17 +22,6 @@ function formatScore(v: number | null) {
   return v.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function ScoreBar({ value, max = 20 }: { value: number | null; max?: number }) {
-  if (value === null) return null;
-  const pct = Math.min(100, (value / max) * 100);
-  const color = value >= 10 ? "#16a34a" : value >= 8 ? "#d97706" : "#dc2626";
-  return (
-    <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-      <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
-    </div>
-  );
-}
-
 export default function NotesPage() {
   const router = useRouter();
   const [notes, setNotes] = useState<Note[]>([]);
@@ -122,18 +111,9 @@ export default function NotesPage() {
                     </p>
                   )}
                 </div>
-                <div className="flex items-center gap-3">
-                  <ScoreBar value={note.valeur} />
-                  <span
-                    className="text-lg font-bold w-20 text-right tabular-nums"
-                    style={{
-                      color:
-                        note.valeur === null ? "#9ca3af"
-                        : note.valeur >= 10 ? "#16a34a"
-                        : note.valeur >= 8 ? "#d97706"
-                        : "#dc2626",
-                    }}
-                  >
+                <div className="flex items-center">
+                  {/* Note neutre : ni barre de progression, ni couleur selon la valeur */}
+                  <span className="text-lg font-bold text-gray-900 w-24 text-right tabular-nums">
                     {formatScore(note.valeur)}
                     <span className="text-xs font-normal text-gray-700">/20</span>
                   </span>
