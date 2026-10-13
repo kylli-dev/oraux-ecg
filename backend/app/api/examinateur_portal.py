@@ -408,7 +408,7 @@ def exporter_planning_excel(
 
     headers = [
         "Date", "Matière", "Heure prépa", "Début passage", "Fin passage", "Candidat",
-        "Salle prépa", "Salle", "Sujet", "Rôle", "Note /20", "Statut note", "⚠ Conflit établ.",
+        "Salle prépa", "Salle", "Sujet", "Rôle", "Note /20", "Statut note", "Commentaire", "⚠ Conflit établ.",
     ]
     ws.append(headers)
     for cell in ws[1]:
@@ -428,6 +428,7 @@ def exporter_planning_excel(
             l["role"],
             ep.note_valeur if ep.note_valeur is not None else "",
             ep.note_statut or "",
+            ep.note_commentaire or "",
             "OUI" if ep.conflit_etablissement else "",
         ])
 
@@ -452,8 +453,8 @@ def export_planning_pdf(
 ):
     """
     Export PDF imprimable du planning de l'examinateur (A4 paysage, un bloc par journée).
-    Les notes n'y figurent pas : c'est un document d'organisation, à emporter le jour J —
-    elles restent dans l'export Excel.
+    Les notes n'y figurent pas (elles restent dans l'export Excel) ; le commentaire saisi
+    avec la note y figure, en dernière colonne.
     """
     return exporter_planning_pdf(ex, db, date)
 
@@ -475,6 +476,8 @@ def exporter_planning_pdf(
     from reportlab.lib.units import mm
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+    from xml.sax.saxutils import escape as _xml_escape
+
     lignes = _planning_examinateur(ex, db, date, inclure_sans_candidat, planning_id)
     rouge = colors.HexColor("#C62828")
 
@@ -491,7 +494,7 @@ def exporter_planning_pdf(
     )
 
     story = [
-        Paragraph(f"Planning des oraux — {ex.prenom} {ex.nom.upper()}", titre_st),
+        Paragraph(_xml_escape(f"Planning des oraux — {ex.prenom} {ex.nom.upper()}"), titre_st),
         Paragraph(
             ("Journée du " + lignes[0]["date_longue"] if date and lignes else "Toutes les journées")
             + f" · {len(lignes)} épreuve{'s' if len(lignes) > 1 else ''}"
@@ -504,8 +507,9 @@ def exporter_planning_pdf(
     if not lignes:
         story.append(Paragraph("Aucune épreuve à afficher.", cell_st))
 
-    entetes = ["Prépa", "Passage", "Matière", "Candidat", "Salle prépa", "Salle", "Sujet", "Rôle"]
-    largeurs = [16 * mm, 26 * mm, 26 * mm, 58 * mm, 24 * mm, 22 * mm, 66 * mm, 30 * mm]
+    entetes = ["Prépa", "Passage", "Matière", "Candidat", "Salle prépa", "Salle", "Sujet", "Rôle", "Commentaire"]
+    # Total = 273 mm, la largeur utile d'un A4 paysage avec 12 mm de marge de chaque côté
+    largeurs = [14 * mm, 24 * mm, 22 * mm, 44 * mm, 21 * mm, 16 * mm, 42 * mm, 23 * mm, 66 * mm]
 
     jours: dict = {}
     for l in lignes:
@@ -519,12 +523,14 @@ def exporter_planning_pdf(
             data.append([
                 l["heure_prep"] or "—",
                 f"{ep.heure_debut} – {ep.heure_fin}",
-                Paragraph(ep.matiere, cell_st),
-                Paragraph(l["candidat"] or "<i>Aucun candidat</i>", cell_st),
+                Paragraph(_xml_escape(ep.matiere), cell_st),
+                Paragraph(_xml_escape(l["candidat"]) if l["candidat"] else "<i>Aucun candidat</i>", cell_st),
                 ep.salle_preparation_intitule or "—",
                 ep.salle_intitule or "—",
-                Paragraph(ep.planche_nom or "<i>Non affecté</i>", cell_st),
-                l["role"],
+                Paragraph(_xml_escape(ep.planche_nom) if ep.planche_nom else "<i>Non affecté</i>", cell_st),
+                Paragraph(l["role"], cell_st),
+                # Commentaire saisi avec la note (échappé : texte libre de l'examinateur)
+                Paragraph(_xml_escape(ep.note_commentaire) if ep.note_commentaire else "—", cell_st),
             ])
         t = Table(data, colWidths=largeurs, repeatRows=1)
         t.setStyle(TableStyle([
