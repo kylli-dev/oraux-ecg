@@ -8609,7 +8609,9 @@ type NoteAdmin = {
   valeur: number | null;
   note_harmonisee: number | null;
   commentaire: string | null;
-  statut: "BROUILLON" | "PUBLIE";
+  statut: "BROUILLON" | "VALIDE" | "HARMONISE" | "PUBLIE";
+  examinateurs?: string[];
+  planning_id?: number | null;
 };
 
 type NoteCell = {
@@ -8736,6 +8738,9 @@ function NotesSection() {
   const [error, setError] = useState("");
   const [publishing, setPublishing] = useState<Record<number, boolean>>({});
   const [publishingAll, setPublishingAll] = useState(false);
+  const [pubVue, setPubVue] = useState<"tout" | "brouillons" | "attente" | "publiees">("tout");
+  const [pubRecherche, setPubRecherche] = useState("");
+  const [pubExaminateur, setPubExaminateur] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -8764,6 +8769,21 @@ function NotesSection() {
     }
   }
 
+  async function validerNote(note: NoteAdmin) {
+    setPublishing((p) => ({ ...p, [note.id]: true }));
+    setError("");
+    try {
+      await post(`notes/${note.id}/valider`, {});
+      setNotes((prev) => prev.map((n) => n.id === note.id
+        ? { ...n, statut: "VALIDE", note_harmonisee: n.note_harmonisee ?? n.valeur }
+        : n));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPublishing((p) => ({ ...p, [note.id]: false }));
+    }
+  }
+
   async function publierTout() {
     setPublishingAll(true);
     setError("");
@@ -8777,14 +8797,29 @@ function NotesSection() {
     }
   }
 
-  const brouillons = notes.filter((n) => n.statut === "BROUILLON");
+  // Circuit : brouillon → validée par l'examinateur (→ harmonisée) → publiée.
+  // Seules les notes validées / harmonisées se publient ; les brouillons attendent la
+  // validation de l'examinateur.
+  const noteFinale = (n: NoteAdmin) => n.note_harmonisee ?? n.valeur;
+  const aPublier = notes.filter((n) => (n.statut === "VALIDE" || n.statut === "HARMONISE") && noteFinale(n) !== null);
+  const enAttente = notes.filter((n) => n.statut === "BROUILLON");
   const publiees = notes.filter((n) => n.statut === "PUBLIE");
+  // conservé sous ce nom pour le bouton « Tout publier » de l'en-tête
+  const brouillons = aPublier;
 
-  // Group brouillons by candidat
-  const byCandidatB = brouillons.reduce<Record<number, NoteAdmin[]>>((acc, n) => {
-    (acc[n.candidat_id] ??= []).push(n);
-    return acc;
-  }, {});
+  // Note affichée = celle que verra le candidat (harmonisée si elle existe)
+  const affNote = (n: NoteAdmin) => {
+    const f = noteFinale(n);
+    if (f === null) return <span className="text-gray-700 italic">—</span>;
+    return (
+      <>
+        {fmtNote(f)}/20
+        {n.note_harmonisee !== null && n.valeur !== null && n.note_harmonisee !== n.valeur && (
+          <span className="ml-1.5 text-xs font-normal text-gray-700">(examinateur : {fmtNote(n.valeur)})</span>
+        )}
+      </>
+    );
+  };
 
   // ── Saisie tab state ──────────────────────────────────────────────────────
   type SaisieEpreuve = {
@@ -9191,10 +9226,35 @@ function NotesSection() {
       )}
 
       {/* ── Publication ───────────────────────────────────────────────────────── */}
-      {tab === "publication" && (
+      {tab === "publication" && (() => {
+        // Trois catégories : brouillons des examinateurs → en attente de publication (validées
+        // / harmonisées) → publiées. Sélecteur + recherche + filtre examinateur.
+        const categorie = (n: NoteAdmin) =>
+          n.statut === "PUBLIE" ? "publiees"
+          : n.statut === "BROUILLON" ? "brouillons"
+          : "attente";
+        const q = pubRecherche.trim().toLowerCase();
+        const visibles = notes
+          .filter((n) => pubVue === "tout" || categorie(n) === pubVue)
+          .filter((n) => !pubExaminateur || (n.examinateurs ?? []).includes(pubExaminateur))
+          .filter((n) => !q || `${n.candidat_nom} ${n.candidat_prenom} ${n.matiere} ${(n.examinateurs ?? []).join(" ")}`.toLowerCase().includes(q));
+        const examinateursPub = [...new Set(notes.flatMap((n) => n.examinateurs ?? []))].sort((a, b) => a.localeCompare(b, "fr"));
+        const VUES = [
+          { k: "tout", label: "Tout", n: notes.length },
+          { k: "brouillons", label: "Brouillons des examinateurs", n: enAttente.length },
+          { k: "attente", label: "En attente de publication", n: aPublier.length },
+          { k: "publiees", label: "Publiées", n: publiees.length },
+        ] as const;
+        const BADGE: Record<string, { label: string; cls: string }> = {
+          BROUILLON: { label: "Brouillon", cls: "bg-amber-50 text-amber-800 border-amber-200" },
+          VALIDE: { label: "Validée", cls: "bg-blue-50 text-blue-800 border-blue-200" },
+          HARMONISE: { label: "Harmonisée", cls: "bg-indigo-50 text-indigo-800 border-indigo-200" },
+          PUBLIE: { label: "Publiée", cls: "bg-emerald-50 text-emerald-800 border-emerald-200" },
+        };
+        return (
       <div className="space-y-4">
       {error && (
-        <div className="mb-4 rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600">{error}</div>
+        <div className="rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600">{error}</div>
       )}
 
       {loading ? (
@@ -9204,79 +9264,116 @@ function NotesSection() {
       ) : notes.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-gray-200 p-16 text-center">
           <FileSpreadsheet className="h-10 w-10 mx-auto mb-3 text-gray-700" />
-          <p className="text-base font-medium text-gray-700">Aucune note saisie</p>
+          <p className="text-base font-medium text-gray-900">Aucune note saisie</p>
           <p className="text-sm text-gray-700 mt-1">Les notes apparaîtront ici dès leur saisie par les examinateurs.</p>
         </div>
       ) : (
-        <div className="space-y-8">
-          {/* Brouillons */}
-          {brouillons.length > 0 && (
-            <div>
-              <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">
-                En attente de publication
-              </h2>
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                {Object.entries(byCandidatB).map(([candId, ns], gi) => (
-                  <div key={candId} className={gi > 0 ? "border-t border-gray-100" : ""}>
-                    <div className="px-5 py-3 bg-gray-50 flex items-center justify-between">
-                      <p className="text-sm font-semibold text-gray-700">
-                        {ns[0].candidat_prenom} {ns[0].candidat_nom}
-                      </p>
-                      <span className="text-xs text-gray-700">#{candId}</span>
-                    </div>
-                    {ns.map((note, ni) => (
-                      <div key={note.id} className={`px-5 py-3 flex items-center justify-between ${ni > 0 ? "border-t border-gray-50" : ""}`}>
-                        <div className="flex items-center gap-3">
-                          <span className="text-sm text-gray-700">{note.matiere}</span>
-                          <span className="text-sm font-semibold text-gray-900">
-                            {note.valeur !== null ? `${note.valeur}/20` : <span className="text-gray-700 italic">—</span>}
-                          </span>
-                        </div>
-                        <button
-                          onClick={() => publierNote(note)}
-                          disabled={publishing[note.id] || note.valeur === null}
-                          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 transition disabled:opacity-40"
-                        >
-                          {publishing[note.id] ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
-                          Publier
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </div>
+        <>
+          {/* Sélecteur de catégorie */}
+          <div className="flex flex-wrap gap-2">
+            {VUES.map((v) => (
+              <button
+                key={v.k}
+                onClick={() => setPubVue(v.k)}
+                className={`text-sm px-3 py-1.5 rounded-lg border font-medium transition ${
+                  pubVue === v.k ? "bg-[#C62828] text-white border-[#C62828]" : "bg-white text-gray-900 border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                {v.label} <span className={pubVue === v.k ? "opacity-90" : "text-gray-700"}>({v.n})</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Recherche + examinateur */}
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 max-w-2xl">
+            <Input value={pubRecherche} onChange={(e) => setPubRecherche(e.target.value)} placeholder="Rechercher un candidat, une matière, un examinateur…" />
+            <Select value={pubExaminateur} onChange={(e) => setPubExaminateur(e.target.value)}>
+              <option value="">Tous les examinateurs</option>
+              {examinateursPub.map((x) => <option key={x} value={x}>{x}</option>)}
+            </Select>
+          </div>
+
+          {pubVue === "brouillons" && (
+            <p className="text-sm text-gray-900">
+              Notes saisies par les examinateurs mais <strong>pas encore validées</strong> : elles ne peuvent pas être publiées.
+              Relancez l&apos;examinateur, ou validez la note vous-même avec « Valider ».
+            </p>
+          )}
+          {pubVue === "attente" && (
+            <p className="text-sm text-gray-900">
+              Notes validées (ou harmonisées), prêtes à être publiées. « Tout publier » publie l&apos;ensemble de ces notes.
+            </p>
           )}
 
-          {/* Publiées */}
-          {publiees.length > 0 && (
-            <div>
-              <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">
-                Publiées ({publiees.length})
-              </h2>
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                {publiees.map((note, i) => (
-                  <div key={note.id} className={`px-5 py-3 flex items-center justify-between ${i > 0 ? "border-t border-gray-100" : ""}`}>
-                    <div className="flex items-center gap-3">
-                      <p className="text-sm font-medium text-gray-700">{note.candidat_prenom} {note.candidat_nom}</p>
-                      <span className="text-xs text-gray-700">·</span>
-                      <span className="text-sm text-gray-700">{note.matiere}</span>
-                      <span className="text-sm font-semibold text-gray-900">
-                        {note.valeur !== null ? `${note.valeur}/20` : "—"}
-                      </span>
-                    </div>
-                    <span className="text-xs bg-green-100 text-green-700 rounded-full px-2 py-0.5 font-medium">
-                      Publiée
-                    </span>
-                  </div>
-                ))}
-              </div>
+          {visibles.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-900">
+              Aucune note dans cette catégorie{(q || pubExaminateur) ? " pour ces filtres" : ""}.
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 text-left">
+                    {["Candidat", "Matière", "Note", "Jury (examinateurs)", "Commentaire", "Statut", ""].map((h) => (
+                      <th key={h} className="px-4 py-2.5 text-xs font-semibold text-gray-900 whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibles.map((note) => {
+                    const b = BADGE[note.statut] ?? { label: note.statut, cls: "bg-gray-50 text-gray-800 border-gray-200" };
+                    return (
+                      <tr key={note.id} className="border-t border-gray-100 align-top">
+                        <td className="px-4 py-2.5 font-medium text-gray-900 whitespace-nowrap">
+                          {note.candidat_nom.toUpperCase()} {note.candidat_prenom}
+                        </td>
+                        <td className="px-4 py-2.5 text-gray-900">{note.matiere}</td>
+                        <td className="px-4 py-2.5 font-semibold text-gray-900 whitespace-nowrap">{affNote(note)}</td>
+                        <td className="px-4 py-2.5 text-gray-900">
+                          {(note.examinateurs ?? []).length > 0
+                            ? (note.examinateurs ?? []).join(", ")
+                            : <span className="italic text-gray-700">—</span>}
+                        </td>
+                        <td className="px-4 py-2.5 text-gray-900 max-w-xs">
+                          {note.commentaire ? <span className="line-clamp-2" title={note.commentaire}>{note.commentaire}</span> : <span className="text-gray-700">—</span>}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <span className={`inline-block text-xs border rounded-full px-2 py-0.5 font-medium whitespace-nowrap ${b.cls}`}>{b.label}</span>
+                        </td>
+                        <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                          {note.statut === "BROUILLON" ? (
+                            <button
+                              onClick={() => validerNote(note)}
+                              disabled={publishing[note.id] || note.valeur === null}
+                              title="Valider cette note à la place de l'examinateur : elle passera « En attente de publication »"
+                              className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-gray-300 text-gray-900 font-medium hover:bg-gray-50 transition disabled:opacity-40"
+                            >
+                              {publishing[note.id] ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                              Valider
+                            </button>
+                          ) : note.statut !== "PUBLIE" ? (
+                            <button
+                              onClick={() => publierNote(note)}
+                              disabled={publishing[note.id] || noteFinale(note) === null}
+                              className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 transition disabled:opacity-40"
+                            >
+                              {publishing[note.id] ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+                              Publier
+                            </button>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
-        </div>
+        </>
       )}
       </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

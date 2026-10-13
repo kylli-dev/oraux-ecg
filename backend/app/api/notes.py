@@ -34,6 +34,9 @@ class NoteOut(BaseModel):
     note_harmonisee: Optional[float]
     commentaire: Optional[str]
     statut: str
+    # « Prénom Nom » des examinateurs du jury (principal puis 2e) — pour savoir qui relancer
+    examinateurs: List[str] = []
+    planning_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -84,6 +87,21 @@ def list_notes(
     if candidat_id:
         q = q.filter(Note.candidat_id == candidat_id)
     q = q.order_by(Candidat.nom, Candidat.prenom, Note.matiere)
+    rows = q.all()
+
+    # Jury de chaque note = examinateurs de l'épreuve (même candidat, même matière)
+    from app.models.epreuve import Epreuve
+    from app.models.examinateur import Examinateur
+    cids = {n.candidat_id for n, _ in rows}
+    epreuves = db.query(Epreuve).filter(Epreuve.candidat_id.in_(cids)).all() if cids else []
+    ex_ids = {i for e in epreuves for i in (e.examinateur_id, e.examinateur2_id) if i}
+    noms = {
+        x.id: f"{x.prenom} {x.nom}".strip()
+        for x in (db.query(Examinateur).filter(Examinateur.id.in_(ex_ids)).all() if ex_ids else [])
+    }
+    jury: dict = {}
+    for e in epreuves:
+        jury[(e.candidat_id, e.matiere)] = [noms[i] for i in (e.examinateur_id, e.examinateur2_id) if i in noms]
 
     return [
         NoteOut(
@@ -96,9 +114,22 @@ def list_notes(
             note_harmonisee=note.note_harmonisee,
             commentaire=note.commentaire,
             statut=note.statut,
+            examinateurs=jury.get((note.candidat_id, note.matiere), []),
+            planning_id=candidat.planning_id,
         )
-        for note, candidat in q.all()
+        for note, candidat in rows
     ]
+
+
+# Circuit d'une note : BROUILLON (saisie) → VALIDE (confirmée par l'examinateur) →
+# [HARMONISE] → PUBLIE. Seules les notes validées (ou harmonisées) peuvent être publiées :
+# un brouillon n'a pas encore été confirmé par l'examinateur.
+STATUTS_PUBLIABLES = ("VALIDE", "HARMONISE")
+
+
+def _note_finale(note: Note) -> Optional[float]:
+    """Note vue par le candidat : l'harmonisée si elle existe, sinon la note de l'examinateur."""
+    return note.note_harmonisee if note.note_harmonisee is not None else note.valeur
 
 
 @router.post("/{note_id}/publier", response_model=NoteOut)
@@ -106,8 +137,50 @@ def publier_note(note_id: int, db: Session = Depends(get_db)):
     note = db.get(Note, note_id)
     if not note:
         raise HTTPException(status_code=404, detail="Note introuvable")
-    note.statut = "PUBLIE"
-    note.published_at = datetime.now(timezone.utc)
+    if note.statut != "PUBLIE":
+        if note.statut not in STATUTS_PUBLIABLES:
+            raise HTTPException(
+                status_code=409,
+                detail="Cette note n'a pas encore été validée par l'examinateur : elle ne peut pas être publiée.",
+            )
+        if _note_finale(note) is None:
+            raise HTTPException(status_code=409, detail="Cette note n'a pas de valeur : elle ne peut pas être publiée.")
+        note.statut = "PUBLIE"
+        note.published_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(note)
+    candidat = db.get(Candidat, note.candidat_id)
+    return NoteOut(
+        id=note.id,
+        candidat_id=note.candidat_id,
+        candidat_nom=candidat.nom,
+        candidat_prenom=candidat.prenom,
+        matiere=note.matiere,
+        valeur=note.valeur,
+        note_harmonisee=note.note_harmonisee,
+        commentaire=note.commentaire,
+        statut=note.statut,
+    )
+
+
+@router.post("/{note_id}/valider", response_model=NoteOut)
+def valider_note(note_id: int, db: Session = Depends(get_db)):
+    """
+    Validation par l'administration d'une note encore en brouillon (ex. saisie depuis
+    l'onglet « Saisie » de l'admin, ou examinateur qui n'a pas cliqué « Valider ») :
+    même effet que la validation par l'examinateur — statut VALIDE et note harmonisée
+    initialisée avec la note saisie. La note devient publiable.
+    """
+    note = db.get(Note, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note introuvable")
+    if note.statut != "BROUILLON":
+        raise HTTPException(status_code=409, detail="Seule une note en brouillon peut être validée")
+    if note.valeur is None:
+        raise HTTPException(status_code=409, detail="Cette note n'a pas de valeur : saisissez-la avant de la valider")
+    note.statut = "VALIDE"
+    if note.note_harmonisee is None:
+        note.note_harmonisee = note.valeur
     db.commit()
     db.refresh(note)
     candidat = db.get(Candidat, note.candidat_id)
@@ -126,12 +199,12 @@ def publier_note(note_id: int, db: Session = Depends(get_db)):
 
 @router.post("/publier-bulk")
 def publier_bulk(body: PublierBulkIn, db: Session = Depends(get_db)):
-    """Publie plusieurs notes d'un coup."""
+    """Publie plusieurs notes d'un coup (seulement celles qui sont validées ou harmonisées)."""
     count = 0
     now = datetime.now(timezone.utc)
     for note_id in body.note_ids:
         note = db.get(Note, note_id)
-        if note and note.statut == "BROUILLON":
+        if note and note.statut in STATUTS_PUBLIABLES and _note_finale(note) is not None:
             note.statut = "PUBLIE"
             note.published_at = now
             count += 1
@@ -141,8 +214,14 @@ def publier_bulk(body: PublierBulkIn, db: Session = Depends(get_db)):
 
 @router.post("/publier-tout")
 def publier_tout(db: Session = Depends(get_db)):
-    """Publie toutes les notes en statut BROUILLON."""
-    notes = db.query(Note).filter_by(statut="BROUILLON").all()
+    """
+    Publie toutes les notes VALIDÉES (ou harmonisées) qui ont une valeur. Les brouillons,
+    pas encore confirmés par l'examinateur, ne sont jamais publiés.
+    """
+    notes = [
+        n for n in db.query(Note).filter(Note.statut.in_(STATUTS_PUBLIABLES)).all()
+        if _note_finale(n) is not None
+    ]
     now = datetime.now(timezone.utc)
     for note in notes:
         note.statut = "PUBLIE"
