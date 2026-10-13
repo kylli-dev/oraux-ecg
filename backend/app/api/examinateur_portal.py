@@ -607,8 +607,8 @@ def noter(
         raise HTTPException(status_code=404, detail="Épreuve introuvable")
     if not epreuve.candidat_id:
         raise HTTPException(status_code=400, detail="Aucun candidat assigné à cette épreuve")
-    if not (0 <= body.valeur <= 20):
-        raise HTTPException(status_code=422, detail="La note doit être entre 0 et 20")
+    from app.services.notes import verifier_note
+    verifier_note(body.valeur)
 
     note = (
         db.query(Note)

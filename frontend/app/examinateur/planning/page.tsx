@@ -52,9 +52,12 @@ function isLocked(statut: string | null) {
   return ["VALIDE", "HARMONISE", "PUBLIE"].includes(statut ?? "");
 }
 
+// Saisie au centième près (« 14,25 » ou « 14.25 »), jamais arrondie : plus de deux
+// décimales est refusé plutôt qu'arrondi.
 function parseNote(raw: string): number | null {
-  const n = parseFloat(raw.replace(",", "."));
-  return isNaN(n) ? null : n;
+  const t = raw.trim().replace(",", ".");
+  if (!/^\d{1,2}(\.\d{1,2})?$/.test(t)) return null;
+  return parseFloat(t);
 }
 
 function isValidNote(raw: string): boolean {
@@ -139,7 +142,7 @@ export default function ExaminateurPlanningPage() {
 
   async function saveNote(ep: Epreuve, valider: boolean) {
     const raw = drafts[ep.id] ?? "";
-    if (!isValidNote(raw)) { setError("Note invalide (0 à 20)"); return; }
+    if (!isValidNote(raw)) { setError("Note invalide : de 0 à 20, au centième près au maximum (ex. 14,25)"); return; }
     const valeur = parseNote(raw)!;
     setSaving((s) => ({ ...s, [ep.id]: valider ? "validate" : "save" }));
     setError("");
@@ -425,7 +428,7 @@ export default function ExaminateurPlanningPage() {
                                 <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-700 pointer-events-none">/20</span>
                               </div>
                               {raw && !valid && (
-                                <span className="text-xs text-red-500">Note invalide (0–20)</span>
+                                <span className="text-xs text-red-600">Note invalide : 0 à 20, deux décimales au maximum (ex. 14,25)</span>
                               )}
                               {saved[ep.id] && (
                                 <span className="flex items-center gap-1 text-xs text-green-600">

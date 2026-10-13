@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.admin_guard import require_admin
 from app.db.deps import get_db
 from app.models.note import Note
+from app.services.notes import verifier_note
 from app.models.candidat import Candidat
 
 router = APIRouter(
@@ -158,6 +159,7 @@ def harmoniser_note(note_id: int, body: HarmoniserIn, db: Session = Depends(get_
     note = db.get(Note, note_id)
     if not note:
         raise HTTPException(status_code=404, detail="Note introuvable")
+    verifier_note(body.note_harmonisee, "La note harmonisée")
     if body.note_harmonisee is not None:
         note.note_harmonisee = body.note_harmonisee
     if body.commentaire is not None:
@@ -241,8 +243,7 @@ def saisir_note(body: SaisirNoteIn, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Épreuve introuvable")
     if not ep.candidat_id:
         raise HTTPException(status_code=400, detail="Aucun candidat assigné à cette épreuve")
-    if body.valeur is not None and not (0 <= body.valeur <= 20):
-        raise HTTPException(status_code=422, detail="La note doit être entre 0 et 20")
+    verifier_note(body.valeur)
 
     note = db.query(Note).filter_by(
         candidat_id=ep.candidat_id, matiere=ep.matiere

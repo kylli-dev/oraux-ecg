@@ -8636,6 +8636,24 @@ type TableauData = {
   candidats: TableauCandidat[];
 };
 
+// ── Notes : saisie au centième près, jamais arrondie ─────────────────────────
+// Accepte « 14,25 » comme « 14.25 ». Refuse plus de deux décimales plutôt que d'arrondir.
+function lireNote(raw: string): { valeur: number | null; erreur: string | null } {
+  const t = raw.trim().replace(",", ".");
+  if (t === "") return { valeur: null, erreur: null };
+  if (!/^\d{1,2}(\.\d{1,2})?$/.test(t)) {
+    return { valeur: null, erreur: "Note invalide : de 0 à 20, au centième près au maximum (ex. 14,25)" };
+  }
+  const v = parseFloat(t);
+  if (v < 0 || v > 20) return { valeur: null, erreur: "Note invalide : elle doit être comprise entre 0 et 20" };
+  return { valeur: v, erreur: null };
+}
+
+// Affichage exact au centième (14 → « 14,00 », 14,25 → « 14,25 ») — jamais d'arrondi au dixième
+function fmtNote(v: number): string {
+  return v.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function NotesSection() {
   const toast = useToast();
   const [tab, setTab] = useState<"tableau" | "publication" | "saisie">("tableau");
@@ -8663,9 +8681,9 @@ function NotesSection() {
   }, [planningId]);
 
   async function saveHarm(noteId: number, raw: string) {
-    const val = raw === "" ? null : parseFloat(raw);
-    if (raw !== "" && (isNaN(val!) || val! < 0 || val! > 20)) {
-      toast.error("Note harmonisée invalide (0–20)");
+    const { valeur: val, erreur } = lireNote(raw);
+    if (erreur) {
+      toast.error(erreur.replace("Note invalide", "Note harmonisée invalide"));
       return;
     }
     setSavingHarm((s) => ({ ...s, [noteId]: true }));
@@ -8817,9 +8835,9 @@ function NotesSection() {
   async function saveSaisie(epId: number) {
     const draft = saisieDraft[epId];
     if (!draft) return;
-    const valNum = draft.valeur === "" ? null : parseFloat(draft.valeur);
-    if (draft.valeur !== "" && (isNaN(valNum!) || valNum! < 0 || valNum! > 20)) {
-      toast.error("Note invalide (0–20)");
+    const { valeur: valNum, erreur } = lireNote(draft.valeur);
+    if (erreur) {
+      toast.error(erreur);
       return;
     }
     setSaisieSaving((s) => ({ ...s, [epId]: true }));
@@ -8945,22 +8963,23 @@ function NotesSection() {
                         return (
                           <React.Fragment key={mat}>
                             <td className="px-2 py-2 text-center border border-black/8 font-medium">
-                              {n.valeur !== null ? n.valeur.toFixed(1) : <span className="text-gray-700">—</span>}
+                              {n.valeur !== null ? fmtNote(n.valeur) : <span className="text-gray-700">—</span>}
                             </td>
                             <td className="px-1 py-1 text-center border border-black/8 min-w-[64px]">
                               {isEditingH ? (
                                 <div className="flex items-center gap-1">
                                   <input
                                     autoFocus
-                                    type="number"
-                                    min={0} max={20} step={0.5}
+                                    type="text"
+                                    inputMode="decimal"
+                                    placeholder="ex. 14,25"
                                     value={editHarm[n.note_id]}
                                     onChange={(e) => setEditHarm((prev) => ({ ...prev, [n.note_id]: e.target.value }))}
                                     onKeyDown={(e) => {
                                       if (e.key === "Enter") saveHarm(n.note_id, editHarm[n.note_id]);
                                       if (e.key === "Escape") setEditHarm((prev) => { const next = { ...prev }; delete next[n.note_id]; return next; });
                                     }}
-                                    className="w-14 px-1 py-0.5 rounded border border-blue-300 text-xs text-center"
+                                    className="w-16 px-1 py-0.5 rounded border border-blue-300 text-xs text-center"
                                   />
                                   {savingHarm[n.note_id] && <Loader2 className="h-3 w-3 animate-spin text-blue-500 shrink-0" />}
                                 </div>
@@ -8971,13 +8990,13 @@ function NotesSection() {
                                   title="Cliquer pour saisir la note harmonisée"
                                 >
                                   {n.note_harmonisee !== null
-                                    ? <span className="font-semibold text-blue-700">{n.note_harmonisee.toFixed(1)}</span>
+                                    ? <span className="font-semibold text-blue-700">{fmtNote(n.note_harmonisee)}</span>
                                     : <span className="text-gray-700 group-hover:text-blue-400">—</span>}
                                 </button>
                               )}
                             </td>
                             <td className={`px-2 py-2 text-center border border-black/8 text-xs font-medium ${ecartColor}`}>
-                              {n.ecart !== null ? (n.ecart > 0 ? `+${n.ecart.toFixed(1)}` : n.ecart.toFixed(1)) : "—"}
+                              {n.ecart !== null ? (n.ecart > 0 ? `+${fmtNote(n.ecart)}` : fmtNote(n.ecart)) : "—"}
                             </td>
                           </React.Fragment>
                         );
@@ -9046,8 +9065,8 @@ function NotesSection() {
                         </td>
                         <td className="px-2 py-1.5 border border-black/8">
                           <input
-                            type="number"
-                            min={0} max={20} step={0.5}
+                            type="text"
+                            inputMode="decimal"
                             value={draft.valeur}
                             onChange={(e) => setSaisieDraft((prev) => ({ ...prev, [row.epreuve_id]: { ...draft, valeur: e.target.value } }))}
                             placeholder="—"
