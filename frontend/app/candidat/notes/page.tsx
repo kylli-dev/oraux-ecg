@@ -74,13 +74,7 @@ export default function NotesPage() {
     );
   }
 
-  // Moyenne des notes publiées
-  const notesAvecValeur = notes.filter((n) => n.valeur !== null);
-  const moyenne =
-    notesAvecValeur.length > 0
-      ? notesAvecValeur.reduce((s, n) => s + (n.valeur ?? 0), 0) / notesAvecValeur.length
-      : null;
-
+  // Pas de moyenne : chaque épreuve est notée séparément (3 notes distinctes sur 20).
   return (
     <div className="max-w-lg mx-auto px-4 py-8">
       <div className="flex items-center gap-3 mb-2">
@@ -88,7 +82,8 @@ export default function NotesPage() {
         <h1 className="text-xl font-bold text-gray-900">Mes notes</h1>
       </div>
       <p className="text-sm text-gray-700 mb-6">
-        Les notes affichées ont été publiées par le service des admissions.
+        Chaque épreuve est notée séparément, sur 20. Les notes affichées ont été publiées
+        par le service des admissions.
       </p>
 
       {error && (
@@ -107,22 +102,6 @@ export default function NotesPage() {
         </div>
       ) : (
         <>
-          {/* Carte moyenne */}
-          {moyenne !== null && (
-            <div
-              className="rounded-2xl p-5 mb-5 text-white"
-              style={{ backgroundColor: RED }}
-            >
-              <p className="text-xs font-medium opacity-75 uppercase tracking-wide mb-1">
-                Moyenne générale
-              </p>
-              <p className="text-4xl font-bold">
-                {formatScore(moyenne)}
-                <span className="text-lg font-normal opacity-60 ml-1">/20</span>
-              </p>
-            </div>
-          )}
-
           {/* Liste des notes */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             {notes.map((note, i) => (
@@ -133,7 +112,7 @@ export default function NotesPage() {
                 }`}
               >
                 <div>
-                  <p className="text-sm font-medium text-gray-800">{note.matiere}</p>
+                  <p className="text-base font-semibold text-gray-900">{note.matiere}</p>
                   {note.published_at && (
                     <p className="text-xs text-gray-700 mt-0.5">
                       Publiée le{" "}
@@ -146,7 +125,7 @@ export default function NotesPage() {
                 <div className="flex items-center gap-3">
                   <ScoreBar value={note.valeur} />
                   <span
-                    className="text-lg font-bold w-14 text-right"
+                    className="text-lg font-bold w-20 text-right tabular-nums"
                     style={{
                       color:
                         note.valeur === null ? "#9ca3af"
@@ -156,6 +135,7 @@ export default function NotesPage() {
                     }}
                   >
                     {formatScore(note.valeur)}
+                    <span className="text-xs font-normal text-gray-700">/20</span>
                   </span>
                 </div>
               </div>

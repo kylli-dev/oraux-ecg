@@ -860,14 +860,25 @@ def get_notes(
     candidat_id: int = Depends(require_candidat),
     db: Session = Depends(get_db),
 ):
-    """Retourne uniquement les notes publiées du candidat."""
+    """
+    Retourne uniquement les notes publiées du candidat — la note FINALE de chaque épreuve :
+    la note harmonisée si elle existe (l'admin a pu la corriger à l'harmonisation), sinon la
+    note saisie par l'examinateur.
+    """
     notes = (
         db.query(Note)
         .filter_by(candidat_id=candidat_id, statut="PUBLIE")
         .order_by(Note.matiere)
         .all()
     )
-    return notes
+    return [
+        NoteOut(
+            matiere=n.matiere,
+            valeur=n.note_harmonisee if n.note_harmonisee is not None else n.valeur,
+            published_at=n.published_at,
+        )
+        for n in notes
+    ]
 
 
 # ── Liste d'attente (JWT) ─────────────────────────────────────────────────────
