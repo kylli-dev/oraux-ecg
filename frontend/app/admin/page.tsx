@@ -8665,6 +8665,13 @@ function NotesSection() {
   const [loadingT, setLoadingT] = useState(false);
   // Inline edit: note_id → draft value
   const [editHarm, setEditHarm] = useState<Record<number, string>>({});
+  // Filtres du tableau des notes
+  const [tRecherche, setTRecherche] = useState("");
+  const [tDate, setTDate] = useState("");
+  const [tMatiere, setTMatiere] = useState("");
+  const [tStatut, setTStatut] = useState("");      // BROUILLON | VALIDE | HARMONISE | PUBLIE | MANQUANTE
+  const [tHarm, setTHarm] = useState("");          // "ecart" | "non_harmonisee"
+  const resetFiltresTableau = () => { setTRecherche(""); setTDate(""); setTMatiere(""); setTStatut(""); setTHarm(""); };
   const [savingHarm, setSavingHarm] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
@@ -8903,7 +8910,22 @@ function NotesSection() {
       </div>
 
       {/* ── Tableau des notes ────────────────────────────────────────────────── */}
-      {tab === "tableau" && (
+      {tab === "tableau" && (() => {
+        const matieresVisibles = tableau ? tableau.matieres.filter((m) => !tMatiere || m === tMatiere) : [];
+        const q = tRecherche.trim().toLowerCase();
+        const candidatsFiltres = (tableau?.candidats ?? []).filter((c) => {
+          if (q && !`${c.nom} ${c.prenom} ${c.code_candidat ?? ""}`.toLowerCase().includes(q)) return false;
+          if (tDate && c.date !== tDate) return false;
+          const cellules = matieresVisibles.map((m) => c.notes[m]);
+          if (tStatut === "MANQUANTE" && !cellules.some((n) => !n || n.valeur === null)) return false;
+          if (tStatut && tStatut !== "MANQUANTE" && !cellules.some((n) => n && n.statut === tStatut)) return false;
+          if (tHarm === "ecart" && !cellules.some((n) => n && n.ecart !== null && n.ecart !== 0)) return false;
+          if (tHarm === "non_harmonisee" && !cellules.some((n) => n && n.valeur !== null && n.note_harmonisee === null)) return false;
+          return true;
+        });
+        const datesTableau = [...new Set((tableau?.candidats ?? []).map((c) => c.date).filter(Boolean))].sort();
+        const filtresTableauActifs = !!(tRecherche || tDate || tMatiere || tStatut || tHarm);
+        return (
         <div className="space-y-5">
           <div className="flex items-end gap-4">
             <Field label="Planning">
@@ -8914,12 +8936,67 @@ function NotesSection() {
             </Field>
           </div>
 
+          {planningId !== "" && tableau && tableau.candidats.length > 0 && (
+            <div className="bg-white rounded-xl border border-black/10 shadow-sm p-4 space-y-3">
+              <div className="grid gap-3 grid-cols-2 md:grid-cols-5">
+                <Field label="Recherche">
+                  <Input value={tRecherche} onChange={(e) => setTRecherche(e.target.value)} placeholder="Nom, prénom, n° candidat" />
+                </Field>
+                <Field label="Date">
+                  <Select value={tDate} onChange={(e) => setTDate(e.target.value)}>
+                    <option value="">Toutes</option>
+                    {datesTableau.map((d) => <option key={d} value={d}>{/^\d{4}-\d{2}-\d{2}/.test(d) ? formatDateCourte(d) : d}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Matière">
+                  <Select value={tMatiere} onChange={(e) => setTMatiere(e.target.value)}>
+                    <option value="">Toutes</option>
+                    {tableau.matieres.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Statut de note">
+                  <Select value={tStatut} onChange={(e) => setTStatut(e.target.value)}>
+                    <option value="">Tous</option>
+                    <option value="BROUILLON">Brouillon</option>
+                    <option value="VALIDE">Validée</option>
+                    <option value="HARMONISE">Harmonisée</option>
+                    <option value="PUBLIE">Publiée</option>
+                    <option value="MANQUANTE">Note manquante</option>
+                  </Select>
+                </Field>
+                <Field label="Harmonisation">
+                  <Select value={tHarm} onChange={(e) => setTHarm(e.target.value)}>
+                    <option value="">Toutes</option>
+                    <option value="ecart">Note modifiée (écart ≠ 0)</option>
+                    <option value="non_harmonisee">Pas encore harmonisée</option>
+                  </Select>
+                </Field>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-900">
+                  <span className="font-semibold">{candidatsFiltres.length}</span> candidat{candidatsFiltres.length > 1 ? "s" : ""}
+                  {filtresTableauActifs && <> sur {tableau.candidats.length}</>}
+                  {(tStatut || tHarm) && (
+                    <span className="text-gray-700"> — au moins une {tMatiere ? `note de ${tMatiere}` : "note"} concernée</span>
+                  )}
+                </span>
+                {filtresTableauActifs && (
+                  <button onClick={resetFiltresTableau} className="text-sm font-medium hover:underline" style={{ color: RED }}>
+                    Réinitialiser les filtres
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {!planningId ? (
             <Empty message="Sélectionnez un planning" />
           ) : loadingT ? (
             <div className="flex justify-center py-12 text-gray-700"><Spinner /></div>
           ) : !tableau || tableau.candidats.length === 0 ? (
             <Empty message="Aucune note disponible pour ce planning" sub="Les notes apparaîtront ici dès leur saisie par les examinateurs." />
+          ) : candidatsFiltres.length === 0 ? (
+            <Empty message="Aucun candidat ne correspond aux filtres" />
           ) : (
             <div className="overflow-x-auto rounded-xl border bg-white shadow-sm">
               <table className="text-xs border-collapse min-w-full">
@@ -8929,13 +9006,13 @@ function NotesSection() {
                     {["Nom", "Prénom", "N° Cand.", "Date"].map((h) => (
                       <th key={h} rowSpan={2} className="px-3 py-2.5 text-left text-white font-semibold border border-[#283593] align-bottom whitespace-nowrap">{h}</th>
                     ))}
-                    {tableau.matieres.map((mat) => (
+                    {matieresVisibles.map((mat) => (
                       <th key={mat} colSpan={3} className="px-3 py-2 text-center text-white font-semibold border border-[#283593] whitespace-nowrap">{mat}</th>
                     ))}
                   </tr>
                   {/* Row 2 : sub-headers */}
                   <tr className="bg-[#E8EAF6]">
-                    {tableau.matieres.flatMap((mat) => (
+                    {matieresVisibles.flatMap((mat) => (
                       ["Note", "Harm.", "Écart"].map((sub) => (
                         <th key={`${mat}-${sub}`} className="px-2 py-1.5 text-center text-[#1A237E] font-semibold border border-[#C5CAE9] whitespace-nowrap">{sub}</th>
                       ))
@@ -8943,13 +9020,13 @@ function NotesSection() {
                   </tr>
                 </thead>
                 <tbody>
-                  {tableau.candidats.map((cand, ri) => (
+                  {candidatsFiltres.map((cand, ri) => (
                     <tr key={cand.id} className={ri % 2 === 0 ? "bg-white" : "bg-[#FAFAFA]"}>
                       <td className="px-3 py-2 font-semibold border border-black/8 whitespace-nowrap">{cand.nom.toUpperCase()}</td>
                       <td className="px-3 py-2 border border-black/8 whitespace-nowrap">{cand.prenom}</td>
                       <td className="px-3 py-2 text-gray-800 border border-black/8">{cand.code_candidat ?? "—"}</td>
                       <td className="px-3 py-2 text-gray-800 border border-black/8 whitespace-nowrap">{cand.date}</td>
-                      {tableau.matieres.map((mat) => {
+                      {matieresVisibles.map((mat) => {
                         const n = cand.notes[mat];
                         if (!n) {
                           return (
@@ -9008,7 +9085,8 @@ function NotesSection() {
             </div>
           )}
         </div>
-      )}
+        );
+      })()}
 
       {/* ── Saisie admin ──────────────────────────────────────────────────────── */}
       {tab === "saisie" && (
