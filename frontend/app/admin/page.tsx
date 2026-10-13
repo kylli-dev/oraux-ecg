@@ -10804,6 +10804,33 @@ function LogoutButton() {
 }
 
 // ── Gestion des planches ───────────────────────────────────────────────────────
+// ── Code couleur des planches ─────────────────────────────────────────────────
+// Une couleur FIXE par planche (dérivée de son identifiant) : la même planche a toujours
+// la même couleur, dans l'assignation, la liste des sujets et la fenêtre d'assignation.
+// La palette étant limitée, le code court (P + numéro) lève toute ambiguïté.
+const PALETTE_PLANCHES = [
+  "#C62828", "#1565C0", "#2E7D32", "#EF6C00", "#6A1B9A", "#00838F", "#AD1457", "#827717",
+  "#4E342E", "#283593", "#00695C", "#D84315", "#5D4037", "#0277BD", "#558B2F", "#8E24AA",
+];
+
+function couleurPlanche(id: number): string {
+  return PALETTE_PLANCHES[Math.abs(id) % PALETTE_PLANCHES.length];
+}
+
+function PastillePlanche({ id, nom }: { id: number; nom?: string | null }) {
+  const c = couleurPlanche(id);
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs font-semibold tabular-nums whitespace-nowrap"
+      style={{ borderColor: c, color: c, backgroundColor: c + "14" }}
+      title={nom ? `Planche « ${nom} » — code P${id}` : `Planche P${id}`}
+    >
+      <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: c }} />
+      P{id}
+    </span>
+  );
+}
+
 // ── Historique des planches (journal en ajout seul, jamais réécrit) ──────────
 type PlancheHistoriqueItem = {
   id: number;
@@ -11469,7 +11496,7 @@ function PlanchesSection() {
                         <>
                           <td className="px-4 py-3 font-medium text-sm">
                             <div className="flex items-center gap-2">
-                              <FileText className="h-4 w-4 text-gray-700 shrink-0" />
+                              <PastillePlanche id={p.id} nom={p.nom} />
                               {p.nom}
                             </div>
                           </td>
@@ -11615,7 +11642,7 @@ function PlanchesSection() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-[#F5F5F5]">
-                    {["Date", "Matière", "Horaire", "Examinateur(s)", "Candidat", "Planche assignée", ""].map((h) => (
+                    {["Date", "Matière", "Horaire", "Examinateur(s)", "Candidat", "Code couleur", "Planche assignée", ""].map((h) => (
                       <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-800 tracking-wide">{h}</th>
                     ))}
                   </tr>
@@ -11647,10 +11674,15 @@ function PlanchesSection() {
                           : <span className="text-gray-700 italic">—</span>}
                       </td>
                       <td className="px-4 py-3">
+                        {ep.planche_id
+                          ? <PastillePlanche id={ep.planche_id} nom={ep.planche_nom} />
+                          : <span className="text-gray-700">—</span>}
+                      </td>
+                      <td className="px-4 py-3">
                         {ep.planche_nom ? (
                           <div className="flex items-center gap-2">
-                            <FileText className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-                            <span className="text-sm text-blue-700 font-medium">{ep.planche_nom}</span>
+                            <FileText className="h-3.5 w-3.5 shrink-0" style={{ color: ep.planche_id ? couleurPlanche(ep.planche_id) : undefined }} />
+                            <span className="text-sm font-medium text-gray-900">{ep.planche_nom}</span>
                           </div>
                         ) : (
                           <span className="text-xs text-gray-700 italic">Non assignée</span>
@@ -11734,7 +11766,7 @@ function PlanchesSection() {
                           <tr key={p.id} className={`border-t border-black/5 ${assignModal.planche_id === p.id ? "bg-blue-50" : "hover:bg-black/[0.012]"}`}>
                             <td className="px-4 py-2.5 font-medium">
                               <div className="flex items-center gap-2">
-                                <FileText className="h-4 w-4 text-gray-700 shrink-0" />
+                                <PastillePlanche id={p.id} nom={p.nom} />
                                 {p.nom}
                               </div>
                             </td>
