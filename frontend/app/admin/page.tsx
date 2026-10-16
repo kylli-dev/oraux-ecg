@@ -2750,6 +2750,25 @@ function DemiJourneeCard({
     }
   };
 
+  // Suppression d'une ligne horaire entière (ex. restes d'un ajout épreuve par épreuve).
+  // Retirer une heure change la liste des heures de la journée → la rotation des triplets
+  // libres est recalculée : on le dit explicitement avant de confirmer.
+  const supprimerCreneau = async (slot: string, eps: Epreuve[]) => {
+    const ok = await confirm(
+      `Supprimer le créneau ${slot} (${eps.map((e) => e.matiere).join(", ")}) ? ` +
+      "Cette heure disparaît de la journée : les triplets libres seront recalculés (les inscriptions existantes ne bougent pas).",
+      { confirmLabel: "Supprimer", danger: true }
+    );
+    if (!ok) return;
+    try {
+      await post(`epreuves/supprimer-creneau`, { demi_journee_id: dj.id, heure_debut: slot });
+      toast.success(`Créneau ${slot} supprimé`);
+      onRefresh();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   // ── Construction de la vue matricielle triplets ──────────────────────────────
   // Grouper les épreuves par heure_debut (= un créneau = une ligne)
   const slotMap = new Map<string, Epreuve[]>();
@@ -2817,6 +2836,15 @@ function DemiJourneeCard({
                     <td className="px-3 py-2 whitespace-nowrap tabular-nums">
                       {prepa && <div className="text-gray-800">Prépa {prepa}</div>}
                       <div className="text-gray-900 font-semibold">{slot} – {finExam}</div>
+                      {epreuves.every((e) => (e.statut === "LIBRE" || e.statut === "CREE") && e.candidat_id == null) && (
+                        <button
+                          onClick={() => supprimerCreneau(slot, epreuves)}
+                          className="mt-1 inline-flex items-center gap-1 text-[11px] text-red-700 hover:underline"
+                          title="Supprimer toutes les épreuves de cette ligne horaire"
+                        >
+                          <Trash2 className="h-3 w-3" /> Supprimer
+                        </button>
+                      )}
                     </td>
                     {/* Cellules par matière — toutes les salles en parallèle (dédoublement) */}
                     {djMatieres.map(matiere => {

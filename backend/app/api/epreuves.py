@@ -150,6 +150,48 @@ def supprimer_triplet(body: DupliquerTripletIn, db: Session = Depends(get_db)):
     return {"supprimees": len(a_supprimer)}
 
 
+class SupprimerCreneauIn(BaseModel):
+    demi_journee_id: int
+    heure_debut: str  # "HH:MM"
+
+
+@router.post("/supprimer-creneau")
+def supprimer_creneau(body: SupprimerCreneauIn, db: Session = Depends(get_db)):
+    """
+    Supprime une ligne horaire entière d'une demi-journée (toutes les matières qui commencent
+    à cette heure) — typiquement les restes d'un ajout épreuve par épreuve. Refusé si l'une
+    d'elles est attribuée, préréservée, liée à une planche ou à une inscription. Retirer une
+    heure recalcule la rotation des triplets libres de la journée (les inscriptions existantes
+    ne bougent pas) : l'interface le signale avant confirmation. Tout ou rien.
+    """
+    try:
+        heure = datetime.strptime(body.heure_debut, "%H:%M").time()
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Heure invalide (HH:MM attendu)")
+    eps = db.query(Epreuve).filter_by(demi_journee_id=body.demi_journee_id, heure_debut=heure).all()
+    if not eps:
+        raise HTTPException(status_code=404, detail="Aucune épreuve à cette heure")
+    inscrites = {
+        row[0] for row in db.query(InscriptionEpreuve.epreuve_id)
+        .filter(InscriptionEpreuve.epreuve_id.in_([e.id for e in eps])).all()
+    }
+    bloquantes = [
+        e for e in eps
+        if e.statut not in ("LIBRE", "CREE") or e.candidat_id is not None or e.planche_id is not None or e.id in inscrites
+    ]
+    if bloquantes:
+        raise HTTPException(
+            status_code=422,
+            detail="Suppression impossible : " + ", ".join(f"{e.matiere} ({e.statut.lower()})" for e in bloquantes)
+                   + " — seules des épreuves libres, sans candidat ni planche, peuvent être supprimées",
+        )
+    for e in eps:
+        db.delete(e)
+    annuler_inscriptions_orphelines(db)
+    db.commit()
+    return {"supprimees": len(eps)}
+
+
 @router.get("/{epreuve_id}", response_model=EpreuveOut)
 def get_epreuve(epreuve_id: int, db: Session = Depends(get_db)):
     e = db.get(Epreuve, epreuve_id)
