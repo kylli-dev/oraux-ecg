@@ -147,6 +147,7 @@ type EpreuveFlat = {
   candidat_id: number | null;
   candidat_nom: string | null;
   candidat_prenom: string | null;
+  hors_inscription?: boolean; // candidat attribué sans inscription (absent de sa fiche)
   examinateur_id: number | null;
   examinateur_nom: string | null;
   examinateur_prenom: string | null;
@@ -1586,8 +1587,51 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
     );
   };
 
+  // Bilan d'attribution (tout le planning, hors filtres) — pour vérifier d'un coup d'œil
+  // que toutes les épreuves ont un candidat. « Libre » filtré = la liste de ce qui reste.
+  const actives = epreuves.filter((e) => e.statut !== "ANNULEE");
+  const nbAttribuees = actives.filter((e) => e.candidat_id != null).length;
+  const nbLibres = actives.filter((e) => e.candidat_id == null && e.statut === "LIBRE").length;
+  const nbPrereservees = actives.filter((e) => e.candidat_id == null && e.statut === "PRERESERVEE").length;
+  const nbAutres = actives.length - nbAttribuees - nbLibres - nbPrereservees;
+  const horsInscription = actives.filter((e) => e.hors_inscription);
+
   return (
     <div>
+      {/* Bilan d'attribution */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 mb-3 text-sm text-gray-900">
+        <span>
+          <span className="font-semibold">{nbAttribuees} / {actives.length}</span> épreuves attribuées à un candidat
+          {nbAttribuees === actives.length && actives.length > 0 && <span className="ml-1.5 text-green-700 font-semibold">✓ tout est attribué</span>}
+        </span>
+        {nbLibres > 0 && (
+          <button onClick={() => setFilterStatut("LIBRE")} className="text-green-800 hover:underline">
+            <span className="font-semibold">{nbLibres}</span> libre{nbLibres > 1 ? "s" : ""}
+          </button>
+        )}
+        {nbPrereservees > 0 && (
+          <button onClick={() => setFilterStatut("PRERESERVEE")} className="text-amber-800 hover:underline">
+            <span className="font-semibold">{nbPrereservees}</span> préréservée{nbPrereservees > 1 ? "s" : ""}
+          </button>
+        )}
+        {nbAutres > 0 && <span className="text-gray-800"><span className="font-semibold">{nbAutres}</span> autre{nbAutres > 1 ? "s" : ""} (créées, sans candidat)</span>}
+      </div>
+      {horsInscription.length > 0 && (
+        <div className="mb-3 px-4 py-2.5 rounded-xl border border-red-200 bg-red-50 text-sm text-red-800">
+          <p className="font-semibold">
+            ⚠ {horsInscription.length} épreuve{horsInscription.length > 1 ? "s" : ""} attribuée{horsInscription.length > 1 ? "s" : ""} hors inscription
+            (absente{horsInscription.length > 1 ? "s" : ""} de la fiche du candidat, triplet incomplet) :
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {horsInscription.map((e) => (
+              <li key={e.id}>
+                {e.candidat_nom} {e.candidat_prenom} — {e.matiere}, {formatDateCourte(e.date)} à {e.heure_debut}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Filtres */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <select
@@ -5287,7 +5331,7 @@ function CandidatsSection() {
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [gestionKey, setGestionKey] = useState(0);
-  const [tab, setTab] = useState<"liste" | "affectation" | "gestion" | "liste_attente" | "compactage">("liste");
+  const [tab, setTab] = useState<"liste" | "gestion" | "liste_attente" | "compactage">("liste");
   const [error, setError] = useState("");
   const [searchCand, setSearchCand] = useState("");
   const [filterProfil, setFilterProfil] = useState<"" | "HGG" | "ESH">("");
@@ -5391,7 +5435,7 @@ function CandidatsSection() {
         <>
           {/* Onglets */}
           <div className="flex border-b border-gray-200 mb-5">
-            {(["liste", "gestion", "liste_attente", "compactage", "affectation"] as const).map((t) => (
+            {(["liste", "gestion", "liste_attente", "compactage"] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -5404,8 +5448,7 @@ function CandidatsSection() {
                 {t === "liste" ? "Liste"
                   : t === "gestion" ? "Gestion inscriptions"
                   : t === "liste_attente" ? "Liste d'attente"
-                  : t === "compactage" ? "Compactage"
-                  : "Affectation aux épreuves"}
+                  : "Compactage"}
               </button>
             ))}
           </div>
@@ -5526,10 +5569,6 @@ function CandidatsSection() {
               planningId={planningId as number}
               planning={plannings.find(p => p.id === planningId) ?? null}
             />
-          )}
-
-          {tab === "affectation" && (
-            <AffectationCandidatsTab planningId={planningId as number} candidats={candidats} />
           )}
         </>
       )}
@@ -7021,262 +7060,6 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
               )}
             </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AffectationCandidatsTab({ planningId, candidats }: { planningId: number; candidats: Candidat[] }) {
-  const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [assigning, setAssigning] = useState<Record<number, boolean>>({});
-  const [error, setError] = useState("");
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const data = await get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`);
-      setEpreuves(data);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }, [planningId]);
-
-  useEffect(() => { load(); }, [load]);
-
-  async function assigner(epreuve: EpreuveFlat, candidatId: number | null) {
-    setAssigning((a) => ({ ...a, [epreuve.id]: true }));
-    setError("");
-    try {
-      await post(`candidats/epreuves/${epreuve.id}/assigner`, { candidat_id: candidatId });
-      const c = candidatId ? candidats.find((x) => x.id === candidatId) : null;
-      setEpreuves((prev) =>
-        prev.map((ep) =>
-          ep.id === epreuve.id
-            ? { ...ep, candidat_id: c?.id ?? null, candidat_nom: c?.nom ?? null, candidat_prenom: c?.prenom ?? null }
-            : ep
-        )
-      );
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setAssigning((a) => ({ ...a, [epreuve.id]: false }));
-    }
-  }
-
-  const [fDate, setFDate] = useState("");
-  const [fHoraire, setFHoraire] = useState("");
-  const [fMatiere, setFMatiere] = useState("");
-  const [fExaminateur, setFExaminateur] = useState("");
-  const [fCandidat, setFCandidat] = useState("");
-
-  const nomExaminateur = (prenom: string | null, nom: string | null) => `${prenom ?? ""} ${nom ?? ""}`.trim();
-
-  // Options des filtres, construites à partir des épreuves réellement présentes.
-  const dates = [...new Set(epreuves.map((e) => e.date))].sort();
-  const horaires = [...new Set(epreuves.map((e) => e.heure_debut))].sort();
-  const matieres = [...new Set(epreuves.map((e) => e.matiere))].sort((a, b) => a.localeCompare(b, "fr"));
-  const examinateurs = new Map<number, string>();
-  for (const e of epreuves) {
-    if (e.examinateur_id) examinateurs.set(e.examinateur_id, nomExaminateur(e.examinateur_prenom, e.examinateur_nom));
-    if (e.examinateur2_id) examinateurs.set(e.examinateur2_id, nomExaminateur(e.examinateur2_prenom, e.examinateur2_nom));
-  }
-  const examinateursTries = [...examinateurs.entries()].sort(([, a], [, b]) => a.localeCompare(b, "fr"));
-  const candidatsTries = [...candidats].sort((a, b) => `${a.nom} ${a.prenom}`.localeCompare(`${b.nom} ${b.prenom}`, "fr"));
-
-  const filtered = epreuves.filter((e) => {
-    if (fDate && e.date !== fDate) return false;
-    if (fHoraire && e.heure_debut !== fHoraire) return false;
-    if (fMatiere && e.matiere !== fMatiere) return false;
-    if (fExaminateur === "aucun" && (e.examinateur_id || e.examinateur2_id)) return false;
-    if (fExaminateur && fExaminateur !== "aucun") {
-      const id = Number(fExaminateur);
-      if (e.examinateur_id !== id && e.examinateur2_id !== id) return false;
-    }
-    if (fCandidat === "aucun" && e.candidat_id !== null) return false;
-    if (fCandidat === "attribue" && e.candidat_id === null) return false;
-    if (fCandidat && !["aucun", "attribue"].includes(fCandidat) && e.candidat_id !== Number(fCandidat)) return false;
-    return true;
-  });
-  const filtresActifs = [fDate, fHoraire, fMatiere, fExaminateur, fCandidat].some(Boolean);
-  const resetFiltres = () => { setFDate(""); setFHoraire(""); setFMatiere(""); setFExaminateur(""); setFCandidat(""); };
-
-  const byDate = filtered.reduce<Record<string, EpreuveFlat[]>>((acc, e) => {
-    (acc[e.date] ??= []).push(e);
-    return acc;
-  }, {});
-
-  const assigned = epreuves.filter((e) => e.candidat_id !== null).length;
-  const total = epreuves.length;
-
-  // Une seule police / taille / couleur pour toutes les cellules (horaire, matière,
-  // examinateur, candidat) — seules les mentions secondaires sont atténuées.
-  const cell = "px-4 py-3 text-sm text-gray-900 align-top";
-  const th = "text-left px-4 py-2.5 text-xs font-semibold text-gray-900 uppercase tracking-wide";
-  const selectCls = "w-full border border-black/15 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-red-300";
-  const labelCls = "block text-xs font-semibold text-gray-900 mb-1";
-
-  if (loading) return <div className="p-8 text-center"><Spinner /></div>;
-
-  return (
-    <div className="space-y-4">
-      {error && <div className="rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600">{error}</div>}
-
-      {total > 0 && (
-        <div className="bg-white rounded-xl shadow-sm p-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-gray-900">{assigned} / {total} épreuves attribuées</span>
-            <span className="text-sm font-semibold text-[#C62828]">{Math.round((assigned / total) * 100)}%</span>
-          </div>
-          <div className="w-full bg-gray-100 rounded-full h-1.5">
-            <div className="bg-[#C62828] h-1.5 rounded-full transition-all" style={{ width: `${(assigned / total) * 100}%` }} />
-          </div>
-        </div>
-      )}
-
-      {total > 0 && (
-        <div className="bg-white rounded-xl shadow-sm p-4">
-          <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-            <div>
-              <label className={labelCls}>Date</label>
-              <select value={fDate} onChange={(e) => setFDate(e.target.value)} className={selectCls}>
-                <option value="">Toutes</option>
-                {dates.map((d) => <option key={d} value={d}>{formatDate(d)}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className={labelCls}>Horaire</label>
-              <select value={fHoraire} onChange={(e) => setFHoraire(e.target.value)} className={selectCls}>
-                <option value="">Tous</option>
-                {horaires.map((h) => <option key={h} value={h}>{h}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className={labelCls}>Matière</label>
-              <select value={fMatiere} onChange={(e) => setFMatiere(e.target.value)} className={selectCls}>
-                <option value="">Toutes</option>
-                {matieres.map((m) => <option key={m} value={m}>{m}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className={labelCls}>Examinateur</label>
-              <select value={fExaminateur} onChange={(e) => setFExaminateur(e.target.value)} className={selectCls}>
-                <option value="">Tous</option>
-                <option value="aucun">— Non assigné —</option>
-                {examinateursTries.map(([id, nom]) => <option key={id} value={id}>{nom}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className={labelCls}>Candidat</label>
-              <select value={fCandidat} onChange={(e) => setFCandidat(e.target.value)} className={selectCls}>
-                <option value="">Tous</option>
-                <option value="attribue">— Épreuves attribuées —</option>
-                <option value="aucun">— Sans candidat —</option>
-                {candidatsTries.map((c) => <option key={c.id} value={c.id}>{c.nom} {c.prenom}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="flex items-center justify-between mt-3">
-            <span className="text-sm text-gray-900">
-              {filtered.length} épreuve{filtered.length > 1 ? "s" : ""} affichée{filtered.length > 1 ? "s" : ""}
-              {filtresActifs && <span className="text-gray-700"> sur {total}</span>}
-            </span>
-            {filtresActifs && (
-              <button onClick={resetFiltres} className="text-sm text-[#C62828] hover:underline">
-                Réinitialiser les filtres
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b)).map(([date, eps]) => (
-        <div key={date}>
-          <p className="text-sm font-semibold text-gray-900 mb-2 capitalize">
-            {new Date(date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}
-          </p>
-          <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-black/10 bg-black/[0.03]">
-                  <th className={th}>Horaire</th>
-                  <th className={th}>Matière</th>
-                  <th className={th}>Examinateur(s)</th>
-                  <th className={th}>Candidat</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...eps]
-                  .sort((a, b) => a.heure_debut.localeCompare(b.heure_debut) || a.matiere.localeCompare(b.matiere, "fr"))
-                  .map((ep, i) => (
-                  <tr key={ep.id} className={`border-b border-black/5 last:border-0 ${i % 2 === 0 ? "" : "bg-black/[0.015]"}`}>
-                    <td className={`${cell} whitespace-nowrap tabular-nums`}>
-                      {ep.heure_debut} – {ep.heure_fin}
-                    </td>
-                    <td className={`${cell} whitespace-nowrap`}>{ep.matiere}</td>
-                    <td className={cell}>
-                      {ep.examinateur_id || ep.examinateur2_id ? (
-                        <div className="space-y-0.5">
-                          {ep.examinateur_id && <div>{nomExaminateur(ep.examinateur_prenom, ep.examinateur_nom)}</div>}
-                          {ep.examinateur2_id && (
-                            <div>
-                              {nomExaminateur(ep.examinateur2_prenom, ep.examinateur2_nom)}
-                              <span className="ml-1.5 text-xs text-gray-700">(2ᵉ examinateur)</span>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="italic text-gray-700">Non assigné</span>
-                      )}
-                    </td>
-                    <td className={cell}>
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={ep.candidat_id ?? ""}
-                          onChange={(e) => assigner(ep, e.target.value ? Number(e.target.value) : null)}
-                          disabled={assigning[ep.id]}
-                          className={`${selectCls} disabled:opacity-50`}
-                        >
-                          <option value="">— Aucun —</option>
-                          {candidatsTries.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.nom} {c.prenom}
-                            </option>
-                          ))}
-                        </select>
-                        {assigning[ep.id] && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-700 shrink-0" />}
-                        {ep.candidat_id && !assigning[ep.id] && (
-                          <button
-                            onClick={() => assigner(ep, null)}
-                            className="shrink-0 text-gray-700 hover:text-red-500 transition"
-                            title="Désaffecter"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ))}
-
-      {epreuves.length === 0 && (
-        <div className="bg-white rounded-xl shadow-sm p-10 text-center text-sm text-gray-900">
-          Aucune épreuve dans ce planning.
-        </div>
-      )}
-      {epreuves.length > 0 && filtered.length === 0 && (
-        <div className="bg-white rounded-xl shadow-sm p-10 text-center text-sm text-gray-900">
-          Aucune épreuve ne correspond aux filtres.{" "}
-          <button onClick={resetFiltres} className="text-[#C62828] hover:underline">Réinitialiser</button>
         </div>
       )}
     </div>

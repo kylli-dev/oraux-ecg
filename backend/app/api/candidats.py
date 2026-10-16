@@ -14,7 +14,6 @@ from app.schemas.candidat import (
     CandidatCreate,
     CandidatOut,
     CandidatUpdate,
-    AssignerCandidatIn,
 )
 
 router = APIRouter(
@@ -104,29 +103,3 @@ def delete_candidat(candidat_id: int, db: Session = Depends(get_db)):
     db.commit()
 
 
-# ── Assignation épreuve ────────────────────────────────────────────────────────
-
-@router.post("/epreuves/{epreuve_id}/assigner")
-def assigner_candidat(
-    epreuve_id: int,
-    body: AssignerCandidatIn,
-    db: Session = Depends(get_db),
-):
-    """Assigne ou désassigne un candidat à une épreuve."""
-    e = db.get(Epreuve, epreuve_id)
-    if not e:
-        raise HTTPException(status_code=404, detail="Epreuve not found")
-
-    if body.candidat_id is None:
-        # Désassigner
-        e.candidat_id = None
-        e.statut = "LIBRE"
-    else:
-        c = db.get(Candidat, body.candidat_id)
-        if not c:
-            raise HTTPException(status_code=404, detail="Candidat not found")
-        e.candidat_id = body.candidat_id
-        e.statut = "ATTRIBUEE"
-
-    db.commit()
-    return {"epreuve_id": epreuve_id, "candidat_id": e.candidat_id, "statut": e.statut}

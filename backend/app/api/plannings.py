@@ -178,6 +178,18 @@ def list_epreuves_planning(
     planches     = {p.id: p for p in db.query(PlancheModel).filter(PlancheModel.id.in_(planche_ids)).all()} if planche_ids else {}
     surveillants = {s.id: s for s in db.query(SurveillantModel).filter(SurveillantModel.id.in_(surveillant_ids)).all()} if surveillant_ids else {}
 
+    # Épreuves rattachées à une inscription ACTIVE : une épreuve avec un candidat mais hors
+    # de toute inscription (attribution directe, ex. ancien onglet « Affectation aux
+    # épreuves ») n'apparaît pas dans la fiche du candidat — on la signale (hors_inscription).
+    from app.models.inscription import Inscription, InscriptionEpreuve
+    attribuees_ids = [e.id for e, _ in rows if e.candidat_id]
+    inscrites = {
+        r[0] for r in db.query(InscriptionEpreuve.epreuve_id)
+        .join(Inscription, InscriptionEpreuve.inscription_id == Inscription.id)
+        .filter(Inscription.statut == "ACTIVE", InscriptionEpreuve.epreuve_id.in_(attribuees_ids))
+        .all()
+    } if attribuees_ids else set()
+
     result = []
     for epreuve, dj in rows:
         candidat     = candidats.get(epreuve.candidat_id)
@@ -200,6 +212,7 @@ def list_epreuves_planning(
             "candidat_id": candidat.id if candidat else None,
             "candidat_nom": candidat.nom if candidat else None,
             "candidat_prenom": candidat.prenom if candidat else None,
+            "hors_inscription": bool(epreuve.candidat_id) and epreuve.id not in inscrites,
             "examinateur_id": examinateur.id if examinateur else None,
             "examinateur_nom": examinateur.nom if examinateur else None,
             "examinateur_prenom": examinateur.prenom if examinateur else None,
