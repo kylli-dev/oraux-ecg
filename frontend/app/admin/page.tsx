@@ -6447,6 +6447,17 @@ function CompactageTab({
   const [drawerCandidatId, setDrawerCandidatId] = useState<number | null>(null);
   const [markingAbsent, setMarkingAbsent] = useState<Set<number>>(new Set());
   const confirm = useConfirm();
+  // Filtres (liste des trous + tableau des inscrits)
+  const [fRecherche, setFRecherche] = useState("");
+  const [fMatiere, setFMatiere] = useState("");
+  const [fSession, setFSession] = useState<"" | "Matin" | "Après-midi">("");
+  const [fMotif, setFMotif] = useState<"" | "LIBRE" | "PRERESERVEE" | "ABSENT">("");
+  const [fProfil, setFProfil] = useState<"" | "HGG" | "ESH">("");
+  const [fAbsents, setFAbsents] = useState(false);
+  const filtresActifs = !!(fRecherche || fMatiere || fSession || fMotif || fProfil || fAbsents);
+  const resetFiltres = () => {
+    setFRecherche(""); setFMatiere(""); setFSession(""); setFMotif(""); setFProfil(""); setFAbsents(false);
+  };
 
   const toggleAbsent = async (candidatId: number, ep: TripletEpreuveGestion) => {
     setMarkingAbsent(s => new Set(s).add(ep.id));
@@ -6497,6 +6508,36 @@ function CompactageTab({
     .sort((a, b) => hm(a.heure_debut).localeCompare(hm(b.heure_debut)) || a.matiere.localeCompare(b.matiere, "fr"));
   const nbAbsents = trous.filter(e => e.statut === "ABSENT").length;
 
+  // Session de chaque épreuve (les inscrits ne la portent pas) et matières de la journée
+  const sessionParEpreuve = new Map<number, string>(
+    (jour?.demi_journees ?? []).flatMap(dj => dj.epreuves.map(e => [e.id, dj.type === "MATIN" ? "Matin" : "Après-midi"] as [number, string]))
+  );
+  const matieresJour = [...new Set((jour?.demi_journees ?? []).flatMap(dj => dj.epreuves.map(e => e.matiere)))]
+    .sort((a, b) => a.localeCompare(b, "fr"));
+  const q = fRecherche.trim().toLowerCase();
+  const profilDe = (c: JourneeInscritItem) => {
+    const p = (c.candidat_profil ?? "").toUpperCase();
+    if (p) return p;
+    const cl = (c.candidat_classe ?? "").toUpperCase();
+    return cl.includes("ESH") ? "ESH" : cl.includes("HGG") ? "HGG" : "";
+  };
+
+  const trousFiltres = trous
+    .filter(e => !fMatiere || e.matiere === fMatiere)
+    .filter(e => !fSession || e.session === fSession)
+    .filter(e => !fMotif || e.statut === fMotif)
+    .filter(e => !fAbsents || e.statut === "ABSENT")
+    .filter(e => !q || `${e.candidat_nom ?? ""} ${e.candidat_prenom ?? ""}`.toLowerCase().includes(q));
+
+  // Un candidat est gardé s'il a au moins une épreuve correspondant à la matière / session
+  const inscritsFiltres = inscrits
+    .filter(c => !q || `${c.candidat_nom} ${c.candidat_prenom} ${c.candidat_code ?? ""}`.toLowerCase().includes(q))
+    .filter(c => !fProfil || profilDe(c) === fProfil)
+    .filter(c => !fAbsents || c.epreuves.some(ep => ep.statut === "ABSENT"))
+    .filter(c => c.epreuves.some(ep =>
+      (!fMatiere || ep.matiere === fMatiere) && (!fSession || sessionParEpreuve.get(ep.id) === fSession)
+    ));
+
   const libererPlace = async (e: (typeof trous)[number]) => {
     if (e.candidat_id == null) return;
     if (!await confirm(
@@ -6541,6 +6582,62 @@ function CompactageTab({
         <div className="flex justify-center py-16"><Spinner /></div>
       ) : (
         <>
+          {/* Filtres */}
+          {(inscrits.length > 0 || trous.length > 0) && (
+            <div className="rounded-xl border bg-white shadow-sm p-3 flex flex-wrap items-end gap-3">
+              <label className="text-xs text-gray-900 space-y-1">
+                <span className="block font-medium">Candidat</span>
+                <input
+                  value={fRecherche}
+                  onChange={e => setFRecherche(e.target.value)}
+                  placeholder="Nom, prénom, code…"
+                  className="border border-black/15 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 bg-white w-48"
+                />
+              </label>
+              <label className="text-xs text-gray-900 space-y-1">
+                <span className="block font-medium">Matière</span>
+                <select value={fMatiere} onChange={e => setFMatiere(e.target.value)} className="border border-black/15 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 bg-white">
+                  <option value="">Toutes</option>
+                  {matieresJour.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </label>
+              <label className="text-xs text-gray-900 space-y-1">
+                <span className="block font-medium">Session</span>
+                <select value={fSession} onChange={e => setFSession(e.target.value as "" | "Matin" | "Après-midi")} className="border border-black/15 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 bg-white">
+                  <option value="">Toutes</option>
+                  <option value="Matin">Matin</option>
+                  <option value="Après-midi">Après-midi</option>
+                </select>
+              </label>
+              <label className="text-xs text-gray-900 space-y-1">
+                <span className="block font-medium">Motif du trou</span>
+                <select value={fMotif} onChange={e => setFMotif(e.target.value as "" | "LIBRE" | "PRERESERVEE" | "ABSENT")} className="border border-black/15 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 bg-white">
+                  <option value="">Tous</option>
+                  <option value="LIBRE">Libre</option>
+                  <option value="PRERESERVEE">Préréservé</option>
+                  <option value="ABSENT">Absent</option>
+                </select>
+              </label>
+              <label className="text-xs text-gray-900 space-y-1">
+                <span className="block font-medium">Profil</span>
+                <select value={fProfil} onChange={e => setFProfil(e.target.value as "" | "HGG" | "ESH")} className="border border-black/15 rounded-lg px-2.5 py-1.5 text-sm text-gray-900 bg-white">
+                  <option value="">Tous</option>
+                  <option value="HGG">HGG</option>
+                  <option value="ESH">ESH</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-900 cursor-pointer pb-1.5">
+                <input type="checkbox" checked={fAbsents} onChange={e => setFAbsents(e.target.checked)} />
+                Absents uniquement
+              </label>
+              {filtresActifs && (
+                <button onClick={resetFiltres} className="text-sm text-[#C62828] hover:underline pb-1.5">
+                  Réinitialiser les filtres
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Trous de la journée */}
           {trous.length === 0 ? (
             selectedDate && (
@@ -6553,6 +6650,7 @@ function CompactageTab({
               <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-200 text-sm text-amber-900 flex flex-wrap gap-x-4 gap-y-1">
                 <span className="font-semibold">{trous.length} créneau{trous.length > 1 ? "x" : ""} vide{trous.length > 1 ? "s" : ""}</span>
                 {nbAbsents > 0 && <span>dont {nbAbsents} absence{nbAbsents > 1 ? "s" : ""}</span>}
+                {filtresActifs && <span>{trousFiltres.length} affiché{trousFiltres.length > 1 ? "s" : ""}</span>}
                 <span>{freeTriplets.length} triplet{freeTriplets.length > 1 ? "s" : ""} complet{freeTriplets.length > 1 ? "s" : ""} libre{freeTriplets.length > 1 ? "s" : ""}</span>
               </div>
               <div className="overflow-x-auto">
@@ -6565,7 +6663,10 @@ function CompactageTab({
                     </tr>
                   </thead>
                   <tbody>
-                    {trous.map(e => (
+                    {trousFiltres.length === 0 && (
+                      <tr><td colSpan={6} className="px-4 py-3 text-sm text-gray-800">Aucun créneau vide ne correspond aux filtres.</td></tr>
+                    )}
+                    {trousFiltres.map(e => (
                       <tr key={e.id} className="border-t border-black/5">
                         <td className="px-4 py-2 font-mono text-gray-900">{hm(e.heure_debut)}</td>
                         <td className="px-4 py-2 text-gray-900">{e.matiere}</td>
@@ -6610,7 +6711,7 @@ function CompactageTab({
           ) : (
             <>
               <p className="text-xs text-gray-700">
-                {inscrits.length} candidat(s) inscrit(s) le{" "}
+                {filtresActifs ? `${inscritsFiltres.length} sur ` : ""}{inscrits.length} candidat(s) inscrit(s) le{" "}
                 <span className="font-medium text-gray-800 capitalize">{fmt_date(selectedDate)}</span>
               </p>
 
@@ -6626,7 +6727,10 @@ function CompactageTab({
                     </tr>
                   </thead>
                   <tbody>
-                    {inscrits.map((c, i) => {
+                    {inscritsFiltres.length === 0 && (
+                      <tr><td colSpan={allMatieres.length + 2} className="px-4 py-3 text-sm text-gray-800">Aucun candidat ne correspond aux filtres.</td></tr>
+                    )}
+                    {inscritsFiltres.map((c, i) => {
                       const slotByMatiere: Record<string, TripletEpreuveGestion> = {};
                       for (const e of c.epreuves) slotByMatiere[e.matiere] = e;
 
