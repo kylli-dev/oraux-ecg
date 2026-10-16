@@ -17,6 +17,7 @@ from app.models.planning import Planning
 from app.schemas.candidat import (
     CandidatCreate,
     CandidatCreateOut,
+    CandidatDetailOut,
     CandidatOut,
     CandidatUpdate,
 )
@@ -38,6 +39,15 @@ def list_candidats(planning_id: Optional[int] = None, db: Session = Depends(get_
     return q.order_by(Candidat.nom, Candidat.prenom).all()
 
 
+def _infos_etablissement(code_uai: str, db: Session) -> dict:
+    """Nom, ville et département de l'établissement, recopiés depuis le référentiel."""
+    from app.models.etablissement import Etablissement
+    etab = db.query(Etablissement).filter_by(code_uai=code_uai).first()
+    if not etab:
+        raise HTTPException(status_code=422, detail=f"Établissement {code_uai} introuvable dans le référentiel")
+    return dict(etablissement=etab.nom, ville_etablissement=etab.ville, departement_etablissement=etab.departement)
+
+
 @router.post("/", response_model=CandidatCreateOut, status_code=201)
 def create_candidat(body: CandidatCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """
@@ -47,7 +57,6 @@ def create_candidat(body: CandidatCreate, background_tasks: BackgroundTasks, db:
     envoyés par email (Message-type ADMISSIBILITE) que si l'admin le demande.
     """
     from app.core.auth import hash_password
-    from app.models.etablissement import Etablissement
     from app.services.email import SITE_URL, build_from_template, email_configure, send_email
 
     if not db.get(Planning, body.planning_id):
@@ -66,10 +75,7 @@ def create_candidat(body: CandidatCreate, background_tasks: BackgroundTasks, db:
         )
     data = body.model_dump(exclude={"envoyer_identifiants"})
     if body.code_uai:
-        etab = db.query(Etablissement).filter_by(code_uai=body.code_uai).first()
-        if not etab:
-            raise HTTPException(status_code=422, detail=f"Établissement {body.code_uai} introuvable dans le référentiel")
-        data.update(etablissement=etab.nom, ville_etablissement=etab.ville, departement_etablissement=etab.departement)
+        data.update(_infos_etablissement(body.code_uai, db))
     if not data.get("classe"):
         data["classe"] = f"ECG - Maths approfondies et {body.profil}"
 
@@ -94,7 +100,7 @@ def create_candidat(body: CandidatCreate, background_tasks: BackgroundTasks, db:
     )
 
 
-@router.get("/{candidat_id}", response_model=CandidatOut)
+@router.get("/{candidat_id}", response_model=CandidatDetailOut)
 def get_candidat(candidat_id: int, db: Session = Depends(get_db)):
     c = db.get(Candidat, candidat_id)
     if not c:
@@ -102,13 +108,39 @@ def get_candidat(candidat_id: int, db: Session = Depends(get_db)):
     return c
 
 
-@router.put("/{candidat_id}", response_model=CandidatOut)
+@router.put("/{candidat_id}", response_model=CandidatDetailOut)
 def update_candidat(candidat_id: int, body: CandidatUpdate, db: Session = Depends(get_db)):
+    """
+    Modifie la fiche d'un candidat (onglet Candidats → Liste). Mêmes contrôles qu'à l'ajout.
+    Si l'email change et servait d'identifiant, le login suit. L'établissement n'est
+    recalculé que s'il change : un établissement importé absent du référentiel est conservé.
+    """
     c = db.get(Candidat, candidat_id)
     if not c:
         raise HTTPException(status_code=404, detail="Candidat not found")
-    for field, value in body.model_dump(exclude_unset=True).items():
+
+    ancien_email = (c.email or "").strip().lower()
+    if body.email != ancien_email:
+        doublon = db.query(Candidat).filter(
+            Candidat.planning_id == c.planning_id, Candidat.id != c.id, func.lower(Candidat.email) == body.email,
+        ).first()
+        if doublon:
+            raise HTTPException(status_code=409, detail=f"Un candidat avec l'adresse {body.email} existe déjà dans ce planning")
+    login_suit = not c.login or c.login.strip().lower() == ancien_email
+    if login_suit and body.email != (c.login or "").strip().lower():
+        if db.query(Candidat).filter(Candidat.id != c.id, func.lower(Candidat.login) == body.email).first():
+            raise HTTPException(status_code=409, detail=f"L'identifiant {body.email} est déjà utilisé par un autre candidat")
+
+    data = body.model_dump()
+    if (body.code_uai or None) != (c.code_uai or None):
+        data.update(_infos_etablissement(body.code_uai, db) if body.code_uai
+                    else dict(etablissement=None, ville_etablissement=None, departement_etablissement=None))
+    if not data.get("classe"):
+        data["classe"] = f"ECG - Maths approfondies et {body.profil}"
+    for field, value in data.items():
         setattr(c, field, value)
+    if login_suit:
+        c.login = body.email
     db.commit()
     db.refresh(c)
     return c

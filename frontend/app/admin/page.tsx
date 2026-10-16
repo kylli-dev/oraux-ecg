@@ -5357,6 +5357,7 @@ function CandidatsSection() {
   const [searchCand, setSearchCand] = useState("");
   const [filterProfil, setFilterProfil] = useState<"" | "HGG" | "ESH">("");
   const [selectedCandId, setSelectedCandId] = useState<number | null>(null);
+  const [editCandId, setEditCandId] = useState<number | null>(null);
 
   useEffect(() => {
     get<Planning[]>("plannings/")
@@ -5554,6 +5555,13 @@ function CandidatsSection() {
                           <td className="px-5 py-3.5 text-right">
                             <div className="flex items-center justify-end gap-2">
                               <button
+                                onClick={(e) => { e.stopPropagation(); setEditCandId(c.id); }}
+                                className="inline-flex items-center gap-1 text-xs px-2.5 py-1 text-gray-900 border border-black/15 rounded-lg hover:bg-black/[0.03] transition"
+                              >
+                                <Edit2 className="h-3 w-3" />
+                                Modifier
+                              </button>
+                              <button
                                 onClick={(e) => { e.stopPropagation(); setSelectedCandId(c.id); }}
                                 className="text-xs px-2.5 py-1 text-[#C62828] border border-[#C62828]/30 rounded-lg hover:bg-red-50 transition"
                               >
@@ -5616,6 +5624,17 @@ function CandidatsSection() {
         )}
       />
 
+      <Modal open={editCandId !== null} onClose={() => setEditCandId(null)} title="Modifier le candidat" wide>
+        {editCandId !== null && (
+          <CreateCandidatForm
+            key={editCandId}
+            plannings={plannings}
+            candidatId={editCandId}
+            onSuccess={() => { setEditCandId(null); loadCandidats(); }}
+          />
+        )}
+      </Modal>
+
       <Modal open={showCreate} onClose={() => { setShowCreate(false); loadCandidats(); }} title="Ajouter un candidat" wide>
         <CreateCandidatForm
           plannings={plannings}
@@ -5639,15 +5658,28 @@ function CandidatsSection() {
   );
 }
 
+// Formulaire d'ajout — et de modification quand candidatId est fourni (onglet Liste) :
+// mêmes champs, mêmes contrôles, pré-rempli avec la fiche du candidat.
+type CandidatDetail = {
+  id: number; planning_id: number; nom: string; prenom: string; email: string;
+  profil: string | null; classe: string | null; civilite: string | null; code_candidat: string | null;
+  numero_ine: string | null; date_naissance: string | null; tel_portable: string | null;
+  qualite: string | null; handicape: boolean | null; code_uai: string | null; etablissement: string | null;
+};
+
 function CreateCandidatForm({
   plannings,
   defaultPlanningId,
   onSuccess,
+  candidatId,
 }: {
   plannings: Planning[];
   defaultPlanningId?: number;
   onSuccess: () => void;
+  candidatId?: number;
 }) {
+  const toast = useToast();
+  const edition = candidatId != null;
   const [form, setForm] = useState({
     planning_id: defaultPlanningId ?? (plannings[0]?.id ?? 0),
     civilite: "",
@@ -5670,10 +5702,43 @@ function CreateCandidatForm({
   const [error, setError] = useState("");
   // Identifiants renvoyés par le serveur : le mot de passe n'est montré qu'une seule fois
   const [cree, setCree] = useState<{ nom: string; login: string; password: string; envoye: boolean } | null>(null);
+  // Établissement importé absent du référentiel : affiché tel quel, conservé s'il n'est pas changé
+  const [etabActuel, setEtabActuel] = useState<{ code_uai: string; nom: string } | null>(null);
+  const [chargement, setChargement] = useState(edition);
 
   useEffect(() => {
     get<EtablissementItem[]>("parametrages/etablissements/").then(setEtablissements).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (candidatId == null) return;
+    get<CandidatDetail>(`candidats/${candidatId}`)
+      .then((c) => {
+        const cl = (c.classe ?? "").toUpperCase();
+        const profil = (c.profil ?? "").toUpperCase() || (cl.includes("ESH") ? "ESH" : cl.includes("HGG") ? "HGG" : "");
+        const dn = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(c.date_naissance ?? "");
+        setForm((f) => ({
+          ...f,
+          planning_id: c.planning_id,
+          civilite: c.civilite ?? "",
+          nom: c.nom,
+          prenom: c.prenom,
+          email: c.email,
+          profil: profil === "HGG" || profil === "ESH" ? profil : "",
+          classe: c.classe ?? "",
+          code_candidat: c.code_candidat ?? "",
+          numero_ine: c.numero_ine ?? "",
+          date_naissance: dn ? `${dn[3]}-${dn[2]}-${dn[1]}` : "",
+          tel_portable: c.tel_portable ?? "",
+          qualite: c.qualite ?? "",
+          handicape: !!c.handicape,
+          code_uai: c.code_uai ?? "",
+        }));
+        if (c.code_uai) setEtabActuel({ code_uai: c.code_uai, nom: c.etablissement ?? c.code_uai });
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setChargement(false));
+  }, [candidatId]);
 
   const setF = (k: string, v: string | number | boolean) => setForm((f) => ({ ...f, [k]: v }));
   const emailValide = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim());
@@ -5684,6 +5749,14 @@ function CreateCandidatForm({
     setError("");
     try {
       const [a, m, j] = form.date_naissance ? form.date_naissance.split("-") : [];
+      if (edition) {
+        const { planning_id: _p, envoyer_identifiants: _e, ...fiche } = form;
+        void _p; void _e;
+        await put(`candidats/${candidatId}`, { ...fiche, date_naissance: form.date_naissance ? `${j}/${m}/${a}` : "" });
+        toast.success("Fiche du candidat enregistrée");
+        onSuccess();
+        return;
+      }
       const res = await post<{ login: string; password_provisoire: string; email_identifiants_envoye: boolean }>("candidats/", {
         ...form,
         date_naissance: form.date_naissance ? `${j}/${m}/${a}` : "",
@@ -5700,6 +5773,8 @@ function CreateCandidatForm({
       setLoading(false);
     }
   };
+
+  if (chargement) return <div className="flex justify-center py-10"><Spinner /></div>;
 
   if (cree) {
     return (
@@ -5733,13 +5808,15 @@ function CreateCandidatForm({
 
   return (
     <div className="space-y-4">
-      <Field label="Planning">
-        <Select value={form.planning_id} onChange={(e) => setF("planning_id", Number(e.target.value))}>
-          {plannings.map((p) => (
-            <option key={p.id} value={p.id}>{p.nom}</option>
-          ))}
-        </Select>
-      </Field>
+      {!edition && (
+        <Field label="Planning">
+          <Select value={form.planning_id} onChange={(e) => setF("planning_id", Number(e.target.value))}>
+            {plannings.map((p) => (
+              <option key={p.id} value={p.id}>{p.nom}</option>
+            ))}
+          </Select>
+        </Field>
+      )}
       <div className="grid grid-cols-[110px_1fr_1fr] gap-3">
         <Field label="Civilité">
           <Select value={form.civilite} onChange={(e) => setF("civilite", e.target.value)}>
@@ -5797,6 +5874,9 @@ function CreateCandidatForm({
         <Field label="Établissement">
           <Select value={form.code_uai} onChange={(e) => setF("code_uai", e.target.value)}>
             <option value="">—</option>
+            {etabActuel && !etablissements.some((et) => et.code_uai === etabActuel.code_uai) && (
+              <option value={etabActuel.code_uai}>{etabActuel.nom} (hors référentiel)</option>
+            )}
             {etablissements.map((et) => (
               <option key={et.id} value={et.code_uai}>{et.nom}{et.ville ? ` (${et.ville})` : ""}</option>
             ))}
@@ -5807,14 +5887,16 @@ function CreateCandidatForm({
         <input type="checkbox" checked={form.handicape} onChange={(e) => setF("handicape", e.target.checked)} />
         Candidat en situation de handicap
       </label>
-      <label className="flex items-center gap-2 text-sm text-gray-900 cursor-pointer">
-        <input type="checkbox" checked={form.envoyer_identifiants} onChange={(e) => setF("envoyer_identifiants", e.target.checked)} />
-        Envoyer les identifiants par e-mail au candidat (modèle « Admissibilité »)
-      </label>
+      {!edition && (
+        <label className="flex items-center gap-2 text-sm text-gray-900 cursor-pointer">
+          <input type="checkbox" checked={form.envoyer_identifiants} onChange={(e) => setF("envoyer_identifiants", e.target.checked)} />
+          Envoyer les identifiants par e-mail au candidat (modèle « Admissibilité »)
+        </label>
+      )}
       <ErrorMsg msg={error} />
       <Btn
-        label={loading ? "Création…" : "Créer le candidat"}
-        icon={UserPlus}
+        label={loading ? (edition ? "Enregistrement…" : "Création…") : edition ? "Enregistrer" : "Créer le candidat"}
+        icon={edition ? Save : UserPlus}
         onClick={submit}
         disabled={loading || !pret}
       />

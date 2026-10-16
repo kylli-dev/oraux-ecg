@@ -18,12 +18,12 @@ def _vide_en_none(v):
     return v
 
 
-class CandidatCreate(BaseModel):
+class CandidatFiche(BaseModel):
     """
-    Ajout manuel d'un candidat (hors import). Le profil est obligatoire : sans lui (ni
-    classe), le candidat se verrait proposer à la fois les triplets ESH et HGG.
+    Informations saisissables d'un candidat (ajout manuel et modification). Le profil est
+    obligatoire : sans lui (ni classe), le candidat se verrait proposer à la fois les
+    triplets ESH et HGG.
     """
-    planning_id: int
     nom: str = Field(min_length=1, max_length=100)
     prenom: str = Field(min_length=1, max_length=100)
     email: str = Field(min_length=3, max_length=255)
@@ -37,7 +37,6 @@ class CandidatCreate(BaseModel):
     qualite: Optional[Literal["Boursier", "Non boursier"]] = None
     handicape: bool = False
     code_uai: Optional[str] = Field(default=None, max_length=20)  # établissement du référentiel
-    envoyer_identifiants: bool = False  # email Message-type ADMISSIBILITE
 
     @field_validator("classe", "civilite", "code_candidat", "numero_ine", "date_naissance",
                      "tel_portable", "qualite", "code_uai", mode="before")
@@ -69,12 +68,14 @@ class CandidatCreate(BaseModel):
         return v
 
 
-class CandidatUpdate(BaseModel):
-    nom: Optional[str] = Field(default=None, min_length=1, max_length=100)
-    prenom: Optional[str] = Field(default=None, min_length=1, max_length=100)
-    email: Optional[str] = Field(default=None, min_length=1, max_length=255)
-    statut: Optional[str] = None
-    profil: Optional[str] = Field(default=None, max_length=10)
+class CandidatCreate(CandidatFiche):
+    """Ajout manuel d'un candidat (hors import)."""
+    planning_id: int
+    envoyer_identifiants: bool = False  # email Message-type ADMISSIBILITE
+
+
+class CandidatUpdate(CandidatFiche):
+    """Modification de la fiche (onglet Candidats → Liste) : remplace toutes les informations."""
 
 
 class CandidatOut(BaseModel):
@@ -91,6 +92,20 @@ class CandidatOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class CandidatDetailOut(CandidatOut):
+    """Fiche complète, pour pré-remplir le formulaire de modification."""
+    login: Optional[str] = None
+    civilite: Optional[str] = None
+    code_candidat: Optional[str] = None
+    numero_ine: Optional[str] = None
+    date_naissance: Optional[str] = None
+    tel_portable: Optional[str] = None
+    qualite: Optional[str] = None
+    handicape: Optional[bool] = None
+    code_uai: Optional[str] = None
+    etablissement: Optional[str] = None
 
 
 class CandidatCreateOut(CandidatOut):
