@@ -5427,7 +5427,7 @@ function CandidatsSection() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="w-full">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-xl font-semibold">Candidats</h2>
@@ -13711,7 +13711,7 @@ export default function AdminPage() {
         </div>
 
         <main className="flex-1 overflow-auto">
-          <div className={`${(section === "plannings" && selectedPlanning) || section === "salles" ? "max-w-none" : "max-w-6xl"} mx-auto px-4 md:px-8 py-8`}>
+          <div className={`${(section === "plannings" && selectedPlanning) || section === "salles" || section === "candidats" ? "max-w-none" : "max-w-6xl"} mx-auto px-4 md:px-8 py-8`}>
             {section === "plannings" && !selectedPlanning && (
               <PlanningsSection onSelect={setSelectedPlanning} />
             )}
