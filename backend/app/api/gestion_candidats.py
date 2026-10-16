@@ -845,6 +845,7 @@ def list_liste_attente_admin(planning_id: int, db: Session = Depends(get_db)):
     Retourne tous les candidats en liste d'attente pour ce planning,
     avec les dates pour lesquelles ils ont indiqué des disponibilités.
     """
+    from app.api.portal import _profil_effectif  # import local, comme _matiere_exclue
     # Les candidats déjà inscrits (inscription ACTIVE) sont exclus : ils ne sont plus en
     # attente. Protège aussi contre les entrées restées en base avant que l'inscription
     # depuis le portail ne vide la liste d'attente du candidat.
@@ -882,7 +883,10 @@ def list_liste_attente_admin(planning_id: int, db: Session = Depends(get_db)):
             email=c.email,
             code_candidat=c.code_candidat,
             civilite=c.civilite,
-            profil=getattr(c, "profil", None),
+            # Profil effectif (profil, sinon déduit de la classe « … et HGG / ESH ») : le profil
+            # est souvent vide à l'import, et l'écran Liste d'attente filtre les triplets
+            # proposés dessus — sans ce repli, un candidat HGG se voyait proposer de l'ESH.
+            profil=_profil_effectif(c) or None,
             dates=dates,
             premier_enregistrement=premier,
         ))
