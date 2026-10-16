@@ -6442,9 +6442,11 @@ function CompactageTab({
     if (selectedDate) localStorage.setItem(storageKey, selectedDate);
   }, [storageKey, selectedDate]);
   const [triplets, setTriplets] = useState<TripletDisponible[]>([]);
+  const [jour, setJour] = useState<DayViewData | null>(null);
   const [loading, setLoading] = useState(false);
   const [drawerCandidatId, setDrawerCandidatId] = useState<number | null>(null);
   const [markingAbsent, setMarkingAbsent] = useState<Set<number>>(new Set());
+  const confirm = useConfirm();
 
   const toggleAbsent = async (candidatId: number, ep: TripletEpreuveGestion) => {
     setMarkingAbsent(s => new Set(s).add(ep.id));
@@ -6469,8 +6471,11 @@ function CompactageTab({
     Promise.all([
       get<JourneeInscritItem[]>(`gestion-candidats/${planningId}/journee${dateParam}`),
       get<TripletDisponible[]>(`gestion-candidats/${planningId}/triplets`),
+      selectedDate
+        ? get<DayViewData>(`plannings/${planningId}/day?date=${selectedDate}`)
+        : Promise.resolve(null),
     ])
-      .then(([i, t]) => { setInscrits(i); setTriplets(t); })
+      .then(([i, t, d]) => { setInscrits(i); setTriplets(t); setJour(d); })
       .catch(() => toast.error("Erreur lors du chargement"))
       .finally(() => setLoading(false));
   }, [planningId, selectedDate]);
@@ -6482,6 +6487,29 @@ function CompactageTab({
 
   // Free triplets for the selected date
   const freeTriplets = triplets.filter(t => t.date === selectedDate);
+
+  // Trous de la journée = épreuves sans candidat présent : libres, préréservées, ou dont le
+  // candidat est marqué absent (l'épreuve reste « Absent » pour garder la trace, jusqu'à ce
+  // que l'admin libère la place pour la réattribuer).
+  const trous = (jour?.demi_journees ?? [])
+    .flatMap(dj => dj.epreuves.map(e => ({ ...e, session: dj.type === "MATIN" ? "Matin" : "Après-midi" })))
+    .filter(e => e.statut === "ABSENT" || ((e.statut === "LIBRE" || e.statut === "PRERESERVEE") && e.candidat_id == null))
+    .sort((a, b) => hm(a.heure_debut).localeCompare(hm(b.heure_debut)) || a.matiere.localeCompare(b.matiere, "fr"));
+  const nbAbsents = trous.filter(e => e.statut === "ABSENT").length;
+
+  const libererPlace = async (e: (typeof trous)[number]) => {
+    if (e.candidat_id == null) return;
+    if (!await confirm(
+      `Libérer la place de ${e.candidat_nom ?? ""} ${e.candidat_prenom ?? ""} (${e.matiere} à ${hm(e.heure_debut)}) ? ` +
+      "L'épreuve est retirée de son inscription et redevient Libre (visible sur le portail) ; la mention « absent » n'est plus conservée sur ce créneau.",
+      { confirmLabel: "Libérer", danger: true }
+    )) return;
+    try {
+      await post(`gestion-candidats/candidat/${e.candidat_id}/epreuve/${e.id}/retirer`, { liberer_en: "LIBRE" });
+      toast.success("Place libérée");
+      loadDay();
+    } catch (err) { toast.error(err instanceof Error ? err.message : String(err)); }
+  };
 
   const fmt_date = (d: string) =>
     new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
@@ -6513,16 +6541,62 @@ function CompactageTab({
         <div className="flex justify-center py-16"><Spinner /></div>
       ) : (
         <>
-          {/* Créneaux libres */}
-          {freeTriplets.length > 0 && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-center gap-3">
-              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-              <div className="text-xs text-amber-800">
-                <span className="font-semibold">{freeTriplets.length} triplet(s) libre(s)</span> ce jour — à attribuer pour combler les trous.
-                <span className="ml-2 text-amber-600">
-                  Heures de départ : {freeTriplets.map(t => t.heure_debut).join(", ")}
-                </span>
+          {/* Trous de la journée */}
+          {trous.length === 0 ? (
+            selectedDate && (
+              <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                Aucun trou ce jour : toutes les épreuves ont un candidat présent.
               </div>
+            )
+          ) : (
+            <div className="rounded-xl border border-amber-200 bg-white shadow-sm overflow-hidden">
+              <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-200 text-sm text-amber-900 flex flex-wrap gap-x-4 gap-y-1">
+                <span className="font-semibold">{trous.length} créneau{trous.length > 1 ? "x" : ""} vide{trous.length > 1 ? "s" : ""}</span>
+                {nbAbsents > 0 && <span>dont {nbAbsents} absence{nbAbsents > 1 ? "s" : ""}</span>}
+                <span>{freeTriplets.length} triplet{freeTriplets.length > 1 ? "s" : ""} complet{freeTriplets.length > 1 ? "s" : ""} libre{freeTriplets.length > 1 ? "s" : ""}</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left border-b">
+                      {["Heure", "Matière", "Session", "Salle", "Motif", ""].map(h => (
+                        <th key={h} className="px-4 py-2 text-xs font-semibold text-gray-900">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {trous.map(e => (
+                      <tr key={e.id} className="border-t border-black/5">
+                        <td className="px-4 py-2 font-mono text-gray-900">{hm(e.heure_debut)}</td>
+                        <td className="px-4 py-2 text-gray-900">{e.matiere}</td>
+                        <td className="px-4 py-2 text-gray-900">{e.session}</td>
+                        <td className="px-4 py-2 text-gray-900">{e.salle_intitule ?? <span className="italic text-gray-700">non assignée</span>}</td>
+                        <td className="px-4 py-2">
+                          <span className={`inline-block px-2 py-0.5 rounded-full border text-[11px] font-semibold ${statutEpreuveCls(e.statut)}`}>
+                            {e.statut === "ABSENT"
+                              ? `Absent : ${e.candidat_nom ?? ""} ${e.candidat_prenom ?? ""}`.trim()
+                              : EPREUVE_STATUT_LABEL[e.statut] ?? e.statut}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-right">
+                          {e.statut === "ABSENT" && e.candidat_id != null && (
+                            <button
+                              onClick={() => libererPlace(e)}
+                              className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-black/15 text-gray-900 hover:bg-black/[0.03] transition"
+                            >
+                              Libérer la place
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="px-4 py-2 border-t text-xs text-gray-800">
+                Pour combler un trou, ouvrez « Réaffecter » sur un candidat et déplacez son épreuve sur ce créneau.
+                Une place d&apos;absent doit d&apos;abord être libérée.
+              </p>
             </div>
           )}
 
@@ -6538,9 +6612,6 @@ function CompactageTab({
               <p className="text-xs text-gray-700">
                 {inscrits.length} candidat(s) inscrit(s) le{" "}
                 <span className="font-medium text-gray-800 capitalize">{fmt_date(selectedDate)}</span>
-                {freeTriplets.length > 0 && (
-                  <span className="ml-1 text-amber-600">— {freeTriplets.length} triplet(s) libre(s) à boucher</span>
-                )}
               </p>
 
               <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
@@ -6560,11 +6631,6 @@ function CompactageTab({
                       for (const e of c.epreuves) slotByMatiere[e.matiere] = e;
 
                       const hasAbsence = c.epreuves.some(ep => ep.statut === "ABSENT");
-                      // Conflit = un créneau actif (non absent) chevauche un triplet libre
-                      const hasConflict = c.epreuves.some(ep =>
-                        ep.statut !== "ABSENT" &&
-                        freeTriplets.some(t => t.epreuves.some(te => te.heure_debut === ep.heure_debut && te.matiere === ep.matiere))
-                      );
 
                       return (
                         <tr
@@ -6626,13 +6692,9 @@ function CompactageTab({
                           <td className="px-4 py-3 text-right">
                             <button
                               onClick={() => setDrawerCandidatId(c.candidat_id)}
-                              className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition ${
-                                hasConflict
-                                  ? "text-amber-700 border-amber-300 bg-amber-50 hover:bg-amber-100"
-                                  : "text-[#C62828] border-[#C62828]/30 hover:bg-red-50"
-                              }`}
+                              className="text-xs px-3 py-1.5 rounded-lg border font-medium transition text-[#C62828] border-[#C62828]/30 hover:bg-red-50"
                             >
-                              {hasConflict ? "⚠ Réaffecter" : "Réaffecter"}
+                              Réaffecter
                             </button>
                           </td>
                         </tr>
@@ -6642,11 +6704,6 @@ function CompactageTab({
                 </table>
               </div>
 
-              {/* Legend */}
-              <p className="text-[11px] text-gray-700 flex items-center gap-1.5">
-                <span className="inline-block w-3 h-3 bg-amber-100 border border-amber-300 rounded-sm" />
-                Le bouton <strong>⚠ Réaffecter</strong> indique que ce candidat occupe un créneau dont l&apos;heure est aussi libre — potentiellement réaffectable.
-              </p>
             </>
           )}
         </>
