@@ -1836,7 +1836,6 @@ function PlanningDaySection({
   journeeTypes: JourneeType[];
   onBack: () => void;
 }) {
-  const matieres = useMatieres();
   const [viewMode, setViewMode] = useState<"journee" | "tableau" | "triplets">("tableau");
   const [daySubView, setDaySubView] = useState<"triplets" | "creneaux">("triplets");
   const [date, setDate] = useState(planning.date_debut);
@@ -2014,7 +2013,7 @@ function PlanningDaySection({
                     key={dj.id}
                     dj={dj}
                     planningId={planning.id}
-                    matieres={matieres}
+                    date={dayData.date}
                     onRegen={() => setRegenDj(dj)}
                     onRefresh={loadDay}
                   />
@@ -2665,46 +2664,55 @@ function TripletsAdminView({ planningId, planningNom }: { planningId: number; pl
 function DemiJourneeCard({
   dj,
   planningId,
-  matieres,
+  date,
   onRegen,
   onRefresh,
 }: {
   dj: DemiJournee;
   planningId: number;
-  matieres: MatiereItem[];
+  date: string;
   onRegen: () => void;
   onRefresh: () => void;
 }) {
   const toast = useToast();
   const [addOpen, setAddOpen] = useState(false);
-  const [newMatiere, setNewMatiere] = useState("");
-  const [newDebut, setNewDebut] = useState("");
+  const [modeles, setModeles] = useState<TripletDisponible[] | null>(null);
+  const [modeleKey, setModeleKey] = useState("");
   const [adding, setAdding] = useState(false);
 
-  // Durée en minutes déduite des épreuves existantes de la même matière
-  function dureeMatiere(matiere: string): number | null {
-    const ep = dj.epreuves.find((e) => e.matiere === matiere);
-    if (!ep) return null;
-    const [dh, dm] = ep.heure_debut.split(":").map(Number);
-    const [fh, fm] = ep.heure_fin.split(":").map(Number);
-    return (fh * 60 + fm) - (dh * 60 + dm);
-  }
+  // « + Triplet » : on ne crée jamais une épreuve isolée — une épreuve à une heure nouvelle
+  // changerait la liste des heures de la journée, donc toute la rotation des triplets. On
+  // duplique un triplet existant (salle parallèle) : mêmes matières, mêmes heures.
+  const debutDj = hm(dj.heure_debut), finDj = hm(dj.heure_fin);
+  const compo = (t: TripletDisponible) => t.epreuves.map((e) => `${e.matiere} ${e.heure_debut}`).join(" · ");
+  const ouvrirAjout = async () => {
+    if (addOpen) { setAddOpen(false); return; }
+    setAddOpen(true);
+    setModeles(null);
+    try {
+      const ts = await get<TripletDisponible[]>(`gestion-candidats/${planningId}/triplets?tous=1`);
+      // Triplets réels (pas INCOMPLET) commençant dans cette demi-journée, une fois par composition
+      const vus = new Set<string>();
+      const liste = ts
+        .filter((t) => t.date === date && t.type_slot !== "INCOMPLET" && t.epreuves.every((e) => e.id > 0))
+        .filter((t) => t.heure_debut >= debutDj && t.heure_debut < finDj)
+        .filter((t) => { const k = compo(t); if (vus.has(k)) return false; vus.add(k); return true; })
+        .sort((a, b) => a.heure_debut.localeCompare(b.heure_debut) || compo(a).localeCompare(compo(b), "fr"));
+      setModeles(liste);
+      setModeleKey(liste[0] ? compo(liste[0]) : "");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+      setModeles([]);
+    }
+  };
 
-  function addMinutes(hhmm: string, mins: number): string {
-    const [h, m] = hhmm.split(":").map(Number);
-    const total = h * 60 + m + mins;
-    return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
-  }
-
-  const duree = newMatiere ? dureeMatiere(newMatiere) : null;
-  const newFin = duree !== null && newDebut ? addMinutes(newDebut, duree) : "";
-
-  const handleAddEpreuve = async () => {
-    if (!newMatiere || !newDebut || !newFin) return;
+  const handleAddTriplet = async () => {
+    const modele = modeles?.find((t) => compo(t) === modeleKey);
+    if (!modele) return;
     setAdding(true);
     try {
-      await post(`epreuves/`, { demi_journee_id: dj.id, matiere: newMatiere, heure_debut: newDebut, heure_fin: newFin, statut: "LIBRE" });
-      setNewMatiere(""); setNewDebut("");
+      await post(`epreuves/dupliquer-triplet`, { epreuve_ids: modele.epreuves.map((e) => e.id) });
+      toast.success("Triplet ajouté — attribuez-lui des salles d'examen différentes");
       setAddOpen(false);
       onRefresh();
     } catch (e: unknown) {
@@ -2750,7 +2758,7 @@ function DemiJourneeCard({
           )}
         </div>
         <div className="flex items-center gap-1">
-          <Btn label="+ Créneau" icon={Plus} onClick={() => setAddOpen(o => !o)} small variant="ghost" />
+          <Btn label="+ Triplet" icon={Plus} onClick={ouvrirAjout} small variant="ghost" />
           <Btn label="Régénérer" icon={RefreshCw} onClick={onRegen} small variant="ghost" />
         </div>
       </div>
@@ -2815,44 +2823,45 @@ function DemiJourneeCard({
         </div>
       )}
 
-      {/* Formulaire ajout créneau */}
+      {/* Formulaire ajout triplet (duplication d'un triplet existant) */}
       {addOpen && (
-        <div className="px-4 py-3 border-t bg-gray-50/60">
-          <p className="text-xs font-semibold text-gray-800 mb-2">Nouveau créneau</p>
-          <div className="flex items-center gap-2 flex-wrap">
-            <select
-              value={newMatiere}
-              onChange={(e) => setNewMatiere(e.target.value)}
-              className="text-sm border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-gray-300"
-            >
-              <option value="">Matière…</option>
-              {matieres.filter((m) => m.active).map((m) => (
-                <option key={m.id} value={m.intitule}>{m.intitule}</option>
-              ))}
-            </select>
-            <input
-              type="time"
-              value={newDebut}
-              onChange={(e) => setNewDebut(e.target.value)}
-              className="text-sm border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-gray-300"
-            />
-            {newFin ? (
-              <span className="text-xs text-gray-700 font-mono">→ {newFin} <span className="text-gray-700">({duree} min)</span></span>
-            ) : newMatiere && !duree ? (
-              <span className="text-xs text-amber-500">Aucune épreuve de référence — durée inconnue</span>
-            ) : null}
-            <button
-              onClick={handleAddEpreuve}
-              disabled={adding || !newMatiere || !newDebut || !newFin}
-              className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white bg-[#C62828] hover:bg-[#B71C1C] disabled:opacity-40 flex items-center gap-1.5"
-            >
-              {adding && <Loader2 className="h-3 w-3 animate-spin" />}
-              Créer
-            </button>
-            <button onClick={() => setAddOpen(false)} className="text-xs text-gray-700 hover:text-black">
-              Annuler
-            </button>
-          </div>
+        <div className="px-4 py-3 border-t bg-gray-50/60 space-y-2">
+          <p className="text-xs font-semibold text-gray-900">Nouveau triplet en parallèle</p>
+          {modeles === null ? (
+            <Spinner />
+          ) : modeles.length === 0 ? (
+            <p className="text-xs text-gray-800">
+              Aucun triplet ne commence dans cette demi-journée : utilisez « Régénérer » ou un gabarit.
+            </p>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 flex-wrap">
+                <select
+                  value={modeleKey}
+                  onChange={(e) => setModeleKey(e.target.value)}
+                  className="text-sm border rounded-lg px-2 py-1.5 bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-300"
+                >
+                  {modeles.map((t) => <option key={compo(t)} value={compo(t)}>{compo(t)}</option>)}
+                </select>
+                <button
+                  onClick={handleAddTriplet}
+                  disabled={adding || !modeleKey}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white bg-[#C62828] hover:bg-[#B71C1C] disabled:opacity-40 flex items-center gap-1.5"
+                >
+                  {adding && <Loader2 className="h-3 w-3 animate-spin" />}
+                  Créer
+                </button>
+                <button onClick={() => setAddOpen(false)} className="text-xs text-gray-700 hover:text-black">
+                  Annuler
+                </button>
+              </div>
+              <p className="text-xs text-gray-800">
+                Crée une épreuve libre par matière, aux mêmes heures que le triplet choisi : les heures de la journée
+                ne changent pas, donc les autres triplets restent identiques. Pensez ensuite à attribuer des salles
+                d&apos;examen différentes de celles du triplet d&apos;origine.
+              </p>
+            </>
+          )}
         </div>
       )}
     </div>

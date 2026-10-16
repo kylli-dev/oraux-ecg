@@ -53,6 +53,52 @@ def create_epreuve(body: EpreuveCreate, db: Session = Depends(get_db)):
     return e
 
 
+class DupliquerTripletIn(BaseModel):
+    epreuve_ids: List[int]
+
+
+@router.post("/dupliquer-triplet", response_model=List[EpreuveOut], status_code=201)
+def dupliquer_triplet(body: DupliquerTripletIn, db: Session = Depends(get_db)):
+    """
+    Ajoute un triplet en parallèle d'un triplet existant : une copie LIBRE de chacune de ses
+    épreuves (même demi-journée, matière, horaires, préparation). Les heures de la journée
+    restent inchangées, donc la rotation qui forme les triplets n'est pas recalculée — c'est
+    pourquoi on n'autorise plus l'ajout d'une épreuve isolée à une heure quelconque.
+    La salle d'examen est laissée vide : une copie dans la même salle ne compterait pas comme
+    une place supplémentaire (voir _partition_par_profil) — l'admin en attribue une autre.
+    Tout ou rien : les copies sont créées dans une seule transaction.
+    """
+    ids = list(dict.fromkeys(body.epreuve_ids))
+    if len(ids) < 2:
+        raise HTTPException(status_code=422, detail="Un triplet comporte au moins 2 épreuves")
+    originaux = db.query(Epreuve).filter(Epreuve.id.in_(ids)).all()
+    if len(originaux) != len(ids):
+        raise HTTPException(status_code=404, detail="Épreuve introuvable")
+    djs = {e.demi_journee_id: db.get(DemiJournee, e.demi_journee_id) for e in originaux}
+    if len({(dj.planning_id, dj.date) for dj in djs.values()}) != 1:
+        raise HTTPException(status_code=422, detail="Les épreuves d'un triplet doivent être du même planning et du même jour")
+    if len({e.matiere for e in originaux}) != len(originaux):
+        raise HTTPException(status_code=422, detail="Un triplet ne peut pas contenir deux fois la même matière")
+
+    copies = []
+    for o in originaux:
+        c = Epreuve(
+            demi_journee_id=o.demi_journee_id,
+            matiere=o.matiere,
+            heure_debut=o.heure_debut,
+            heure_fin=o.heure_fin,
+            preparation_minutes=o.preparation_minutes,
+            salle_preparation_id=o.salle_preparation_id,
+            statut="LIBRE",
+        )
+        db.add(c)
+        copies.append(c)
+    db.commit()
+    for c in copies:
+        db.refresh(c)
+    return sorted(copies, key=lambda c: c.heure_debut)
+
+
 @router.get("/{epreuve_id}", response_model=EpreuveOut)
 def get_epreuve(epreuve_id: int, db: Session = Depends(get_db)):
     e = db.get(Epreuve, epreuve_id)
