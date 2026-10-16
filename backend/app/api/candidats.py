@@ -1,6 +1,9 @@
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+import secrets
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.admin_guard import require_admin
@@ -10,8 +13,10 @@ from app.models.epreuve import Epreuve
 from app.models.inscription import Inscription, InscriptionEpreuve
 from app.models.liste_attente import ListeAttente
 from app.models.note import Note
+from app.models.planning import Planning
 from app.schemas.candidat import (
     CandidatCreate,
+    CandidatCreateOut,
     CandidatOut,
     CandidatUpdate,
 )
@@ -33,13 +38,60 @@ def list_candidats(planning_id: Optional[int] = None, db: Session = Depends(get_
     return q.order_by(Candidat.nom, Candidat.prenom).all()
 
 
-@router.post("/", response_model=CandidatOut, status_code=201)
-def create_candidat(body: CandidatCreate, db: Session = Depends(get_db)):
-    c = Candidat(**body.model_dump())
+@router.post("/", response_model=CandidatCreateOut, status_code=201)
+def create_candidat(body: CandidatCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """
+    Ajout manuel d'un candidat. Comme l'import Excel : login = email et mot de passe
+    provisoire (renvoyé une seule fois), pour que le candidat puisse se connecter au portail.
+    L'établissement est recopié depuis le référentiel (code UAI). Les identifiants ne sont
+    envoyés par email (Message-type ADMISSIBILITE) que si l'admin le demande.
+    """
+    from app.core.auth import hash_password
+    from app.models.etablissement import Etablissement
+    from app.services.email import SITE_URL, build_from_template, email_configure, send_email
+
+    if not db.get(Planning, body.planning_id):
+        raise HTTPException(status_code=404, detail="Planning introuvable")
+    if db.query(Candidat).filter(Candidat.planning_id == body.planning_id, func.lower(Candidat.email) == body.email).first():
+        raise HTTPException(status_code=409, detail=f"Un candidat avec l'adresse {body.email} existe déjà dans ce planning")
+    if db.query(Candidat).filter(func.lower(Candidat.login) == body.email).first():
+        raise HTTPException(
+            status_code=409,
+            detail=f"L'identifiant {body.email} est déjà utilisé par un candidat d'un autre planning",
+        )
+    if body.envoyer_identifiants and not email_configure():
+        raise HTTPException(
+            status_code=503,
+            detail="L'envoi d'emails n'est pas configuré sur le serveur : décochez « Envoyer les identifiants par e-mail »",
+        )
+    data = body.model_dump(exclude={"envoyer_identifiants"})
+    if body.code_uai:
+        etab = db.query(Etablissement).filter_by(code_uai=body.code_uai).first()
+        if not etab:
+            raise HTTPException(status_code=422, detail=f"Établissement {body.code_uai} introuvable dans le référentiel")
+        data.update(etablissement=etab.nom, ville_etablissement=etab.ville, departement_etablissement=etab.departement)
+    if not data.get("classe"):
+        data["classe"] = f"ECG - Maths approfondies et {body.profil}"
+
+    mot_de_passe = secrets.token_urlsafe(8)
+    c = Candidat(**data, login=body.email, password_hash=hash_password(mot_de_passe))
     db.add(c)
     db.commit()
     db.refresh(c)
-    return c
+
+    envoye = False
+    if body.envoyer_identifiants:
+        message = build_from_template(db, "ADMISSIBILITE", {
+            "prenom": c.prenom, "nom": c.nom, "login": c.login, "password": mot_de_passe,
+            "url": f"{SITE_URL.rstrip('/')}/candidat",
+        })
+        if message:
+            background_tasks.add_task(send_email, c.email, *message)
+            envoye = True
+    return CandidatCreateOut(
+        **CandidatOut.model_validate(c).model_dump(),
+        login=c.login, password_provisoire=mot_de_passe, email_identifiants_envoye=envoye,
+    )
 
 
 @router.get("/{candidat_id}", response_model=CandidatOut)

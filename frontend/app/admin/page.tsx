@@ -5616,11 +5616,11 @@ function CandidatsSection() {
         )}
       />
 
-      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Ajouter un candidat">
+      <Modal open={showCreate} onClose={() => { setShowCreate(false); loadCandidats(); }} title="Ajouter un candidat" wide>
         <CreateCandidatForm
           plannings={plannings}
           defaultPlanningId={planningId !== "" ? planningId : undefined}
-          onSuccess={() => { setShowCreate(false); toast.success("Candidat ajouté"); loadCandidats(); }}
+          onSuccess={() => { setShowCreate(false); loadCandidats(); }}
         />
       </Modal>
 
@@ -5650,27 +5650,86 @@ function CreateCandidatForm({
 }) {
   const [form, setForm] = useState({
     planning_id: defaultPlanningId ?? (plannings[0]?.id ?? 0),
+    civilite: "",
     nom: "",
     prenom: "",
     email: "",
+    profil: "" as "" | "HGG" | "ESH",
+    classe: "",
+    code_candidat: "",
+    numero_ine: "",
+    date_naissance: "", // aaaa-mm-jj (champ date), converti en jj/mm/aaaa à l'envoi
+    tel_portable: "",
+    qualite: "",
+    handicape: false,
+    code_uai: "",
+    envoyer_identifiants: false,
   });
+  const [etablissements, setEtablissements] = useState<EtablissementItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // Identifiants renvoyés par le serveur : le mot de passe n'est montré qu'une seule fois
+  const [cree, setCree] = useState<{ nom: string; login: string; password: string; envoye: boolean } | null>(null);
 
-  const setF = (k: string, v: string | number) => setForm((f) => ({ ...f, [k]: v }));
+  useEffect(() => {
+    get<EtablissementItem[]>("parametrages/etablissements/").then(setEtablissements).catch(() => {});
+  }, []);
+
+  const setF = (k: string, v: string | number | boolean) => setForm((f) => ({ ...f, [k]: v }));
+  const emailValide = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim());
+  const pret = !!form.nom.trim() && !!form.prenom.trim() && emailValide && !!form.profil;
 
   const submit = async () => {
     setLoading(true);
     setError("");
     try {
-      await post("candidats/", form);
-      onSuccess();
+      const [a, m, j] = form.date_naissance ? form.date_naissance.split("-") : [];
+      const res = await post<{ login: string; password_provisoire: string; email_identifiants_envoye: boolean }>("candidats/", {
+        ...form,
+        date_naissance: form.date_naissance ? `${j}/${m}/${a}` : "",
+      });
+      setCree({
+        nom: `${form.prenom.trim()} ${form.nom.trim()}`,
+        login: res.login,
+        password: res.password_provisoire,
+        envoye: res.email_identifiants_envoye,
+      });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
   };
+
+  if (cree) {
+    return (
+      <div className="space-y-4">
+        <p className="text-sm text-gray-900">
+          <span className="font-semibold">{cree.nom}</span> a été ajouté(e). Identifiants de connexion au portail candidat :
+        </p>
+        <div className="rounded-lg border border-black/10 bg-gray-50 p-3 text-sm space-y-1">
+          <div><span className="text-gray-800">Login :</span> <span className="font-mono text-gray-900">{cree.login}</span></div>
+          <div className="flex items-center gap-2">
+            <span className="text-gray-800">Mot de passe provisoire :</span>
+            <span className="font-mono text-gray-900">{cree.password}</span>
+            <button
+              onClick={() => navigator.clipboard?.writeText(`Login : ${cree.login}\nMot de passe : ${cree.password}`)}
+              className="text-gray-800 hover:text-black"
+              title="Copier les identifiants"
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+        <p className="text-xs text-gray-800">
+          {cree.envoye
+            ? "Les identifiants ont été envoyés par e-mail au candidat (modèle « Admissibilité »)."
+            : "Notez ce mot de passe : il ne sera plus affiché. Vous pourrez en générer un nouveau dans Paramétrages."}
+        </p>
+        <Btn label="Terminer" onClick={onSuccess} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -5681,24 +5740,85 @@ function CreateCandidatForm({
           ))}
         </Select>
       </Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Nom">
+      <div className="grid grid-cols-[110px_1fr_1fr] gap-3">
+        <Field label="Civilité">
+          <Select value={form.civilite} onChange={(e) => setF("civilite", e.target.value)}>
+            <option value="">—</option>
+            <option value="M.">M.</option>
+            <option value="Mme">Mme</option>
+          </Select>
+        </Field>
+        <Field label="Nom *">
           <Input value={form.nom} onChange={(e) => setF("nom", e.target.value)} placeholder="DUPONT" />
         </Field>
-        <Field label="Prénom">
+        <Field label="Prénom *">
           <Input value={form.prenom} onChange={(e) => setF("prenom", e.target.value)} placeholder="Alice" />
         </Field>
       </div>
-      <Field label="Email">
+      <Field label="Email *" hint={form.email && !emailValide ? "Adresse email invalide" : "Sert aussi d'identifiant de connexion au portail"}>
         <Input type="email" value={form.email} onChange={(e) => setF("email", e.target.value)} placeholder="alice.dupont@exemple.fr" />
       </Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Profil *" hint="Détermine les triplets proposés (ESH ou HGG)">
+          <Select value={form.profil} onChange={(e) => setF("profil", e.target.value)}>
+            <option value="">— Choisir —</option>
+            <option value="HGG">HGG</option>
+            <option value="ESH">ESH</option>
+          </Select>
+        </Field>
+        <Field label="Classe">
+          <Input
+            value={form.classe}
+            onChange={(e) => setF("classe", e.target.value)}
+            placeholder={form.profil ? `ECG - Maths approfondies et ${form.profil}` : "ECG - Maths approfondies et …"}
+          />
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Code candidat">
+          <Input value={form.code_candidat} onChange={(e) => setF("code_candidat", e.target.value)} />
+        </Field>
+        <Field label="N° INE">
+          <Input value={form.numero_ine} onChange={(e) => setF("numero_ine", e.target.value)} />
+        </Field>
+        <Field label="Date de naissance">
+          <Input type="date" value={form.date_naissance} onChange={(e) => setF("date_naissance", e.target.value)} />
+        </Field>
+        <Field label="Téléphone portable">
+          <Input type="tel" value={form.tel_portable} onChange={(e) => setF("tel_portable", e.target.value)} />
+        </Field>
+        <Field label="Qualité">
+          <Select value={form.qualite} onChange={(e) => setF("qualite", e.target.value)}>
+            <option value="">—</option>
+            <option value="Boursier">Boursier</option>
+            <option value="Non boursier">Non boursier</option>
+          </Select>
+        </Field>
+        <Field label="Établissement">
+          <Select value={form.code_uai} onChange={(e) => setF("code_uai", e.target.value)}>
+            <option value="">—</option>
+            {etablissements.map((et) => (
+              <option key={et.id} value={et.code_uai}>{et.nom}{et.ville ? ` (${et.ville})` : ""}</option>
+            ))}
+          </Select>
+        </Field>
+      </div>
+      <label className="flex items-center gap-2 text-sm text-gray-900 cursor-pointer">
+        <input type="checkbox" checked={form.handicape} onChange={(e) => setF("handicape", e.target.checked)} />
+        Candidat en situation de handicap
+      </label>
+      <label className="flex items-center gap-2 text-sm text-gray-900 cursor-pointer">
+        <input type="checkbox" checked={form.envoyer_identifiants} onChange={(e) => setF("envoyer_identifiants", e.target.checked)} />
+        Envoyer les identifiants par e-mail au candidat (modèle « Admissibilité »)
+      </label>
       <ErrorMsg msg={error} />
       <Btn
         label={loading ? "Création…" : "Créer le candidat"}
         icon={UserPlus}
         onClick={submit}
-        disabled={loading || !form.nom || !form.prenom}
+        disabled={loading || !pret}
       />
+      {!pret && <p className="text-xs text-gray-800">* Nom, prénom, email valide et profil sont obligatoires.</p>}
     </div>
   );
 }
