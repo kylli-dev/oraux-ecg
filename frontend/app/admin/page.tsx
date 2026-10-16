@@ -7489,6 +7489,11 @@ function AffectationTab({ planningId, examinateurs }: { planningId: number; exam
   const [selectedExId, setSelectedExId] = useState<number | "">("");
   const [filterDate, setFilterDate] = useState("");
   const [filterMatiere, setFilterMatiere] = useState("");
+  const [filterSession, setFilterSession] = useState<"" | "MATIN" | "APRES_MIDI">("");
+  const [filterHeure, setFilterHeure] = useState("");
+  const [filterEtat, setFilterEtat] = useState<"" | "sans" | "avec" | "lui">("");
+  // 2ᵉ examinateur : "" = tous, "__avec" / "__sans", ou l'id d'un examinateur précis
+  const [filterEx2, setFilterEx2] = useState("");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [assigning, setAssigning] = useState(false);
   const [deassigning, setDeassigning] = useState<number | null>(null);
@@ -7538,6 +7543,15 @@ function AffectationTab({ planningId, examinateurs }: { planningId: number; exam
   const filtered = epreuves.filter((ep) => {
     if (filterMatiere && ep.matiere !== filterMatiere) return false;
     if (filterDate && ep.date !== filterDate) return false;
+    if (filterSession && ep.demi_journee_type !== filterSession) return false;
+    if (filterHeure && ep.heure_debut !== filterHeure) return false;
+    const aExaminateur = ep.examinateur_id != null || ep.examinateur2_id != null;
+    if (filterEtat === "sans" && aExaminateur) return false;
+    if (filterEtat === "avec" && !aExaminateur) return false;
+    if (filterEtat === "lui" && (selectedExId === "" || (ep.examinateur_id !== selectedExId && ep.examinateur2_id !== selectedExId))) return false;
+    if (filterEx2 === "__avec" && ep.examinateur2_id == null) return false;
+    if (filterEx2 === "__sans" && ep.examinateur2_id != null) return false;
+    if (filterEx2 && !filterEx2.startsWith("__") && ep.examinateur2_id !== Number(filterEx2)) return false;
     // If examiner selected, only show their matières
     if (selectedEx && !selectedEx.matieres.includes(ep.matiere)) return false;
     return true;
@@ -7617,7 +7631,11 @@ function AffectationTab({ planningId, examinateurs }: { planningId: number; exam
             <label className="block text-xs font-medium text-gray-800 mb-1">Examinateur</label>
             <select
               value={selectedExId}
-              onChange={(e) => { setSelectedExId(e.target.value ? Number(e.target.value) : ""); setFilterMatiere(""); }}
+              onChange={(e) => {
+                setSelectedExId(e.target.value ? Number(e.target.value) : "");
+                setFilterMatiere("");
+                if (!e.target.value) setFilterEtat((f) => (f === "lui" ? "" : f));
+              }}
               className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C62828]/30"
             >
               <option value="">— Tous les examinateurs —</option>
@@ -7655,6 +7673,70 @@ function AffectationTab({ planningId, examinateurs }: { planningId: number; exam
             </select>
           </div>
         </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-800 mb-1">Session</label>
+            <select
+              value={filterSession}
+              onChange={(e) => setFilterSession(e.target.value as "" | "MATIN" | "APRES_MIDI")}
+              className="w-full border rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#C62828]/30"
+            >
+              <option value="">Matin et après-midi</option>
+              <option value="MATIN">Matin</option>
+              <option value="APRES_MIDI">Après-midi</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-800 mb-1">Horaire</label>
+            <select
+              value={filterHeure}
+              onChange={(e) => setFilterHeure(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#C62828]/30"
+            >
+              <option value="">Tous les horaires</option>
+              {Array.from(new Set(epreuves.map((e) => e.heure_debut))).sort().map((h) => <option key={h} value={h}>{h}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-800 mb-1">Affectation</label>
+            <select
+              value={filterEtat}
+              onChange={(e) => setFilterEtat(e.target.value as "" | "sans" | "avec" | "lui")}
+              className="w-full border rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#C62828]/30"
+            >
+              <option value="">Toutes les épreuves</option>
+              <option value="sans">Sans examinateur</option>
+              <option value="avec">Avec examinateur</option>
+              <option value="lui" disabled={selectedExId === ""}>Affectées à l&apos;examinateur choisi</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-800 mb-1">2ᵉ examinateur</label>
+            <select
+              value={filterEx2}
+              onChange={(e) => setFilterEx2(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#C62828]/30"
+            >
+              <option value="">Tous</option>
+              <option value="__avec">Avec 2ᵉ examinateur</option>
+              <option value="__sans">Sans 2ᵉ examinateur</option>
+              {examinateurs.map((ex) => (
+                <option key={ex.id} value={String(ex.id)}>{ex.nom} {ex.prenom}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {(filterMatiere || filterDate || filterSession || filterHeure || filterEtat || filterEx2) && (
+          <div className="flex items-center gap-3 text-xs text-gray-800">
+            <span>{filtered.length} épreuve{filtered.length > 1 ? "s" : ""} affichée{filtered.length > 1 ? "s" : ""} sur {epreuves.length}</span>
+            <button
+              onClick={() => { setFilterMatiere(""); setFilterDate(""); setFilterSession(""); setFilterHeure(""); setFilterEtat(""); setFilterEx2(""); }}
+              className="text-[#C62828] hover:underline"
+            >
+              Réinitialiser les filtres
+            </button>
+          </div>
+        )}
 
         {filtered.length > 0 && (
           <div className="flex items-center justify-between">
@@ -8563,6 +8645,8 @@ function ExaminateursSection() {
   const [loading, setLoading] = useState(false);
   const [filterActif, setFilterActif] = useState<"tous" | "actif" | "inactif">("tous");
   const [searchEx, setSearchEx] = useState("");
+  const [filterMatiereEx, setFilterMatiereEx] = useState("");
+  const [filterEtabEx, setFilterEtabEx] = useState("");
   const [tab, setTab] = useState<"fiche" | "affectation">("fiche");
 
   useEffect(() => {
@@ -8584,14 +8668,23 @@ function ExaminateursSection() {
 
   useEffect(() => { loadExaminateurs(); }, [loadExaminateurs]);
 
+  const matieresEx = [...new Set(examinateurs.flatMap((ex) => ex.matieres))].sort((a, b) => a.localeCompare(b, "fr"));
+  const etabsEx = [...new Set(examinateurs.map((ex) => ex.etablissement).filter((e): e is string => !!e))]
+    .sort((a, b) => a.localeCompare(b, "fr"));
+  const filtresExActifs = filterActif !== "tous" || !!searchEx.trim() || !!filterMatiereEx || !!filterEtabEx;
+
   const filtered = examinateurs.filter((ex) => {
     const actifOk = filterActif === "tous" ? true
       : filterActif === "actif" ? ex.actif_planning === true
       : ex.actif_planning !== true;
     if (!actifOk) return false;
+    if (filterMatiereEx === "__aucune") { if (ex.matieres.length > 0) return false; }
+    else if (filterMatiereEx && !ex.matieres.includes(filterMatiereEx)) return false;
+    if (filterEtabEx === "__aucun") { if (ex.etablissement) return false; }
+    else if (filterEtabEx && ex.etablissement !== filterEtabEx) return false;
     if (!searchEx.trim()) return true;
     const q = searchEx.trim().toLowerCase();
-    return ex.nom.toLowerCase().includes(q) || ex.prenom.toLowerCase().includes(q);
+    return `${ex.nom} ${ex.prenom} ${ex.email} ${ex.etablissement ?? ""}`.toLowerCase().includes(q);
   });
 
   return (
@@ -8655,11 +8748,42 @@ function ExaminateursSection() {
               </div>
               <input
                 type="text"
-                placeholder="Rechercher…"
+                placeholder="Nom, e-mail, établissement…"
                 value={searchEx}
                 onChange={(e) => setSearchEx(e.target.value)}
-                className="w-full border border-black/15 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-red-300"
+                className="w-full border border-black/15 rounded-lg px-2.5 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-300"
               />
+              <select
+                value={filterMatiereEx}
+                onChange={(e) => setFilterMatiereEx(e.target.value)}
+                className="w-full border border-black/15 rounded-lg px-2 py-1.5 text-xs text-gray-900 bg-white"
+                title="Matière"
+              >
+                <option value="">Toutes les matières</option>
+                {matieresEx.map((m) => <option key={m} value={m}>{m}</option>)}
+                <option value="__aucune">— Sans matière —</option>
+              </select>
+              <select
+                value={filterEtabEx}
+                onChange={(e) => setFilterEtabEx(e.target.value)}
+                className="w-full border border-black/15 rounded-lg px-2 py-1.5 text-xs text-gray-900 bg-white"
+                title="Établissement"
+              >
+                <option value="">Tous les établissements</option>
+                {etabsEx.map((et) => <option key={et} value={et}>{et}</option>)}
+                <option value="__aucun">— Sans établissement —</option>
+              </select>
+              <div className="flex items-center justify-between text-[11px] text-gray-800">
+                <span>{filtered.length} / {examinateurs.length} examinateur{examinateurs.length > 1 ? "s" : ""}</span>
+                {filtresExActifs && (
+                  <button
+                    onClick={() => { setFilterActif("tous"); setSearchEx(""); setFilterMatiereEx(""); setFilterEtabEx(""); }}
+                    className="text-[#C62828] hover:underline"
+                  >
+                    Réinitialiser
+                  </button>
+                )}
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto divide-y">
               {loading ? <div className="p-4 text-center"><Spinner /></div> :
