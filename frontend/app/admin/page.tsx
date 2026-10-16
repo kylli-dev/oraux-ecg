@@ -2014,6 +2014,7 @@ function PlanningDaySection({
                     dj={dj}
                     planningId={planning.id}
                     date={dayData.date}
+                    epreuvesJour={dayData.demi_journees.flatMap((d) => d.epreuves)}
                     onRegen={() => setRegenDj(dj)}
                     onRefresh={loadDay}
                   />
@@ -2665,17 +2666,20 @@ function DemiJourneeCard({
   dj,
   planningId,
   date,
+  epreuvesJour,
   onRegen,
   onRefresh,
 }: {
   dj: DemiJournee;
   planningId: number;
   date: string;
+  epreuvesJour: Epreuve[];
   onRegen: () => void;
   onRefresh: () => void;
 }) {
   const toast = useToast();
-  const [addOpen, setAddOpen] = useState(false);
+  const confirm = useConfirm();
+  const [panneau, setPanneau] = useState<"ajout" | "suppression" | null>(null);
   const [modeles, setModeles] = useState<TripletDisponible[] | null>(null);
   const [modeleKey, setModeleKey] = useState("");
   const [adding, setAdding] = useState(false);
@@ -2685,9 +2689,15 @@ function DemiJourneeCard({
   // duplique un triplet existant (salle parallèle) : mêmes matières, mêmes heures.
   const debutDj = hm(dj.heure_debut), finDj = hm(dj.heure_fin);
   const compo = (t: TripletDisponible) => t.epreuves.map((e) => `${e.matiere} ${e.heure_debut}`).join(" · ");
-  const ouvrirAjout = async () => {
-    if (addOpen) { setAddOpen(false); return; }
-    setAddOpen(true);
+  // « Supprimer un triplet » : seulement si chacune de ses (matière, heure) a une épreuve en
+  // parallèle libre et sans candidat — le serveur retire cette copie, l'heure reste occupée.
+  const supprimable = (t: TripletDisponible) => t.epreuves.every((te) => {
+    const par = epreuvesJour.filter((e) => e.matiere === te.matiere && hm(e.heure_debut) === te.heure_debut);
+    return par.length >= 2 && par.some((e) => e.statut === "LIBRE" && e.candidat_id == null);
+  });
+  const ouvrir = async (mode: "ajout" | "suppression") => {
+    if (panneau === mode) { setPanneau(null); return; }
+    setPanneau(mode);
     setModeles(null);
     try {
       const ts = await get<TripletDisponible[]>(`gestion-candidats/${planningId}/triplets?tous=1`);
@@ -2696,6 +2706,7 @@ function DemiJourneeCard({
       const liste = ts
         .filter((t) => t.date === date && t.type_slot !== "INCOMPLET" && t.epreuves.every((e) => e.id > 0))
         .filter((t) => t.heure_debut >= debutDj && t.heure_debut < finDj)
+        .filter((t) => mode === "ajout" || supprimable(t))
         .filter((t) => { const k = compo(t); if (vus.has(k)) return false; vus.add(k); return true; })
         .sort((a, b) => a.heure_debut.localeCompare(b.heure_debut) || compo(a).localeCompare(compo(b), "fr"));
       setModeles(liste);
@@ -2713,7 +2724,24 @@ function DemiJourneeCard({
     try {
       await post(`epreuves/dupliquer-triplet`, { epreuve_ids: modele.epreuves.map((e) => e.id) });
       toast.success("Triplet ajouté — attribuez-lui des salles d'examen différentes");
-      setAddOpen(false);
+      setPanneau(null);
+      onRefresh();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleDeleteTriplet = async () => {
+    const modele = modeles?.find((t) => compo(t) === modeleKey);
+    if (!modele) return;
+    if (!await confirm(`Supprimer un triplet en parallèle « ${compo(modele)} » ?`, { confirmLabel: "Supprimer", danger: true })) return;
+    setAdding(true);
+    try {
+      await post(`epreuves/supprimer-triplet`, { epreuve_ids: modele.epreuves.map((e) => e.id) });
+      toast.success("Triplet supprimé");
+      setPanneau(null);
       onRefresh();
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : String(e));
@@ -2758,7 +2786,8 @@ function DemiJourneeCard({
           )}
         </div>
         <div className="flex items-center gap-1">
-          <Btn label="+ Triplet" icon={Plus} onClick={ouvrirAjout} small variant="ghost" />
+          <Btn label="+ Triplet" icon={Plus} onClick={() => ouvrir("ajout")} small variant="ghost" />
+          <Btn label="Supprimer un triplet" icon={Trash2} onClick={() => ouvrir("suppression")} small variant="ghost" />
           <Btn label="Régénérer" icon={RefreshCw} onClick={onRegen} small variant="ghost" />
         </div>
       </div>
@@ -2823,15 +2852,19 @@ function DemiJourneeCard({
         </div>
       )}
 
-      {/* Formulaire ajout triplet (duplication d'un triplet existant) */}
-      {addOpen && (
+      {/* Panneau ajout / suppression d'un triplet en parallèle */}
+      {panneau && (
         <div className="px-4 py-3 border-t bg-gray-50/60 space-y-2">
-          <p className="text-xs font-semibold text-gray-900">Nouveau triplet en parallèle</p>
+          <p className="text-xs font-semibold text-gray-900">
+            {panneau === "ajout" ? "Nouveau triplet en parallèle" : "Supprimer un triplet en parallèle"}
+          </p>
           {modeles === null ? (
             <Spinner />
           ) : modeles.length === 0 ? (
             <p className="text-xs text-gray-800">
-              Aucun triplet ne commence dans cette demi-journée : utilisez « Régénérer » ou un gabarit.
+              {panneau === "ajout"
+                ? "Aucun triplet ne commence dans cette demi-journée : utilisez « Régénérer » ou un gabarit."
+                : "Aucun triplet en parallèle libre à supprimer dans cette demi-journée."}
             </p>
           ) : (
             <>
@@ -2844,21 +2877,26 @@ function DemiJourneeCard({
                   {modeles.map((t) => <option key={compo(t)} value={compo(t)}>{compo(t)}</option>)}
                 </select>
                 <button
-                  onClick={handleAddTriplet}
+                  onClick={panneau === "ajout" ? handleAddTriplet : handleDeleteTriplet}
                   disabled={adding || !modeleKey}
                   className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white bg-[#C62828] hover:bg-[#B71C1C] disabled:opacity-40 flex items-center gap-1.5"
                 >
                   {adding && <Loader2 className="h-3 w-3 animate-spin" />}
-                  Créer
+                  {panneau === "ajout" ? "Créer" : "Supprimer"}
                 </button>
-                <button onClick={() => setAddOpen(false)} className="text-xs text-gray-700 hover:text-black">
+                <button onClick={() => setPanneau(null)} className="text-xs text-gray-700 hover:text-black">
                   Annuler
                 </button>
               </div>
               <p className="text-xs text-gray-800">
-                Crée une épreuve libre par matière, aux mêmes heures que le triplet choisi : les heures de la journée
-                ne changent pas, donc les autres triplets restent identiques. Pensez ensuite à attribuer des salles
-                d&apos;examen différentes de celles du triplet d&apos;origine.
+                {panneau === "ajout" ? (
+                  <>Crée une épreuve libre par matière, aux mêmes heures que le triplet choisi : les heures de la journée
+                  ne changent pas, donc les autres triplets restent identiques. Pensez ensuite à attribuer des salles
+                  d&apos;examen différentes de celles du triplet d&apos;origine.</>
+                ) : (
+                  <>Retire, pour chaque matière, l&apos;épreuve en parallèle la plus récente (libre, sans candidat ni
+                  planche). Il reste toujours au moins une épreuve à chaque heure : les autres triplets ne changent pas.</>
+                )}
               </p>
             </>
           )}

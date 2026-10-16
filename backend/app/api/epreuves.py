@@ -9,6 +9,7 @@ from app.core.admin_guard import require_admin
 from app.db.deps import get_db
 from app.models.demi_journee import DemiJournee
 from app.models.epreuve import Epreuve
+from app.models.inscription import InscriptionEpreuve
 from app.models.planning_salle_defaut import PlanningMatiereSalleDefaut
 from app.schemas.epreuve import EpreuveCreate, EpreuveOut, EpreuveUpdate
 from app.services.inscriptions import annuler_inscriptions_orphelines
@@ -97,6 +98,56 @@ def dupliquer_triplet(body: DupliquerTripletIn, db: Session = Depends(get_db)):
     for c in copies:
         db.refresh(c)
     return sorted(copies, key=lambda c: c.heure_debut)
+
+
+@router.post("/supprimer-triplet")
+def supprimer_triplet(body: DupliquerTripletIn, db: Session = Depends(get_db)):
+    """
+    Inverse de dupliquer-triplet : retire UN triplet en parallèle de celui indiqué. Pour
+    chacune de ses (matière, heure), supprime l'épreuve parallèle la plus récente qui est
+    LIBRE, sans candidat, sans planche et hors de toute inscription — et seulement s'il en
+    reste au moins une autre à cette heure : les heures de la journée ne changent donc pas
+    et la rotation des triplets n'est pas recalculée. Tout ou rien.
+    """
+    ids = list(dict.fromkeys(body.epreuve_ids))
+    modeles = db.query(Epreuve).filter(Epreuve.id.in_(ids)).all()
+    if len(ids) < 2 or len(modeles) != len(ids):
+        raise HTTPException(status_code=422, detail="Triplet introuvable")
+    djs = {e.demi_journee_id: db.get(DemiJournee, e.demi_journee_id) for e in modeles}
+    jours = {(dj.planning_id, dj.date) for dj in djs.values()}
+    if len(jours) != 1:
+        raise HTTPException(status_code=422, detail="Les épreuves d'un triplet doivent être du même planning et du même jour")
+    planning_id, jour = jours.pop()
+
+    inscrites = {row[0] for row in db.query(InscriptionEpreuve.epreuve_id).all()}
+    a_supprimer = []
+    for m in modeles:
+        paralleles = (
+            db.query(Epreuve).join(DemiJournee, Epreuve.demi_journee_id == DemiJournee.id)
+            .filter(
+                DemiJournee.planning_id == planning_id, DemiJournee.date == jour,
+                Epreuve.matiere == m.matiere, Epreuve.heure_debut == m.heure_debut,
+            )
+            .order_by(Epreuve.id.desc())
+            .all()
+        )
+        supprimable = next((
+            e for e in paralleles
+            if e.statut == "LIBRE" and e.candidat_id is None and e.planche_id is None and e.id not in inscrites
+        ), None) if len(paralleles) >= 2 else None
+        if supprimable is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{m.matiere} {str(m.heure_debut)[:5]} : aucune épreuve en parallèle libre à supprimer "
+                       "(il doit rester au moins une épreuve à cette heure, et celle supprimée doit être libre, sans candidat ni planche)",
+            )
+        a_supprimer.append(supprimable)
+
+    for e in a_supprimer:
+        db.delete(e)
+    annuler_inscriptions_orphelines(db)
+    db.commit()
+    return {"supprimees": len(a_supprimer)}
 
 
 @router.get("/{epreuve_id}", response_model=EpreuveOut)
