@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import PlanificationView from "./planification/PlanificationView";
 import InterfaceAdminENSAEPlanning from "../InterfaceAdminENSAEPlanning";
 import { useRouter } from "next/navigation";
 import { ToastProvider, useToast, useConfirm } from "./Toast";
@@ -1543,7 +1542,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
     rowsByDate.get(row.date)!.push(row);
   }
 
-  // Calcul de dép. prépa à partir des slots consécutifs (même logique que PlanificationView)
+  // Calcul de dép. prépa à partir des slots consécutifs
   const slotsByDate = new Map<string, SlotRow[]>();
   for (const row of [...slotMap.values()].sort((a, b) =>
     a.date !== b.date ? a.date.localeCompare(b.date) : a.heure_debut.localeCompare(b.heure_debut)
@@ -1845,7 +1844,6 @@ function PlanningDaySection({
   const [loading, setLoading] = useState(false);
   const [applyModal, setApplyModal] = useState(false);
   const [regenDj, setRegenDj] = useState<DemiJournee | null>(null);
-  const [dndMode, setDndMode] = useState(false);
 
   const loadDay = useCallback(async () => {
     setLoading(true);
@@ -1905,10 +1903,6 @@ function PlanningDaySection({
       );
     }
   };
-
-  if (dndMode) {
-    return <PlanificationView planning={planning} onBack={() => setDndMode(false)} />;
-  }
 
   return (
     <div className="w-full">
@@ -1978,7 +1972,6 @@ function PlanningDaySection({
               <span className="text-sm text-gray-700 hidden sm:block">{formatDate(date)}</span>
             </div>
             <div className="flex gap-2">
-              <Btn label="Planification DnD" icon={LayoutGrid} onClick={() => setDndMode(true)} small />
               <Btn label="Appliquer un gabarit" icon={Wand2} onClick={() => setApplyModal(true)} />
               <Btn label="Rafraîchir" icon={RefreshCw} onClick={loadDay} variant="ghost" small />
               <Btn label="Exporter (Excel / CSV)" icon={Download} onClick={exporterJournee} variant="ghost" small
