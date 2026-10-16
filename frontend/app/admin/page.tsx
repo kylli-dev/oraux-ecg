@@ -10971,6 +10971,12 @@ function SurveillantsSection() {
   const [loadingEp, setLoadingEp] = useState(false);
   const [filterDate, setFilterDate] = useState("");
   const [filterSurv, setFilterSurv] = useState<string>("");
+  // 2ᵉ surveillant : "" = tous, "__avec" / "__sans", ou l'id d'un surveillant précis
+  const [filterSurv2, setFilterSurv2] = useState("");
+  const [filterMatiereS, setFilterMatiereS] = useState("");
+  const [filterSessionS, setFilterSessionS] = useState<"" | "MATIN" | "APRES_MIDI">("");
+  const [filterHeureS, setFilterHeureS] = useState("");
+  const [filterStatutS, setFilterStatutS] = useState("");
 
   useEffect(() => {
     get<Planning[]>("plannings/").then((ps) => {
@@ -11063,9 +11069,25 @@ function SurveillantsSection() {
 
   // ── Vue planning ─────────────────────────────────────────────────────────────
   const dates = Array.from(new Set(epreuves.map((e) => e.date))).sort();
+  // « Surveillant » : 1er OU 2ᵉ surveillant ; « 0 » = créneaux sans aucun surveillant
+  // (comparait auparavant "" à "0" : ne renvoyait jamais rien).
   const epFiltered = epreuves
     .filter((e) => !filterDate || e.date === filterDate)
-    .filter((e) => !filterSurv || String(e.surveillant_id ?? "") === filterSurv);
+    .filter((e) => !filterSurv || (filterSurv === "0"
+      ? e.surveillant_id == null && e.surveillant2_id == null
+      : e.surveillant_id === Number(filterSurv) || e.surveillant2_id === Number(filterSurv)))
+    .filter((e) => filterSurv2 !== "__avec" || e.surveillant2_id != null)
+    .filter((e) => filterSurv2 !== "__sans" || e.surveillant2_id == null)
+    .filter((e) => !filterSurv2 || filterSurv2.startsWith("__") || e.surveillant2_id === Number(filterSurv2))
+    .filter((e) => !filterMatiereS || e.matiere === filterMatiereS)
+    .filter((e) => !filterSessionS || e.demi_journee_type === filterSessionS)
+    .filter((e) => !filterHeureS || e.heure_debut === filterHeureS)
+    .filter((e) => !filterStatutS || e.statut === filterStatutS);
+  const filtresPlanningActifs = !!(filterDate || filterSurv || filterSurv2 || filterMatiereS || filterSessionS || filterHeureS || filterStatutS);
+  const resetFiltresPlanning = () => {
+    setFilterDate(""); setFilterSurv(""); setFilterSurv2(""); setFilterMatiereS("");
+    setFilterSessionS(""); setFilterHeureS(""); setFilterStatutS("");
+  };
 
   const epByDate = dates
     .filter((d) => !filterDate || d === filterDate)
@@ -11238,11 +11260,49 @@ function SurveillantsSection() {
               className="border rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-black/15"
             >
               <option value="">Tous les surveillants</option>
-              <option value="0">— Non assignés —</option>
+              <option value="0">— Sans surveillant —</option>
               {surveillants.filter((s) => s.actif).map((s) => (
                 <option key={s.id} value={String(s.id)}>{s.nom} {s.prenom}</option>
               ))}
             </select>
+            <select value={filterSurv2} onChange={(e) => setFilterSurv2(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-black/15" title="2ᵉ surveillant">
+              <option value="">2ᵉ surveillant : tous</option>
+              <option value="__avec">Avec 2ᵉ surveillant</option>
+              <option value="__sans">Sans 2ᵉ surveillant</option>
+              {surveillants.filter((s) => s.actif).map((s) => (
+                <option key={s.id} value={String(s.id)}>2ᵉ : {s.nom} {s.prenom}</option>
+              ))}
+            </select>
+            <select value={filterMatiereS} onChange={(e) => setFilterMatiereS(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-black/15" title="Matière">
+              <option value="">Toutes les matières</option>
+              {Array.from(new Set(epreuves.map((e) => e.matiere))).sort((a, b) => a.localeCompare(b, "fr")).map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+            <select value={filterSessionS} onChange={(e) => setFilterSessionS(e.target.value as "" | "MATIN" | "APRES_MIDI")} className="border rounded-lg px-3 py-1.5 text-sm bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-black/15" title="Session">
+              <option value="">Matin et après-midi</option>
+              <option value="MATIN">Matin</option>
+              <option value="APRES_MIDI">Après-midi</option>
+            </select>
+            <select value={filterHeureS} onChange={(e) => setFilterHeureS(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-black/15" title="Horaire">
+              <option value="">Tous les horaires</option>
+              {Array.from(new Set(epreuves.map((e) => e.heure_debut))).sort().map((h) => (
+                <option key={h} value={h}>{h}</option>
+              ))}
+            </select>
+            <select value={filterStatutS} onChange={(e) => setFilterStatutS(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-black/15" title="Statut du créneau">
+              <option value="">Tous les statuts</option>
+              <option value="ATTRIBUEE">Attribué (candidat inscrit)</option>
+              <option value="LIBRE">Libre</option>
+              <option value="PRERESERVEE">Préréservé</option>
+              <option value="ABSENT">Absent</option>
+            </select>
+            {filtresPlanningActifs && (
+              <>
+                <span className="text-xs text-gray-800">{epFiltered.length} créneau{epFiltered.length > 1 ? "x" : ""} sur {epreuves.length}</span>
+                <button onClick={resetFiltresPlanning} className="text-xs text-[#C62828] hover:underline">Réinitialiser les filtres</button>
+              </>
+            )}
           </div>
 
           {loadingEp ? (
@@ -11254,7 +11314,7 @@ function SurveillantsSection() {
           ) : (
             <div className="space-y-4">
               {epByDate.map(({ date, rows }) => {
-                const nonAssignes = rows.filter((r) => !r.surveillant_id).length;
+                const nonAssignes = rows.filter((r) => !r.surveillant_id && !r.surveillant2_id).length;
                 return (
                   <div key={date} className="bg-white rounded-2xl border border-black/5 shadow-sm overflow-hidden">
                     <div className="px-4 py-2.5 bg-black/[0.02] border-b border-black/5 flex items-center justify-between">
@@ -11273,6 +11333,7 @@ function SurveillantsSection() {
                           <th className="text-left px-4 py-2 text-gray-700 font-medium w-28">Matière</th>
                           <th className="text-left px-4 py-2 text-gray-700 font-medium w-24">Heure</th>
                           <th className="text-left px-4 py-2 text-gray-700 font-medium">Surveillant</th>
+                          <th className="text-left px-4 py-2 text-gray-700 font-medium">2ᵉ surveillant</th>
                           <th className="text-left px-4 py-2 text-gray-700 font-medium">Candidat</th>
                           <th className="text-left px-4 py-2 text-gray-700 font-medium w-20">Statut</th>
                         </tr>
@@ -11290,6 +11351,11 @@ function SurveillantsSection() {
                                   <AlertTriangle className="h-3 w-3" /> Non assigné
                                 </span>
                               )}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              {ep.surveillant2_nom
+                                ? <span className="text-gray-900">{ep.surveillant2_nom} {ep.surveillant2_prenom}</span>
+                                : <span className="text-gray-700">—</span>}
                             </td>
                             <td className="px-4 py-2.5 text-gray-800">
                               {ep.candidat_nom ? `${ep.candidat_nom} ${ep.candidat_prenom}` : <span className="text-gray-700">—</span>}
