@@ -1595,6 +1595,21 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
   const nbPrereservees = actives.filter((e) => e.candidat_id == null && e.statut === "PRERESERVEE").length;
   const nbAutres = actives.length - nbAttribuees - nbLibres - nbPrereservees;
   const horsInscription = actives.filter((e) => e.hors_inscription);
+  const libererHorsInscription = async (e: EpreuveFlat) => {
+    const ok = await confirm(
+      `Libérer l'épreuve de ${e.matiere} du ${formatDateCourte(e.date)} à ${e.heure_debut} attribuée à ${e.candidat_nom} ${e.candidat_prenom ?? ""} ? ` +
+      "Elle redevient libre ; le candidat pourra s'inscrire normalement à un triplet.",
+      { confirmLabel: "Libérer", danger: true }
+    );
+    if (!ok) return;
+    try {
+      await post(`epreuves/${e.id}/liberer-hors-inscription`, {});
+      toast.success("Épreuve libérée");
+      await loadEpreuves();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    }
+  };
 
   return (
     <div>
@@ -1624,8 +1639,14 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
           </p>
           <ul className="mt-1 space-y-0.5">
             {horsInscription.map((e) => (
-              <li key={e.id}>
-                {e.candidat_nom} {e.candidat_prenom} — {e.matiere}, {formatDateCourte(e.date)} à {e.heure_debut}
+              <li key={e.id} className="flex items-center gap-3 flex-wrap">
+                <span>{e.candidat_nom} {e.candidat_prenom} — {e.matiere}, {formatDateCourte(e.date)} à {e.heure_debut}</span>
+                <button
+                  onClick={() => libererHorsInscription(e)}
+                  className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-red-300 bg-white text-red-800 hover:bg-red-100 transition"
+                >
+                  Libérer
+                </button>
               </li>
             ))}
           </ul>

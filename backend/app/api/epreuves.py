@@ -9,7 +9,7 @@ from app.core.admin_guard import require_admin
 from app.db.deps import get_db
 from app.models.demi_journee import DemiJournee
 from app.models.epreuve import Epreuve
-from app.models.inscription import InscriptionEpreuve
+from app.models.inscription import Inscription, InscriptionEpreuve
 from app.models.planning_salle_defaut import PlanningMatiereSalleDefaut
 from app.schemas.epreuve import EpreuveCreate, EpreuveOut, EpreuveUpdate
 from app.services.inscriptions import annuler_inscriptions_orphelines
@@ -148,6 +148,36 @@ def supprimer_triplet(body: DupliquerTripletIn, db: Session = Depends(get_db)):
     annuler_inscriptions_orphelines(db)
     db.commit()
     return {"supprimees": len(a_supprimer)}
+
+
+@router.post("/{epreuve_id}/liberer-hors-inscription")
+def liberer_hors_inscription(epreuve_id: int, db: Session = Depends(get_db)):
+    """
+    Libère une épreuve attribuée à un candidat HORS de toute inscription (attribution directe
+    par l'ancien onglet « Affectation aux épreuves » ou la Planification DnD) : elle n'apparaît
+    pas dans la fiche du candidat, et aucune action d'inscription ne peut la retirer. Refusé
+    si l'épreuve fait partie d'une inscription active — passer alors par Gestion inscriptions.
+    """
+    e = db.get(Epreuve, epreuve_id)
+    if not e:
+        raise HTTPException(status_code=404, detail="Épreuve introuvable")
+    if e.candidat_id is None:
+        raise HTTPException(status_code=409, detail="Cette épreuve n'est attribuée à aucun candidat")
+    inscrite = (
+        db.query(InscriptionEpreuve)
+        .join(Inscription, InscriptionEpreuve.inscription_id == Inscription.id)
+        .filter(InscriptionEpreuve.epreuve_id == e.id, Inscription.statut == "ACTIVE")
+        .first()
+    )
+    if inscrite:
+        raise HTTPException(
+            status_code=409,
+            detail="Cette épreuve fait partie d'une inscription : retirez-la depuis Candidats → Gestion inscriptions",
+        )
+    e.candidat_id = None
+    e.statut = "LIBRE"
+    db.commit()
+    return {"epreuve_id": e.id, "statut": e.statut}
 
 
 class SupprimerCreneauIn(BaseModel):
