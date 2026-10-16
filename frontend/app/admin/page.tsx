@@ -49,6 +49,8 @@ import {
   List,
   ListOrdered,
   Eraser,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -861,6 +863,29 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
       {...props}
       className="w-full px-3 py-2 rounded-lg border border-black/10 text-sm focus:outline-none focus:ring-2 focus:ring-black/10 bg-white"
     />
+  );
+}
+
+// Champ mot de passe avec un œil pour afficher / masquer la saisie
+function PasswordInput(props: Omit<React.InputHTMLAttributes<HTMLInputElement>, "type">) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        {...props}
+        type={visible ? "text" : "password"}
+        className="w-full pl-3 pr-9 py-2 rounded-lg border border-black/10 text-sm focus:outline-none focus:ring-2 focus:ring-black/10 bg-white"
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        className="absolute inset-y-0 right-0 px-2.5 grid place-items-center text-gray-800 hover:text-black"
+        title={visible ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+        aria-label={visible ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+      >
+        {visible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </button>
+    </div>
   );
 }
 
@@ -10623,8 +10648,7 @@ function ParametragesSection() {
               </div>
               <div className="flex-1">
                 <Field label="Mot de passe" hint="8 caractères minimum">
-                  <Input
-                    type="password"
+                  <PasswordInput
                     value={newAdminPassword}
                     onChange={(e) => setNewAdminPassword(e.target.value)}
                     placeholder="••••••••"
@@ -10701,8 +10725,7 @@ function ParametragesSection() {
                   ) : resetPwFor === a.id ? (
                     <div className="flex items-center gap-2 shrink-0">
                       <div className="w-40">
-                        <Input
-                          type="password"
+                        <PasswordInput
                           autoFocus
                           value={resetPwValue}
                           onChange={(e) => setResetPwValue(e.target.value)}
