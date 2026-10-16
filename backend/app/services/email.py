@@ -102,6 +102,34 @@ def send_email(to: str, subject: str, body_html: str) -> bool:
         return False
 
 
+_JOURS_FR = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+_MOIS_FR = ["", "janvier", "février", "mars", "avril", "mai", "juin",
+            "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+
+
+def date_fr(d) -> str:
+    """date(2026, 9, 2) → « mercredi 2 septembre 2026 » (pour le corps des emails)."""
+    return f"{_JOURS_FR[d.weekday()]} {d.day} {_MOIS_FR[d.month]} {d.year}"
+
+
+def build_from_template(db, code: str, variables: dict) -> Optional[tuple]:
+    """
+    (sujet, corps_html) du Message-type `code` (éditable dans Paramétrages), variables
+    substituées — ou None si le modèle est absent ou vide. Séparé de l'envoi pour que
+    l'envoi (lent) parte en tâche de fond, après la réponse HTTP, sans session DB ouverte.
+    """
+    from app.models.message_type import MessageType
+    tpl = db.query(MessageType).filter_by(code=code).first()
+    if not tpl or not tpl.sujet or not tpl.corps_html:
+        return None
+    try:
+        return tpl.sujet.format(**variables), tpl.corps_html.format(**variables)
+    except (KeyError, IndexError, ValueError):
+        # Variable inconnue ou accolade isolée saisie par l'admin : on envoie le texte
+        # tel quel plutôt que de ne rien envoyer.
+        return tpl.sujet, tpl.corps_html
+
+
 def render_and_send(db, to_email: str, code: str, variables: dict) -> bool:
     """
     Récupère le template MessageType identifié par `code`,

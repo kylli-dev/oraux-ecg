@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import date as Date, datetime, timezone, time
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -893,6 +893,45 @@ def list_liste_attente_admin(planning_id: int, db: Session = Depends(get_db)):
 
     result.sort(key=lambda x: x.premier_enregistrement)
     return result
+
+
+class PrevenirListeAttenteIn(BaseModel):
+    candidat_id: int
+    date: Date
+
+
+@router.post("/{planning_id}/liste-attente/prevenir")
+def prevenir_liste_attente(
+    planning_id: int, body: PrevenirListeAttenteIn, background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """
+    Prévient par email (Message-type PLACE_LIBEREE) un candidat en liste d'attente qu'une
+    place s'est libérée sur une de ses journées. Déclenché par l'admin — jamais automatique —
+    pour garder la main sur l'ordre de la file. La place n'est pas réservée pour autant :
+    le candidat doit s'inscrire lui-même sur le portail.
+    """
+    from app.services.email import SITE_URL, build_from_template, date_fr, email_configure, send_email
+
+    c = db.get(Candidat, body.candidat_id)
+    if not c or c.planning_id != planning_id:
+        raise HTTPException(status_code=404, detail="Candidat introuvable dans ce planning")
+    if not db.query(ListeAttente).filter_by(candidat_id=c.id, date=body.date).first():
+        raise HTTPException(status_code=409, detail="Ce candidat n'est pas en liste d'attente pour cette journée")
+    if _get_active_inscription(c.id, db):
+        raise HTTPException(status_code=409, detail="Ce candidat est déjà inscrit à un triplet")
+    if not c.email:
+        raise HTTPException(status_code=422, detail="Ce candidat n'a pas d'adresse email")
+    if not email_configure():
+        raise HTTPException(status_code=503, detail="L'envoi d'emails n'est pas configuré sur le serveur")
+    message = build_from_template(db, "PLACE_LIBEREE", {
+        "prenom": c.prenom, "nom": c.nom, "date": date_fr(body.date),
+        "url": f"{SITE_URL.rstrip('/')}/candidat",
+    })
+    if not message:
+        raise HTTPException(status_code=500, detail="Modèle d'email « PLACE_LIBEREE » introuvable (Paramétrages)")
+    background_tasks.add_task(send_email, c.email, *message)
+    return {"email": c.email}
 
 
 @router.post("/candidat/{candidat_id}/inscrire")

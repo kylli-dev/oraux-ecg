@@ -6603,6 +6603,24 @@ function ListeAttenteTab({ planningId }: { planningId: number }) {
   const fmt_date = (d: string) =>
     new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
 
+  // « Prévenir par e-mail » : l'admin choisit qui prévenir (ordre de la file), jamais
+  // automatique. Mémorisé seulement pour la session, pour éviter un double envoi par mégarde.
+  const [prevenus, setPrevenus] = useState<Set<string>>(new Set());
+  const doPrevenir = async (c: ListeAttenteAdminItem, date: string) => {
+    if (!await confirm(
+      `Envoyer à ${c.prenom} ${c.nom} (${c.email}) l'e-mail « une place s'est libérée le ${fmt_date(date)} » ? ` +
+      "La place n'est pas réservée : le candidat devra s'inscrire lui-même sur le portail.",
+      { confirmLabel: "Envoyer" }
+    )) return;
+    setLoadingAction(true);
+    try {
+      await post(`gestion-candidats/${planningId}/liste-attente/prevenir`, { candidat_id: c.id, date });
+      setPrevenus((prev) => new Set(prev).add(`${c.id}|${date}`));
+      toast.success(`E-mail envoyé à ${c.prenom} ${c.nom}`);
+    } catch (e) { toast.error(e instanceof Error ? e.message : String(e)); }
+    finally { setLoadingAction(false); }
+  };
+
   const fmt_datetime = (s: string) =>
     new Date(s).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
 
@@ -6727,10 +6745,20 @@ function ListeAttenteTab({ planningId }: { planningId: number }) {
               </p>
               {Object.entries(tripletsByDate).map(([date, trips]) => {
                 const allMatieres = [...new Set(trips.flatMap(t => t.epreuves.map(e => e.matiere)))].sort();
+                const dejaPrevenu = prevenus.has(`${selected.id}|${date}`);
                 return (
                   <div key={date} className="rounded-xl border bg-white shadow-sm overflow-hidden">
-                    <div className="px-4 py-2.5 border-b bg-gray-50">
+                    <div className="px-4 py-2.5 border-b bg-gray-50 flex items-center justify-between gap-3 flex-wrap">
                       <p className="text-xs font-semibold capitalize">{fmt_date(date)}</p>
+                      <button
+                        onClick={() => doPrevenir(selected, date)}
+                        disabled={loadingAction}
+                        title="Envoie au candidat l'e-mail « Place libérée » (modèle éditable dans Paramétrages)"
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg border border-black/15 bg-white text-gray-900 hover:bg-black/[0.03] disabled:opacity-50 transition"
+                      >
+                        <Mail className="h-3.5 w-3.5" />
+                        {dejaPrevenu ? "Prévenu ✓ — renvoyer" : "Prévenir par e-mail"}
+                      </button>
                     </div>
                     <div className="overflow-x-auto">
                     <table className="w-full text-xs">
@@ -9452,6 +9480,7 @@ const MESSAGE_LABELS: Record<string, string> = {
   RAPPEL:            "Rappel (J-2 et J-1)",
   DESINSCRIPTION:    "Confirmation de désinscription",
   LISTE_ATTENTE:     "Enregistrement liste d'attente",
+  PLACE_LIBEREE:     "Place libérée (liste d'attente, envoi manuel)",
   PUBLICATION_NOTES: "Publication des notes",
   CONSIGNES_ACCUEIL: "Consignes importantes (page d'accueil candidat)",
 };

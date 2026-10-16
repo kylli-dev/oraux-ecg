@@ -40,7 +40,9 @@ from app.core.auth import (
     RESET_TOKEN_EXPIRE_MINUTES,
 )
 from app.core.portal_guard import require_candidat
-from app.services.email import build_reset_password_candidat, send_reset_password_candidat
+from app.services.email import (
+    build_from_template, build_reset_password_candidat, date_fr, send_email, send_reset_password_candidat,
+)
 from app.services.inscriptions import annuler_inscriptions_orphelines, epreuves_valides
 
 router = APIRouter(prefix="/portal", tags=["portal"])
@@ -957,6 +959,7 @@ def get_liste_attente(
 @router.put("/me/liste-attente", status_code=204)
 def update_liste_attente(
     body: ListeAttenteIn,
+    background_tasks: BackgroundTasks,
     candidat_id: int = Depends(require_candidat),
     db: Session = Depends(get_db),
 ):
@@ -1003,11 +1006,21 @@ def update_liste_attente(
                 )
 
     # Supprimer les anciennes entrées et recréer
+    anciennes = {la.date for la in db.query(ListeAttente).filter_by(candidat_id=candidat_id).all()}
     db.query(ListeAttente).filter_by(candidat_id=candidat_id).delete()
-    for d in body.dates:
+    dates = sorted(set(body.dates))
+    for d in dates:
         db.add(ListeAttente(candidat_id=candidat_id, date=d))
     db.commit()
-    # TODO: envoyer Message-type Liste d'attente si nouvelles dates ajoutées
+
+    # Confirmation par email (Message-type LISTE_ATTENTE) — seulement si de nouvelles
+    # journées ont été cochées : décocher une date ou ré-enregistrer à l'identique ne
+    # renvoie pas d'email. Le corps récapitule toutes les journées actuellement cochées.
+    if c.email and set(dates) - anciennes:
+        journees = "<ul>" + "".join(f"<li>{date_fr(d)}</li>" for d in dates) + "</ul>"
+        message = build_from_template(db, "LISTE_ATTENTE", {"prenom": c.prenom, "nom": c.nom, "journees": journees})
+        if message:
+            background_tasks.add_task(send_email, c.email, *message)
 
 
 # ── Inscription (legacy code) ──────────────────────────────────────────────────

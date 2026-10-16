@@ -76,6 +76,17 @@ MESSAGE_TYPE_DEFAULTS = {
             "<p>Cordialement,<br>Le service des admissions</p>"
         ),
     },
+    "PLACE_LIBEREE": {
+        "sujet": "Une place s'est libérée pour les oraux ECG",
+        "corps_html": (
+            "<p>Bonjour {prenom} {nom},</p>"
+            "<p>Une place s'est libérée le <strong>{date}</strong>, une journée pour laquelle "
+            "vous êtes inscrit(e) sur liste d'attente.</p>"
+            "<p>Cette place n'est pas réservée à votre nom : connectez-vous dès que possible sur "
+            "<a href=\"{url}\">{url}</a> pour réserver votre triplet.</p>"
+            "<p>Cordialement,<br>Le service des admissions</p>"
+        ),
+    },
     "PUBLICATION_NOTES": {
         "sujet": "Vos notes d'oraux ECG sont disponibles",
         "corps_html": (
