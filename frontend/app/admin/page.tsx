@@ -1014,7 +1014,7 @@ function PlanningsSection({
                 >
                   <td className="px-5 py-3.5 font-medium">{p.nom}</td>
                   <td className="px-5 py-3.5 text-gray-800 text-xs">
-                    {p.date_debut} &rarr; {p.date_fin}
+                    {formatDateCourte(p.date_debut)} &rarr; {formatDateCourte(p.date_fin)}
                   </td>
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -3430,7 +3430,7 @@ function JourneeTypeEditor({ jt, onRename }: { jt: JourneeType; onRename?: (newN
               Plage du planning
             </p>
             <p className="text-xs text-gray-800">
-              {selPlanning.date_debut} → {selPlanning.date_fin}
+              {formatDateCourte(selPlanning.date_debut)} → {formatDateCourte(selPlanning.date_fin)}
             </p>
           </div>
         )}
@@ -3474,7 +3474,7 @@ function ApplyJourneeTypeToPlanning({ jt, onClose }: { jt: JourneeType; onClose:
         <Select value={planningId ?? ""} onChange={(e) => setPlanningId(Number(e.target.value))}>
           {plannings.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.nom} ({p.date_debut} → {p.date_fin})
+              {p.nom} ({formatDateCourte(p.date_debut)} → {formatDateCourte(p.date_fin)})
             </option>
           ))}
         </Select>
