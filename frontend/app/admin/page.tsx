@@ -495,6 +495,23 @@ function formatDateCourte(dateStr: string | null | undefined): string {
   return m ? `${m[3]}-${m[2]}-${m[1]}` : dateStr;
 }
 
+// Téléchargement CSV (séparateur « ; » + BOM : s'ouvre directement dans Excel en français)
+function telechargerCsv(nomFichier: string, entetes: string[], lignes: (string | number | null | undefined)[][]) {
+  const cell = (v: string | number | null | undefined) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const contenu = [entetes, ...lignes].map((l) => l.map(cell).join(";")).join("\r\n");
+  const blob = new Blob(["﻿" + contenu], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = nomFichier;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// Nom de fichier sans caractères problématiques (accents conservés)
+function slugFichier(s: string): string {
+  return s.trim().replace(/[\\/:*?"<>|\s]+/g, "_");
+}
+
 function formatDate(dateStr: string): string {
   try {
     return new Date(dateStr + "T12:00:00").toLocaleDateString("fr-FR", {
@@ -1549,6 +1566,27 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
     });
   }
 
+  // Export : une ligne par épreuve, dans l'ordre et avec les filtres de l'affichage
+  const exporter = () => {
+    const nomPers = (nom: string | null, prenom: string | null) => (nom ? `${nom} ${prenom ?? ""}`.trim() : "");
+    const lignes = rows.flatMap((row) => {
+      const key = `${row.date}|${row.heure_debut}`;
+      return matieres.flatMap((m) => (row.byMat[m] ?? []).map((e) => [
+        formatDateCourte(row.date), debPrepaMap.get(key) ?? "", row.heure_debut, row.heure_fin, m,
+        nomPers(e.candidat_nom, e.candidat_prenom),
+        [nomPers(e.examinateur_nom, e.examinateur_prenom), nomPers(e.examinateur2_nom, e.examinateur2_prenom)].filter(Boolean).join(" / "),
+        e.salle_preparation_intitule, e.salle_intitule,
+        [nomPers(e.surveillant_nom, e.surveillant_prenom), nomPers(e.surveillant2_nom, e.surveillant2_prenom)].filter(Boolean).join(" / "),
+        EPREUVE_STATUT_LABEL[e.statut] ?? e.statut,
+      ]));
+    });
+    telechargerCsv(
+      `planning_${slugFichier(planning.nom)}_tableau${filterDate ? "_" + formatDateCourte(filterDate) : ""}.csv`,
+      ["Date", "Dép. prépa", "Dép. exam", "Fin exam", "Matière", "Candidat", "Examinateur", "Salle préparation", "Salle", "Surveillant", "Statut"],
+      lignes,
+    );
+  };
+
   return (
     <div>
       {/* Filtres */}
@@ -1576,6 +1614,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
           <option value="FINALISEE">Finalisé</option>
         </select>
         <span className="text-xs text-gray-700 ml-auto">{filtered.length} créneau(x)</span>
+        <Btn label="Exporter (Excel / CSV)" icon={Download} small variant="ghost" onClick={exporter} disabled={filtered.length === 0} />
       </div>
 
       {/* Barre de suppression de journées sélectionnées */}
@@ -1826,6 +1865,47 @@ function PlanningDaySection({
     if (viewMode === "journee") loadDay();
   }, [loadDay, viewMode]);
 
+  // Export de la journée affichée, selon le sous-onglet actif
+  const exporterJournee = () => {
+    if (!dayData) return;
+    const eps = dayData.demi_journees.flatMap((dj) => dj.epreuves.map((e) => ({ ...e, session: dj.type === "MATIN" ? "Matin" : "Après-midi" })));
+    const ligne = (e: (typeof eps)[number]) => [
+      formatDateCourte(date), e.session, e.matiere, heurePrepa(e.heure_debut, e.preparation_minutes) ?? "",
+      hm(e.heure_debut), hm(e.heure_fin), e.salle_preparation_intitule, e.salle_intitule,
+      EPREUVE_STATUT_LABEL[e.statut] ?? e.statut,
+    ];
+    const parHeure = (a: (typeof eps)[number], b: (typeof eps)[number]) =>
+      hm(a.heure_debut).localeCompare(hm(b.heure_debut)) || a.matiere.localeCompare(b.matiere, "fr");
+    const entetes = ["Date", "Session", "Matière", "Dép. prépa", "Dép. exam", "Fin exam", "Salle préparation", "Salle", "Statut"];
+    const candidat = (e: (typeof eps)[number]) => (e.candidat_nom ? `${e.candidat_nom} ${e.candidat_prenom ?? ""}`.trim() : "");
+    if (daySubView === "triplets") {
+      // Une ligne par épreuve, regroupées par candidat (puis les créneaux sans candidat)
+      const avec = eps.filter((e) => e.candidat_id != null);
+      const premiere = new Map<number, string>();
+      for (const e of avec) {
+        const h = hm(e.heure_debut);
+        if (!premiere.has(e.candidat_id!) || h < premiere.get(e.candidat_id!)!) premiere.set(e.candidat_id!, h);
+      }
+      avec.sort((a, b) =>
+        premiere.get(a.candidat_id!)!.localeCompare(premiere.get(b.candidat_id!)!) ||
+        candidat(a).localeCompare(candidat(b), "fr") || parHeure(a, b));
+      const sans = eps.filter((e) => e.candidat_id == null && e.statut !== "ANNULEE").sort(parHeure);
+      telechargerCsv(
+        `planning_${slugFichier(planning.nom)}_association_triplets_${formatDateCourte(date)}.csv`,
+        ["Candidat", ...entetes],
+        [...avec, ...sans].map((e) => [candidat(e), ...ligne(e)]),
+      );
+    } else {
+      telechargerCsv(
+        `planning_${slugFichier(planning.nom)}_creneaux_${formatDateCourte(date)}.csv`,
+        [...entetes, "Candidat"],
+        // Matin puis après-midi, par heure de début
+        [...eps].sort((a, b) => (a.session === b.session ? 0 : a.session === "Matin" ? -1 : 1) || parHeure(a, b))
+          .map((e) => [...ligne(e), candidat(e)]),
+      );
+    }
+  };
+
   if (dndMode) {
     return <PlanificationView planning={planning} onBack={() => setDndMode(false)} />;
   }
@@ -1867,7 +1947,7 @@ function PlanningDaySection({
       {viewMode === "tableau" ? (
         <PlanningTableauView planningId={planning.id} planning={planning} />
       ) : viewMode === "triplets" ? (
-        <TripletsAdminView planningId={planning.id} />
+        <TripletsAdminView planningId={planning.id} planningNom={planning.nom} />
       ) : (
         <>
           {/* Date bar */}
@@ -1901,6 +1981,8 @@ function PlanningDaySection({
               <Btn label="Planification DnD" icon={LayoutGrid} onClick={() => setDndMode(true)} small />
               <Btn label="Appliquer un gabarit" icon={Wand2} onClick={() => setApplyModal(true)} />
               <Btn label="Rafraîchir" icon={RefreshCw} onClick={loadDay} variant="ghost" small />
+              <Btn label="Exporter (Excel / CSV)" icon={Download} onClick={exporterJournee} variant="ghost" small
+                disabled={loading || !dayData || dayData.demi_journees.length === 0} />
             </div>
           </div>
 
@@ -2389,7 +2471,7 @@ const EPREUVE_STATUT_CLS: Record<string, string> = {
   MANQUANTE: "bg-white border-dashed border-red-300 text-red-500",
 };
 
-function TripletsAdminView({ planningId }: { planningId: number }) {
+function TripletsAdminView({ planningId, planningNom }: { planningId: number; planningNom: string }) {
   const toast = useToast();
   const [triplets, setTriplets] = useState<TripletDisponible[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2434,6 +2516,24 @@ function TripletsAdminView({ planningId }: { planningId: number }) {
     byDate.get(t.date)!.push(t);
   }
 
+  // Export : une ligne par triplet, avec les filtres de l'affichage
+  const exporter = () => {
+    const lignes = [...filtered]
+      .sort((a, b) => a.date.localeCompare(b.date) || a.heure_debut.localeCompare(b.heure_debut))
+      .map((t) => [
+        formatDateCourte(t.date), t.heure_debut,
+        t.epreuves.map((e) => `${e.matiere} ${e.heure_debut}${e.statut === "MANQUANTE" ? " (manquante)" : ""}`).join(" · "),
+        TRIPLET_ETAT[t.type_slot]?.label ?? t.type_slot,
+        t.candidat_nom ? `${t.candidat_nom} ${t.candidat_prenom ?? ""}`.trim() : "",
+        t.motif,
+      ]);
+    telechargerCsv(
+      `planning_${slugFichier(planningNom)}_triplets${filterDate ? "_" + formatDateCourte(filterDate) : ""}.csv`,
+      ["Date", "Heure", "Épreuves", "État", "Candidat", "Motif"],
+      lignes,
+    );
+  };
+
   if (loading) return <div className="flex justify-center py-16 text-gray-700"><Spinner /></div>;
 
   return (
@@ -2461,6 +2561,7 @@ function TripletsAdminView({ planningId }: { planningId: number }) {
             <option value="">Tous les états</option>
             {Object.entries(TRIPLET_ETAT).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
           </select>
+          <Btn label="Exporter (Excel / CSV)" icon={Download} small variant="ghost" onClick={exporter} disabled={filtered.length === 0} />
         </div>
       </div>
 
