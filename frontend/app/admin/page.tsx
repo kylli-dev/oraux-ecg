@@ -11582,14 +11582,6 @@ function Sidebar({
             )}
           </button>
         ))}
-
-        <div className="mt-6 px-3">
-          <div className="h-px bg-white/10" />
-        </div>
-        <div className="mt-4 px-3 flex items-center gap-2 text-xs text-white/40">
-          <LayoutGrid className="h-3.5 w-3.5" />
-          Back-office
-        </div>
       </nav>
 
       <div className="p-4 border-t border-white/10 space-y-1">
