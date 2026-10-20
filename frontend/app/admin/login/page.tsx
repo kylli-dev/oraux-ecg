@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Lock, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Lock, Eye, EyeOff, Loader2, CheckCircle2 } from "lucide-react";
 
 const RED = "#C62828";
+// Durée maximale d'attente du réveil du backend Render (démarrage habituel : 30-60 s)
+const WAKE_MAX_MS = 2 * 60 * 1000;
 
 function LoginForm() {
   const router = useRouter();
@@ -17,15 +19,38 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [waking, setWaking] = useState(false);
+  // État du serveur, réveillé dès l'affichage de la page (voir /api/wake) :
+  // le démarrage se fait pendant la saisie des identifiants, pas après le clic.
+  const [serveur, setServeur] = useState<"verification" | "demarrage" | "pret" | "injoignable">("verification");
+
+  useEffect(() => {
+    let annule = false;
+    (async () => {
+      const debut = Date.now();
+      while (!annule && Date.now() - debut < WAKE_MAX_MS) {
+        try {
+          const res = await fetch("/api/wake", { cache: "no-store" });
+          if (res.ok) { if (!annule) setServeur("pret"); return; }
+        } catch { /* réseau : on réessaie */ }
+        if (annule) return;
+        setServeur("demarrage");
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+      if (!annule) setServeur("injoignable");
+    })();
+    return () => { annule = true; };
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
     setWaking(false);
-    const maxAttempts = 4;
+    // Réessaie tant que le serveur redémarre (jusqu'à ~2 min) au lieu d'abandonner après 15 s
+    const debut = Date.now();
     try {
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      for (let attempt = 1; ; attempt++) {
+        const peutReessayer = Date.now() - debut < WAKE_MAX_MS;
         const res = await fetch("/api/auth/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -34,12 +59,13 @@ function LoginForm() {
         const contentType = res.headers.get("content-type") ?? "";
         const data = contentType.includes("application/json") ? await res.json() : null;
 
-        if (res.status === 503 && data?.code === "backend_waking_up" && attempt < maxAttempts) {
+        if (res.status === 503 && data?.code === "backend_waking_up" && peutReessayer) {
           setWaking(true);
-          await new Promise((r) => setTimeout(r, attempt * 2500));
+          await new Promise((r) => setTimeout(r, Math.min(attempt * 2000, 4000)));
           continue;
         }
         setWaking(false);
+        if (res.ok) setServeur("pret");
         if (!res.ok) {
           throw new Error(data?.error ?? `Erreur serveur (${res.status})`);
         }
@@ -112,9 +138,23 @@ function LoginForm() {
               </div>
             </div>
 
-            {waking && (
-              <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
-                Le serveur redémarre après une période d&apos;inactivité — nouvelle tentative dans quelques secondes…
+            {(waking || serveur === "demarrage") && (
+              <p className="text-xs text-amber-800 bg-amber-50 rounded-lg px-3 py-2 flex items-center gap-2">
+                <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                {loading
+                  ? "Le serveur démarre — connexion automatique dès qu'il est prêt…"
+                  : "Démarrage du serveur en cours (30 à 60 s) — vous pouvez déjà saisir vos identifiants."}
+              </p>
+            )}
+            {!waking && serveur === "pret" && !error && (
+              <p className="text-xs text-green-800 flex items-center gap-1.5">
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                Serveur prêt
+              </p>
+            )}
+            {serveur === "injoignable" && !loading && (
+              <p className="text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2">
+                Le serveur ne répond toujours pas après 2 minutes. Rechargez la page pour réessayer.
               </p>
             )}
 

@@ -391,14 +391,16 @@ type JourneeTypePreview = {
 // (503) au lieu de laisser Vercel couper brutalement : on réessaie automatiquement
 // en affichant une bannière, plutôt que de faire échouer l'action immédiatement.
 //
-// 3 tentatives rapprochées (2.5s / 5s / 7.5s) couvrent le réveil normal. Si le backend
-// reste injoignable après ça, c'est traité comme une vraie erreur de connexion (bannière
-// dédiée) plutôt que de continuer à afficher "réveil en cours" indéfiniment — mais en
-// production uniquement, une 4e tentative est retentée après 5 min (le cold start peut
-// exceptionnellement prendre plus longtemps sous charge) avant d'abandonner pour de bon.
-// En développement, 3 tentatives suffisent : pas de veille Render à attendre en local.
+// En production, on réessaie toutes les quelques secondes pendant WAKE_WINDOW_MS (2 min),
+// ce qui couvre le réveil normal (30-60 s ; chaque essai attend déjà jusqu'à 8 s côté
+// proxy). Avant, 3 essais seulement (~30 s) faisaient souvent basculer sur l'attente de
+// 5 min alors que le serveur était sur le point de répondre. Au-delà de la fenêtre, c'est
+// traité comme une vraie erreur de connexion (bannière dédiée) avec une dernière
+// tentative 5 min plus tard. En développement, 3 tentatives suffisent : pas de veille
+// Render à attendre en local.
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const FAST_ATTEMPTS = 3;
+const WAKE_WINDOW_MS = 2 * 60 * 1000;
 const LONG_RETRY_DELAY_MS = 5 * 60 * 1000;
 
 function notifyBackendWaking() {
@@ -419,9 +421,10 @@ async function apiCall<T = unknown>(
   body?: unknown
 ): Promise<T> {
   const isProd = process.env.NEXT_PUBLIC_ENV === "production";
-  const maxAttempts = isProd ? FAST_ATTEMPTS + 1 : FAST_ATTEMPTS;
+  const debut = Date.now();
+  let longRetryFait = false;
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+  for (let attempt = 1; ; attempt++) {
     const res = await fetch(`/api/backend/${path}`, {
       method,
       headers: body ? { "Content-Type": "application/json" } : {},
@@ -433,19 +436,21 @@ async function apiCall<T = unknown>(
     let data: any;
     try { data = JSON.parse(text); } catch { data = { detail: text || `Erreur ${res.status}` }; }
 
-    if (res.status === 503 && data?.code === "backend_waking_up" && attempt < maxAttempts) {
-      if (attempt < FAST_ATTEMPTS) {
+    if (res.status === 503 && data?.code === "backend_waking_up") {
+      if (attempt < FAST_ATTEMPTS || (isProd && Date.now() - debut < WAKE_WINDOW_MS)) {
         notifyBackendWaking();
-        await sleep(attempt * 2500);
-      } else {
-        // Toujours en échec après les tentatives rapprochées : on passe en état
-        // "erreur de connexion" (pas juste "réveil") et on retente une dernière fois
-        // 5 min plus tard — uniquement atteint ici quand isProd (sinon maxAttempts
-        // arrête la boucle avant ce point).
+        await sleep(Math.min(attempt * 2500, 4000));
+        continue;
+      }
+      if (isProd && !longRetryFait) {
+        // Toujours en échec après la fenêtre de réveil : bannière "erreur de connexion"
+        // et une dernière tentative 5 min plus tard.
+        longRetryFait = true;
         notifyBackendConnectionError(LONG_RETRY_DELAY_MS);
         await sleep(LONG_RETRY_DELAY_MS);
+        continue;
       }
-      continue;
+      break;
     }
 
     if (!res.ok) {
