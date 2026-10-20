@@ -12881,6 +12881,9 @@ function SallesSection() {
   const [bulkSallePrepId, setBulkSallePrepId] = useState<string>("");
   // Salle parallèle visée par l'affectation groupée : "" = toutes, sinon le rang (#1, #2…)
   const [bulkRang, setBulkRang] = useState("");
+  // Surveillants de l'affectation groupée : "" = inchangé, "null" = aucun, sinon l'id
+  const [bulkSurvId, setBulkSurvId] = useState<string>("");
+  const [bulkSurv2Id, setBulkSurv2Id] = useState<string>("");
   // Salles par défaut
   type SalleDefaut = { matiere: string; salle_id: number | null; salle_preparation_id: number | null; surveillant_id: number | null; surveillant2_id: number | null };
   type SurveillantItem = { id: number; nom: string; prenom: string; actif: boolean };
@@ -13024,6 +13027,8 @@ function SallesSection() {
             const calls = [];
             if (bulkSalleId !== "") calls.push(patch(`plannings/${planningId}/epreuves/${e.id}`, { salle_id: bulkSalleId ? Number(bulkSalleId) : null }));
             if (bulkSallePrepId !== "") calls.push(patch(`plannings/${planningId}/epreuves/${e.id}`, { salle_preparation_id: bulkSallePrepId ? Number(bulkSallePrepId) : null }));
+            if (bulkSurvId !== "") calls.push(patch(`plannings/${planningId}/epreuves/${e.id}`, { surveillant_id: bulkSurvId === "null" ? null : Number(bulkSurvId) }));
+            if (bulkSurv2Id !== "") calls.push(patch(`plannings/${planningId}/epreuves/${e.id}`, { surveillant2_id: bulkSurv2Id === "null" ? null : Number(bulkSurv2Id) }));
             return calls;
           });
         })
@@ -13041,14 +13046,28 @@ function SallesSection() {
             updates.salle_preparation_id = bulkSallePrepId ? Number(bulkSallePrepId) : null;
             updates.salle_preparation_intitule = salles.find((s) => s.id === Number(bulkSallePrepId))?.intitule ?? null;
           }
+          if (bulkSurvId !== "") {
+            const s = bulkSurvId === "null" ? null : surveillants.find((x) => x.id === Number(bulkSurvId)) ?? null;
+            updates.surveillant_id = s?.id ?? null;
+            updates.surveillant_nom = s?.nom ?? null;
+            updates.surveillant_prenom = s?.prenom ?? null;
+          }
+          if (bulkSurv2Id !== "") {
+            const s = bulkSurv2Id === "null" ? null : surveillants.find((x) => x.id === Number(bulkSurv2Id)) ?? null;
+            updates.surveillant2_id = s?.id ?? null;
+            updates.surveillant2_nom = s?.nom ?? null;
+            updates.surveillant2_prenom = s?.prenom ?? null;
+          }
           return { ...e, ...updates };
         })
       );
       setSelected(new Set());
       setBulkSalleId("");
       setBulkSallePrepId("");
+      setBulkSurvId("");
+      setBulkSurv2Id("");
       setBulkRang("");
-      toast.success(`Salle affectée à ${selected.size} groupe(s)${bulkRang ? ` (salle #${bulkRang} uniquement)` : ""}`);
+      toast.success(`Affectation appliquée à ${selected.size} groupe(s)${bulkRang ? ` (salle #${bulkRang} uniquement)` : ""}`);
     } finally {
       setSaving(null);
     }
@@ -13404,9 +13423,27 @@ function SallesSection() {
                 <option value="null">Aucune</option>
                 {activeSalles.map((s) => <option key={s.id} value={s.id}>{s.intitule}</option>)}
               </select>
+              <select
+                value={bulkSurvId}
+                onChange={(e) => setBulkSurvId(e.target.value)}
+                className="border rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15"
+              >
+                <option value="">— Surveillant —</option>
+                <option value="null">Aucun</option>
+                {surveillants.filter((s) => s.actif).map((s) => <option key={s.id} value={s.id}>{s.nom} {s.prenom}</option>)}
+              </select>
+              <select
+                value={bulkSurv2Id}
+                onChange={(e) => setBulkSurv2Id(e.target.value)}
+                className="border rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15"
+              >
+                <option value="">— Surveillant 2 —</option>
+                <option value="null">Aucun</option>
+                {surveillants.filter((s) => s.actif).map((s) => <option key={s.id} value={s.id}>{s.nom} {s.prenom}</option>)}
+              </select>
               <button
                 onClick={applyBulkSelection}
-                disabled={saving === -1 || (bulkSalleId === "" && bulkSallePrepId === "")}
+                disabled={saving === -1 || (bulkSalleId === "" && bulkSallePrepId === "" && bulkSurvId === "" && bulkSurv2Id === "")}
                 className="px-3 py-1.5 rounded-lg text-xs text-white font-medium disabled:opacity-40 transition"
                 style={{ backgroundColor: RED }}
               >
