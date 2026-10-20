@@ -12879,6 +12879,8 @@ function SallesSection() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkSalleId, setBulkSalleId] = useState<string>("");
   const [bulkSallePrepId, setBulkSallePrepId] = useState<string>("");
+  // Salle parallèle visée par l'affectation groupée : "" = toutes, sinon le rang (#1, #2…)
+  const [bulkRang, setBulkRang] = useState("");
   // Salles par défaut
   type SalleDefaut = { matiere: string; salle_id: number | null; salle_preparation_id: number | null; surveillant_id: number | null; surveillant2_id: number | null };
   type SurveillantItem = { id: number; nom: string; prenom: string; actif: boolean };
@@ -13017,7 +13019,7 @@ function SallesSection() {
       await Promise.all(
         Array.from(selected).flatMap((key) => {
           const [date, matiere, heure_debut] = key.split("||");
-          const targets = epreuves.filter((e) => e.date === date && e.matiere === matiere && e.heure_debut === heure_debut);
+          const targets = epreuves.filter((e) => e.date === date && e.matiere === matiere && e.heure_debut === heure_debut && estDansRang(e));
           return targets.flatMap((e) => {
             const calls = [];
             if (bulkSalleId !== "") calls.push(patch(`plannings/${planningId}/epreuves/${e.id}`, { salle_id: bulkSalleId ? Number(bulkSalleId) : null }));
@@ -13029,7 +13031,7 @@ function SallesSection() {
       setEpreuves((prev) =>
         prev.map((e) => {
           const key = `${e.date}||${e.matiere}||${e.heure_debut}`;
-          if (!selected.has(key)) return e;
+          if (!selected.has(key) || !estDansRang(e)) return e;
           const updates: Partial<EpreuveFlat> = {};
           if (bulkSalleId !== "") {
             updates.salle_id = bulkSalleId ? Number(bulkSalleId) : null;
@@ -13045,11 +13047,27 @@ function SallesSection() {
       setSelected(new Set());
       setBulkSalleId("");
       setBulkSallePrepId("");
-      toast.success(`Salle affectée à ${selected.size} groupe(s)`);
+      setBulkRang("");
+      toast.success(`Salle affectée à ${selected.size} groupe(s)${bulkRang ? ` (salle #${bulkRang} uniquement)` : ""}`);
     } finally {
       setSaving(null);
     }
   }
+
+  // Rang (#1, #2…) de chaque épreuve parmi les salles parallèles de son créneau
+  // (même date, matière, heure), calculé sur TOUT le planning : il ne change pas
+  // selon les filtres, et c'est le même dans le tableau et l'affectation groupée.
+  const rangParallele = new Map<number, number>();
+  const tailleCreneau = new Map<string, number>();
+  for (const e of epreuves) {
+    const k = `${e.date}||${e.matiere}||${e.heure_debut}`;
+    const n = (tailleCreneau.get(k) ?? 0) + 1;
+    tailleCreneau.set(k, n);
+    rangParallele.set(e.id, n);
+  }
+  const estDansRang = (e: EpreuveFlat) => !bulkRang || rangParallele.get(e.id) === Number(bulkRang);
+  // Rangs proposés dans la barre : jusqu'au plus grand nombre de salles parallèles sélectionnées
+  const maxRangSelection = Math.max(0, ...Array.from(selected).map((k) => tailleCreneau.get(k) ?? 0));
 
   const matieres = Array.from(new Set(epreuves.map((e) => e.matiere))).sort();
   const heures = Array.from(new Set(epreuves.map((e) => e.heure_debut))).sort();
@@ -13355,6 +13373,19 @@ function SallesSection() {
           {selected.size > 0 && (
             <div className="bg-white rounded-2xl border border-black/5 shadow-sm px-4 py-3 flex items-center gap-3 flex-wrap">
               <span className="text-xs font-semibold text-gray-800">{selected.size} créneau(x) sélectionné(s)</span>
+              {maxRangSelection > 1 && (
+                <select
+                  value={bulkRang}
+                  onChange={(e) => setBulkRang(e.target.value)}
+                  title="Salles parallèles concernées par l'affectation"
+                  className="border rounded-lg px-2 py-1.5 text-xs bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-black/15"
+                >
+                  <option value="">Toutes les salles parallèles</option>
+                  {Array.from({ length: maxRangSelection }, (_, i) => String(i + 1)).map((r) => (
+                    <option key={r} value={r}>Salle #{r} uniquement</option>
+                  ))}
+                </select>
+              )}
               <select
                 value={bulkSalleId}
                 onChange={(e) => setBulkSalleId(e.target.value)}
@@ -13381,7 +13412,7 @@ function SallesSection() {
               >
                 Appliquer
               </button>
-              <button onClick={() => setSelected(new Set())} className="text-xs text-gray-700 hover:text-black transition ml-auto">
+              <button onClick={() => { setSelected(new Set()); setBulkRang(""); }} className="text-xs text-gray-700 hover:text-black transition ml-auto">
                 Annuler
               </button>
             </div>
@@ -13534,8 +13565,8 @@ function SallesSection() {
                                 </>
                               )}
                               <td className="px-4 py-2.5">
-                                {hasDoublons && (
-                                  <span className="text-[9px] text-gray-700 font-mono mr-1.5 align-middle">#{epIdx + 1}</span>
+                                {(tailleCreneau.get(key) ?? 0) > 1 && (
+                                  <span className="text-[9px] text-gray-700 font-mono mr-1.5 align-middle">#{rangParallele.get(ep.id)}</span>
                                 )}
                                 <select
                                   value={ep.salle_id ?? ""}
