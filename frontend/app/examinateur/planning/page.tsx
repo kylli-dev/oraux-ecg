@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Loader2, CheckCircle, Clock, FileText, Download, AlertTriangle, Lock, X, ExternalLink,
-  CalendarDays, MapPin, Search, Users, BarChart3,
+  CalendarDays, MapPin, Search, Users, BarChart3, List, CalendarRange,
 } from "lucide-react";
 import { RED, PageHeader, Alert } from "../_ui";
 
@@ -86,6 +86,139 @@ function heurePrepa(heure_debut: string, prep_min: number): string {
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
+// ── Vue « Emploi du temps » ─────────────────────────────────────────────────────
+// Grille schématique : une colonne par journée, l'axe vertical en heures. Chaque
+// passage est un bloc placé à son horaire ; la préparation du candidat est une fine
+// barre à gauche (elle chevauche souvent le passage précédent, d'où la barre plutôt
+// qu'un bloc).
+const PX_PAR_MIN = 1.4;
+const ENTETE_JOUR_PX = 44;
+
+function enMinutes(h: string) {
+  const [hh, mm] = h.split(":").map(Number);
+  return hh * 60 + (mm || 0);
+}
+
+function enHeure(m: number) {
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+
+function styleBloc(ep: Epreuve): React.CSSProperties {
+  if (!ep.candidat_id) return { backgroundColor: "#FFFFFF", borderColor: "#9CA3AF", borderStyle: "dashed" };
+  if (isLocked(ep.note_statut)) return { backgroundColor: "#F0FDF4", borderColor: "#15803D" };
+  if (ep.note_statut === "BROUILLON") return { backgroundColor: "#F3F4F6", borderColor: "#4B5563" };
+  return { backgroundColor: RED + "12", borderColor: RED };
+}
+
+function EmploiDuTemps({ epreuves, onSelect }: { epreuves: Epreuve[]; onSelect: (ep: Epreuve) => void }) {
+  const jours = [...new Set(epreuves.map((e) => e.date))].sort();
+  const debut = Math.floor(Math.min(...epreuves.map((e) => enMinutes(e.heure_debut) - (e.preparation_minutes ?? 0))) / 60) * 60;
+  const fin = Math.ceil(Math.max(...epreuves.map((e) => enMinutes(e.heure_fin))) / 60) * 60;
+  const hauteur = (fin - debut) * PX_PAR_MIN;
+  const heures: number[] = [];
+  for (let m = debut; m <= fin; m += 60) heures.push(m);
+
+  const legende = [
+    { label: "À noter", style: styleBloc({ candidat_id: 1, note_statut: null } as Epreuve) },
+    { label: "Brouillon", style: styleBloc({ candidat_id: 1, note_statut: "BROUILLON" } as Epreuve) },
+    { label: "Note validée", style: styleBloc({ candidat_id: 1, note_statut: "VALIDE" } as Epreuve) },
+    { label: "Sans candidat", style: styleBloc({ candidat_id: null } as Epreuve) },
+  ];
+
+  return (
+    <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-4">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4 text-xs text-gray-900">
+        {legende.map((l) => (
+          <span key={l.label} className="flex items-center gap-1.5">
+            <span className="h-3.5 w-3.5 rounded-sm border-l-4 border" style={l.style} />
+            {l.label}
+          </span>
+        ))}
+        <span className="flex items-center gap-1.5">
+          <span className="h-3.5 w-1.5 rounded-full" style={{ backgroundColor: RED + "55" }} />
+          Préparation du candidat
+        </span>
+        <span className="ml-auto text-gray-700">Cliquez sur un créneau pour le noter</span>
+      </div>
+
+      <div className="overflow-x-auto">
+        <div className="flex min-w-fit">
+          {/* Axe des heures */}
+          <div className="w-12 shrink-0 relative" style={{ height: hauteur + ENTETE_JOUR_PX }}>
+            {heures.map((m) => (
+              <span
+                key={m}
+                className="absolute right-2 -translate-y-1/2 text-[11px] font-medium text-gray-700 tabular-nums"
+                style={{ top: ENTETE_JOUR_PX + (m - debut) * PX_PAR_MIN }}
+              >
+                {enHeure(m)}
+              </span>
+            ))}
+          </div>
+
+          {jours.map((jour) => {
+            const duJour = epreuves.filter((e) => e.date === jour);
+            return (
+              <div key={jour} className="flex-1 min-w-[150px] border-l border-gray-200">
+                <div
+                  className="flex flex-col items-center justify-center border-b border-gray-200 px-1"
+                  style={{ height: ENTETE_JOUR_PX }}
+                >
+                  <span className="text-xs font-bold text-gray-900 capitalize">
+                    {new Date(jour + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}
+                  </span>
+                  <span className="text-[11px] text-gray-700">
+                    {duJour.length} créneau{duJour.length > 1 ? "x" : ""}
+                  </span>
+                </div>
+                <div className="relative" style={{ height: hauteur }}>
+                  {heures.map((m) => (
+                    <div key={m} className="absolute inset-x-0 border-t border-gray-100" style={{ top: (m - debut) * PX_PAR_MIN }} />
+                  ))}
+                  {duJour.map((ep) => {
+                    const d = enMinutes(ep.heure_debut);
+                    const f = enMinutes(ep.heure_fin);
+                    const prep = ep.preparation_minutes ?? 0;
+                    const h = Math.max((f - d) * PX_PAR_MIN, 20);
+                    const nom = ep.candidat_id
+                      ? `${ep.candidat_prenom ?? ""} ${ep.candidat_nom ?? ""}`.trim()
+                      : "Sans candidat";
+                    return (
+                      <div key={ep.id}>
+                        {prep > 0 && (
+                          <div
+                            className="absolute left-1 w-1.5 rounded-full"
+                            style={{ top: (d - prep - debut) * PX_PAR_MIN, height: prep * PX_PAR_MIN, backgroundColor: RED + "55" }}
+                            title={`Préparation ${enHeure(d - prep)} – ${ep.heure_debut}`}
+                          />
+                        )}
+                        <button
+                          onClick={() => onSelect(ep)}
+                          className="absolute left-3.5 right-1 rounded-md border border-l-4 px-1.5 py-0.5 text-left overflow-hidden text-gray-900 transition hover:shadow-md hover:z-10 focus:outline-none focus-visible:ring-2"
+                          style={{ top: (d - debut) * PX_PAR_MIN, height: h, "--tw-ring-color": RED, ...styleBloc(ep) } as React.CSSProperties}
+                          title={`${ep.heure_debut} – ${ep.heure_fin} · ${ep.matiere} · ${nom}${ep.salle_intitule ? ` · Salle ${ep.salle_intitule}` : ""}`}
+                        >
+                          <p className="text-[11px] font-semibold tabular-nums leading-tight">
+                            {ep.heure_debut} – {ep.heure_fin}
+                          </p>
+                          {h >= 32 && <p className="text-xs font-medium truncate leading-tight">{nom}</p>}
+                          {h >= 48 && ep.salle_intitule && (
+                            <p className="text-[11px] text-gray-800 truncate leading-tight">Salle {ep.salle_intitule}</p>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StatsBloc({ label, data, accent }: { label: string; data: StatsMatiere; accent: boolean }) {
   return (
     <div
@@ -127,6 +260,29 @@ export default function ExaminateurPlanningPage() {
   const [exporting, setExporting] = useState<"pdf" | "xlsx" | null>(null);
   const [filterDate, setFilterDate] = useState("");
   const [searchCandidat, setSearchCandidat] = useState("");
+  // Vue liste (saisie des notes) ou emploi du temps schématique — mémorisée par navigateur
+  const [vue, setVue] = useState<"liste" | "edt">("liste");
+  // Créneau mis en évidence après un clic dans l'emploi du temps
+  const [surligne, setSurligne] = useState<number | null>(null);
+
+  useEffect(() => {
+    try { if (localStorage.getItem("examinateur_vue") === "edt") setVue("edt"); } catch { /* stockage indisponible */ }
+  }, []);
+
+  function changerVue(v: "liste" | "edt") {
+    setVue(v);
+    try { localStorage.setItem("examinateur_vue", v); } catch { /* stockage indisponible */ }
+  }
+
+  // Clic sur un bloc de l'emploi du temps : retour à la liste, sur la journée du
+  // créneau, défilement jusqu'à lui et mise en évidence pendant quelques secondes.
+  function allerAuCreneau(ep: Epreuve) {
+    changerVue("liste");
+    setFilterDate(ep.date);
+    setSurligne(ep.id);
+    setTimeout(() => document.getElementById(`ep-${ep.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+    setTimeout(() => setSurligne((s) => (s === ep.id ? null : s)), 3000);
+  }
   // Sujet (planche PDF) affiché dans la page — plus fiable qu'une fenêtre surgissante,
   // que les bloqueurs de pop-up peuvent empêcher.
   const [sujet, setSujet] = useState<{ ep: Epreuve; url: string | null; loading: boolean; error: string } | null>(null);
@@ -323,6 +479,24 @@ export default function ExaminateurPlanningPage() {
         {/* ── Filtres ── */}
         {!loading && epreuves.length > 0 && (
           <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-4 space-y-3">
+            <div className="inline-flex rounded-lg border border-gray-300 p-0.5 bg-gray-50">
+              {([
+                ["liste", "Liste & notes", <List key="l" className="h-4 w-4" />],
+                ["edt", "Emploi du temps", <CalendarRange key="e" className="h-4 w-4" />],
+              ] as const).map(([v, label, icone]) => (
+                <button
+                  key={v}
+                  onClick={() => changerVue(v)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition ${
+                    vue === v ? "text-white shadow-sm" : "text-gray-900 hover:bg-white"
+                  }`}
+                  style={vue === v ? { backgroundColor: RED } : undefined}
+                >
+                  {icone}
+                  {label}
+                </button>
+              ))}
+            </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-700 pointer-events-none" />
               <input
@@ -385,6 +559,8 @@ export default function ExaminateurPlanningPage() {
           <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-10 text-center">
             <p className="text-sm font-medium text-gray-900">Aucun résultat pour cette sélection</p>
           </div>
+        ) : vue === "edt" ? (
+          <EmploiDuTemps epreuves={filtered} onSelect={allerAuCreneau} />
         ) : (
           <div className="space-y-8">
             {Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b)).map(([date, eps]) => (
@@ -406,7 +582,13 @@ export default function ExaminateurPlanningPage() {
                     const statut = statutNote(ep.note_statut);
 
                     return (
-                      <div key={ep.id} className={`flex gap-4 px-4 sm:px-5 py-5 ${ep.conflit_etablissement ? "bg-amber-50/40" : ""}`}>
+                      <div
+                        key={ep.id}
+                        id={`ep-${ep.id}`}
+                        className={`flex gap-4 px-4 sm:px-5 py-5 transition-colors duration-700 ${
+                          surligne === ep.id ? "bg-red-50" : ep.conflit_etablissement ? "bg-amber-50/40" : ""
+                        }`}
+                      >
                         {/* Horaires */}
                         <div className="w-[4.5rem] sm:w-20 shrink-0 self-start text-center rounded-xl bg-gray-50 border border-gray-100 py-2.5 tabular-nums">
                           <p className="text-base sm:text-lg font-bold text-gray-900 leading-tight">{ep.heure_debut}</p>
