@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Loader2, Eye, EyeOff } from "lucide-react";
+import { Loader2, Eye, EyeOff, LogIn } from "lucide-react";
+import { RED, AuthCard, Alert, inputClass, inputStyle, primaryButtonClass } from "./_ui";
 
-const RED = "#C62828";
 const API_BASE = process.env.NEXT_PUBLIC_PORTAL_API_URL ?? "http://localhost:8000";
 
 export default function CandidatLoginPage() {
@@ -42,88 +42,75 @@ export default function CandidatLoginPage() {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-[calc(100vh-65px)] px-4">
-      <div className="w-full max-w-sm bg-white rounded-2xl shadow-md border border-gray-100 p-8">
-        <div className="mb-6 text-center">
-          <div
-            className="inline-flex items-center justify-center h-12 w-12 rounded-full mb-3"
-            style={{ backgroundColor: RED + "18" }}
-          >
-            <div className="h-6 w-6 rounded-full border-2" style={{ borderColor: RED }} />
-          </div>
-          <h1 className="text-xl font-semibold text-gray-900">Espace Candidat</h1>
-          <p className="text-sm text-gray-700 mt-1">
-            Connectez-vous avec les identifiants reçus par email.
-          </p>
+    <AuthCard
+      icon={<LogIn className="h-6 w-6" />}
+      title="Espace candidat"
+      subtitle="Connectez-vous avec les identifiants reçus par email."
+      footer={
+        <Link
+          href="/candidat/mot-de-passe-oublie"
+          className="text-sm font-medium hover:underline underline-offset-2"
+          style={{ color: RED }}
+        >
+          Mot de passe oublié ?
+        </Link>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-1.5">
+          <label className="block text-xs font-semibold text-gray-800 uppercase tracking-wide">
+            Login
+          </label>
+          <input
+            type="text"
+            value={login}
+            onChange={(e) => setLogin(e.target.value)}
+            placeholder="Votre identifiant"
+            autoFocus
+            autoComplete="username"
+            className={inputClass}
+            style={inputStyle}
+          />
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-1">
-            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wide">
-              Login
-            </label>
+        <div className="space-y-1.5">
+          <label className="block text-xs font-semibold text-gray-800 uppercase tracking-wide">
+            Mot de passe
+          </label>
+          <div className="relative">
             <input
-              type="text"
-              value={login}
-              onChange={(e) => setLogin(e.target.value)}
-              placeholder="Votre identifiant"
-              autoFocus
-              autoComplete="username"
-              className="w-full px-4 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
-              style={{ "--tw-ring-color": RED } as React.CSSProperties}
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="current-password"
+              className={`${inputClass} pr-11`}
+              style={inputStyle}
             />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              tabIndex={-1}
+              title={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+              className="absolute right-0 top-0 h-full px-3 flex items-center text-gray-700 hover:text-black transition"
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
           </div>
-
-          <div className="space-y-1">
-            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wide">
-              Mot de passe
-            </label>
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                autoComplete="current-password"
-                className="w-full px-4 py-2.5 pr-11 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
-                style={{ "--tw-ring-color": RED } as React.CSSProperties}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                tabIndex={-1}
-                title={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
-                className="absolute right-0 top-0 h-full px-3 flex items-center text-gray-700 hover:text-black transition"
-              >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-          </div>
-
-          {error && (
-            <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading || !login.trim() || !password}
-            className="w-full py-2.5 rounded-lg text-white text-sm font-medium transition hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
-            style={{ backgroundColor: RED }}
-          >
-            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-            {loading ? "Connexion…" : "Se connecter"}
-          </button>
-        </form>
-
-        <div className="mt-5 text-center">
-          <Link
-            href="/candidat/mot-de-passe-oublie"
-            className="text-xs text-gray-700 hover:text-black underline underline-offset-2"
-          >
-            Mot de passe oublié ?
-          </Link>
         </div>
-      </div>
-    </div>
+
+        {error && <Alert tone="error">{error}</Alert>}
+
+        <button
+          type="submit"
+          disabled={loading || !login.trim() || !password}
+          className={primaryButtonClass}
+          style={{ backgroundColor: RED }}
+        >
+          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+          {loading ? "Connexion…" : "Se connecter"}
+        </button>
+      </form>
+    </AuthCard>
   );
 }

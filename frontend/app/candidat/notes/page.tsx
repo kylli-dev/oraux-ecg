@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Star, Lock } from "lucide-react";
+import { Star, Lock } from "lucide-react";
+import { RED, PageLoader, PageHeader, Alert } from "../_ui";
 
-const RED = "#C62828";
 const API_BASE = process.env.NEXT_PUBLIC_PORTAL_API_URL ?? "http://localhost:8000";
 
 type Note = {
@@ -55,83 +55,58 @@ export default function NotesPage() {
     loadNotes(tok);
   }, [router, loadNotes]);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[calc(100vh-65px)]">
-        <Loader2 className="h-6 w-6 animate-spin text-gray-700" />
-      </div>
-    );
-  }
+  if (loading) return <PageLoader />;
 
   // Pas de moyenne : chaque épreuve est notée séparément (3 notes distinctes sur 20).
   return (
-    <div className="max-w-lg mx-auto px-4 py-8">
-      <div className="flex items-center gap-3 mb-2">
-        <Star className="h-6 w-6" style={{ color: RED }} />
-        <h1 className="text-xl font-bold text-gray-900">Mes notes</h1>
-      </div>
-      <p className="text-sm text-gray-700 mb-6">
-        Chaque épreuve est notée séparément, sur 20. Les notes affichées ont été publiées
-        par le service des admissions.
-      </p>
+    <div className="max-w-3xl mx-auto px-4 py-10">
+      <PageHeader
+        icon={<Star className="h-6 w-6" />}
+        title="Mes notes"
+        subtitle="Chaque épreuve est notée séparément, sur 20. Les notes affichées ont été publiées par le service des admissions."
+      />
 
-      {error && (
-        <div className="mb-4 rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600">
-          {error}
-        </div>
-      )}
+      {error && <Alert tone="error" className="mb-5">{error}</Alert>}
 
       {notes.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-gray-200 p-12 text-center">
-          <Lock className="h-8 w-8 mx-auto mb-3 text-gray-700" />
-          <p className="text-sm font-medium text-gray-700">Vos notes ne sont pas encore disponibles</p>
-          <p className="text-xs text-gray-700 mt-1">
+        <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-12 text-center">
+          <div
+            className="h-12 w-12 rounded-2xl flex items-center justify-center mx-auto mb-4"
+            style={{ backgroundColor: RED + "14", color: RED }}
+          >
+            <Lock className="h-6 w-6" />
+          </div>
+          <p className="text-sm font-semibold text-gray-900">Vos notes ne sont pas encore disponibles</p>
+          <p className="text-sm text-gray-700 mt-1">
             Elles apparaîtront ici dès leur publication.
           </p>
         </div>
       ) : (
-        <>
-          {/* Liste des notes */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            {notes.map((note, i) => (
-              <div
-                key={note.matiere}
-                className={`flex items-center justify-between px-5 py-4 ${
-                  i > 0 ? "border-t border-gray-100" : ""
-                }`}
-              >
-                <div>
-                  <p className="text-base font-semibold text-gray-900">{note.matiere}</p>
-                  {note.published_at && (
-                    <p className="text-xs text-gray-700 mt-0.5">
-                      Publiée le{" "}
-                      {new Date(note.published_at).toLocaleDateString("fr-FR", {
-                        day: "numeric", month: "long", year: "numeric",
-                      })}
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center">
-                  {/* Note neutre : ni barre de progression, ni couleur selon la valeur */}
-                  <span className="text-lg font-bold text-gray-900 w-24 text-right tabular-nums">
-                    {formatScore(note.valeur)}
-                    <span className="text-xs font-normal text-gray-700">/20</span>
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {notes.map((note) => (
+            <div
+              key={note.matiere}
+              className="relative overflow-hidden rounded-2xl bg-white border border-black/5 shadow-sm p-5 flex flex-col"
+            >
+              <div className="absolute inset-x-0 top-0 h-1" style={{ backgroundColor: RED }} />
+              <p className="text-sm font-semibold text-gray-900">{note.matiere}</p>
+              {/* Note neutre : ni barre de progression, ni couleur selon la valeur */}
+              <p className="mt-4 mb-1 text-4xl font-bold text-gray-900 tabular-nums">
+                {formatScore(note.valeur)}
+                <span className="text-base font-medium text-gray-700"> /20</span>
+              </p>
+              {note.published_at && (
+                <p className="mt-auto pt-2 text-xs text-gray-700">
+                  Publiée le{" "}
+                  {new Date(note.published_at).toLocaleDateString("fr-FR", {
+                    day: "numeric", month: "long", year: "numeric",
+                  })}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
       )}
-
-      <div className="mt-8 pt-6 border-t border-gray-100 text-center">
-        <button
-          onClick={() => router.push("/candidat/accueil")}
-          className="text-xs text-gray-700 hover:text-black underline underline-offset-2"
-        >
-          ← Retour à l&apos;accueil
-        </button>
-      </div>
     </div>
   );
 }

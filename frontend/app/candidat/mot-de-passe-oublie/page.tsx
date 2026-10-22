@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Loader2, CheckCircle } from "lucide-react";
+import { Loader2, CheckCircle2, Mail } from "lucide-react";
+import { RED, AuthCard, Alert, inputClass, inputStyle, primaryButtonClass } from "../_ui";
 
-const RED = "#C62828";
 const API_BASE = process.env.NEXT_PUBLIC_PORTAL_API_URL ?? "http://localhost:8000";
 
 export default function MotDePasseOublePage() {
@@ -33,82 +33,70 @@ export default function MotDePasseOublePage() {
     }
   };
 
+  const retour = (
+    <Link href="/candidat" className="text-sm font-medium hover:underline underline-offset-2" style={{ color: RED }}>
+      Retour à la connexion
+    </Link>
+  );
+
   if (sent) {
     return (
-      <div className="flex items-center justify-center min-h-[calc(100vh-65px)] px-4">
-        <div className="w-full max-w-sm bg-white rounded-2xl shadow-md border border-gray-100 p-8 text-center">
-          <CheckCircle className="h-10 w-10 mx-auto mb-4" style={{ color: "#16a34a" }} />
-          <h1 className="text-lg font-semibold text-gray-900 mb-2">Demande prise en compte</h1>
-          <p className="text-sm text-gray-700 mb-3">
-            Si un compte correspond à <strong className="text-gray-900">{login.trim()}</strong>, un email
-            contenant un lien pour choisir un nouveau mot de passe vient d&apos;être envoyé à
-            l&apos;adresse enregistrée. Le lien est valable 30 minutes.
-          </p>
-          <p className="text-sm text-gray-700 mb-6">
-            Pensez à vérifier vos courriers indésirables (spam).
-          </p>
-          <Link
-            href="/candidat"
-            className="block w-full py-2.5 rounded-lg text-white text-sm font-medium text-center transition hover:opacity-90"
-            style={{ backgroundColor: RED }}
-          >
-            Retour à la connexion
-          </Link>
-        </div>
-      </div>
+      <AuthCard icon={<CheckCircle2 className="h-6 w-6 text-green-700" />} title="Demande prise en compte">
+        <p className="text-sm text-gray-700 text-center mt-2 mb-3">
+          Si un compte correspond à <strong className="text-gray-900">{login.trim()}</strong>, un email
+          contenant un lien pour choisir un nouveau mot de passe vient d&apos;être envoyé à
+          l&apos;adresse enregistrée. Le lien est valable 30 minutes.
+        </p>
+        <p className="text-sm text-gray-700 text-center mb-6">
+          Pensez à vérifier vos courriers indésirables (spam).
+        </p>
+        <Link
+          href="/candidat"
+          className={primaryButtonClass}
+          style={{ backgroundColor: RED }}
+        >
+          Retour à la connexion
+        </Link>
+      </AuthCard>
     );
   }
 
   return (
-    <div className="flex items-center justify-center min-h-[calc(100vh-65px)] px-4">
-      <div className="w-full max-w-sm bg-white rounded-2xl shadow-md border border-gray-100 p-8">
-        <h1 className="text-xl font-semibold text-gray-900 mb-1">Mot de passe oublié</h1>
-        <p className="text-sm text-gray-700 mb-6">
-          Saisissez votre login ou votre adresse email. Vous recevrez automatiquement un email
-          avec un lien pour choisir un nouveau mot de passe.
-        </p>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-1">
-            <label className="block text-xs font-medium text-gray-700 uppercase tracking-wide">
-              Login ou adresse email
-            </label>
-            <input
-              type="text"
-              value={login}
-              onChange={(e) => setLogin(e.target.value)}
-              placeholder="Ex. : jdupont ou jean.dupont@mail.fr"
-              autoFocus
-              autoComplete="username"
-              className="w-full px-4 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
-              style={{ "--tw-ring-color": RED } as React.CSSProperties}
-            />
-          </div>
-
-          {error && (
-            <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading || !login.trim()}
-            className="w-full py-2.5 rounded-lg text-white text-sm font-medium transition hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
-            style={{ backgroundColor: RED }}
-          >
-            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-            {loading ? "Envoi…" : "Envoyer le lien"}
-          </button>
-        </form>
-
-        <div className="mt-5 text-center">
-          <Link
-            href="/candidat"
-            className="text-xs text-gray-700 hover:text-black underline underline-offset-2"
-          >
-            Retour à la connexion
-          </Link>
+    <AuthCard
+      icon={<Mail className="h-6 w-6" />}
+      title="Mot de passe oublié"
+      subtitle="Saisissez votre login ou votre adresse email. Vous recevrez un lien pour choisir un nouveau mot de passe."
+      footer={retour}
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-1.5">
+          <label className="block text-xs font-semibold text-gray-800 uppercase tracking-wide">
+            Login ou adresse email
+          </label>
+          <input
+            type="text"
+            value={login}
+            onChange={(e) => setLogin(e.target.value)}
+            placeholder="Ex. : jdupont ou jean.dupont@mail.fr"
+            autoFocus
+            autoComplete="username"
+            className={inputClass}
+            style={inputStyle}
+          />
         </div>
-      </div>
-    </div>
+
+        {error && <Alert tone="error">{error}</Alert>}
+
+        <button
+          type="submit"
+          disabled={loading || !login.trim()}
+          className={primaryButtonClass}
+          style={{ backgroundColor: RED }}
+        >
+          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+          {loading ? "Envoi…" : "Envoyer le lien"}
+        </button>
+      </form>
+    </AuthCard>
   );
 }

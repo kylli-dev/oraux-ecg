@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, CalendarDays, CheckCircle2, Clock, AlertTriangle, MapPin } from "lucide-react";
+import { Loader2, CalendarDays, CalendarClock, CheckCircle2, Clock, AlertTriangle, MapPin } from "lucide-react";
+import { RED, PageLoader, PageHeader, Alert } from "../_ui";
 
-const RED = "#C62828";
 const API_BASE = process.env.NEXT_PUBLIC_PORTAL_API_URL ?? "http://localhost:8000";
 
 // ── Types ───────────────────────────────────────────────────────────────────────
@@ -41,6 +41,12 @@ function formatDate(d: string) {
   });
 }
 
+function formatDateCourte(d: string) {
+  return new Date(d + "T12:00:00").toLocaleDateString("fr-FR", {
+    weekday: "short", day: "numeric", month: "short",
+  });
+}
+
 function authHeaders(token: string) {
   return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 }
@@ -48,38 +54,53 @@ function authHeaders(token: string) {
 // ── Composants ──────────────────────────────────────────────────────────────────
 function EpreuveRow({ ep }: { ep: EpreuveOut }) {
   return (
-    <div className="py-3 space-y-1">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <span className="text-sm font-semibold text-gray-900">{ep.matiere}</span>
+    <div className="py-4 space-y-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className="flex items-center gap-2.5">
+          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: RED }} />
+          <span className="text-sm font-semibold text-gray-900">{ep.matiere}</span>
+        </span>
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
-        {ep.salle_preparation_intitule && (
-          <span className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-gray-50 px-2 py-0.5 text-xs font-medium text-gray-900">
-            <MapPin className="h-3 w-3" />
-            Préparation : salle {ep.salle_preparation_intitule}
-          </span>
-        )}
-        {ep.salle_intitule ? (
-          <span
-            className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-semibold text-gray-900"
-            style={{ borderColor: RED + "55", backgroundColor: RED + "0D" }}
-          >
-            <MapPin className="h-3 w-3" style={{ color: RED }} />
-            Examen : salle {ep.salle_intitule}
-          </span>
-        ) : (
-          <span className="text-xs italic text-gray-700">Salle communiquée ultérieurement</span>
-        )}
+          {ep.salle_preparation_intitule && (
+            <span className="inline-flex items-center gap-1 rounded-full border border-gray-300 bg-white px-2.5 py-0.5 text-xs font-medium text-gray-900">
+              <MapPin className="h-3 w-3" />
+              Préparation : salle {ep.salle_preparation_intitule}
+            </span>
+          )}
+          {ep.salle_intitule ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold text-gray-900"
+              style={{ borderColor: RED + "55", backgroundColor: RED + "0D" }}
+            >
+              <MapPin className="h-3 w-3" style={{ color: RED }} />
+              Examen : salle {ep.salle_intitule}
+            </span>
+          ) : (
+            <span className="text-xs italic text-gray-700">Salle communiquée ultérieurement</span>
+          )}
         </div>
       </div>
-      {/* Les trois tranches horaires, sur une simple ligne de texte */}
-      <p className="text-sm text-gray-700 tabular-nums">
-        Préparation{" "}
-        <span className="font-semibold text-gray-900">{ep.heure_prepa ?? "—"}</span>
-        <span className="mx-2">·</span>
-        Début examen <span className="font-semibold text-gray-900">{ep.heure_debut}</span>
-        <span className="mx-2">·</span>
-        Fin examen <span className="font-semibold text-gray-900">{ep.heure_fin}</span>
-      </p>
+      {/* Les trois tranches horaires */}
+      <div className="grid grid-cols-3 gap-2 tabular-nums">
+        {[
+          ["Préparation", ep.heure_prepa ?? "—"],
+          ["Début examen", ep.heure_debut],
+          ["Fin examen", ep.heure_fin],
+        ].map(([label, heure]) => (
+          <div key={label} className="rounded-lg bg-gray-50 border border-gray-100 px-3 py-1.5">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-gray-700">{label}</p>
+            <p className="text-sm font-semibold text-gray-900">{heure}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Modale({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-[2px] flex items-center justify-center z-50 px-4">
+      <div className="bg-white rounded-2xl shadow-xl p-7 max-w-sm w-full">{children}</div>
     </div>
   );
 }
@@ -91,6 +112,9 @@ export default function CandidatPlanningPage() {
   const [inscription, setInscription] = useState<InscriptionActive | null>(null);
   const [triplets, setTriplets] = useState<TripletOut[]>([]);
   const [loading, setLoading] = useState(true);
+  // Vrai après le premier chargement : les rechargements suivants (après une inscription…)
+  // gardent la page affichée au lieu de la remplacer par le spinner plein écran.
+  const [charge, setCharge] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -127,6 +151,7 @@ export default function CandidatPlanningPage() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
+      setCharge(true);
     }
   }, [router]);
 
@@ -138,8 +163,8 @@ export default function CandidatPlanningPage() {
   }, [router, loadData]);
 
   // Après un rechargement (inscription, désinscription…), la date filtrée peut ne plus
-  // avoir aucun triplet : elle disparaît alors de la liste déroulante, qui retombait
-  // visuellement sur « Toutes les dates » alors que le filtre restait actif (liste vide).
+  // avoir aucun triplet : elle disparaît alors des filtres, qui retombaient visuellement
+  // sur « Toutes les dates » alors que le filtre restait actif (liste vide).
   // On réinitialise le filtre dans ce cas pour que l'affichage et la sélection concordent.
   useEffect(() => {
     if (filterDate && !triplets.some((t) => t.date === filterDate)) setFilterDate("");
@@ -159,6 +184,7 @@ export default function CandidatPlanningPage() {
         throw new Error(body.detail ?? "Erreur lors de l'inscription");
       }
       await loadData(token);
+      window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -197,85 +223,7 @@ export default function CandidatPlanningPage() {
     }
   };
 
-  // ── Modale de confirmation changement ────────────────────────────────────────
-  if (pendingTriplet) {
-    return (
-      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-        <div className="bg-white rounded-2xl shadow-xl p-7 max-w-sm w-full">
-          <AlertTriangle className="h-8 w-8 mb-3" style={{ color: "#d97706" }} />
-          <h2 className="text-base font-semibold text-gray-900 mb-2">
-            Confirmer le changement d&apos;inscription
-          </h2>
-          <p className="text-sm text-gray-700 mb-5">
-            En validant, votre inscription du{" "}
-            <strong>{formatDate(inscription!.date)}</strong> sera annulée et remplacée
-            par celle du <strong>{formatDate(pendingTriplet.date)}</strong>.
-          </p>
-          <div className="flex gap-3">
-            <button
-              onClick={() => setPendingTriplet(null)}
-              disabled={actionLoading}
-              className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 transition"
-            >
-              Annuler
-            </button>
-            <button
-              onClick={() => doInscrire(pendingTriplet.date, pendingTriplet.heure_debut)}
-              disabled={actionLoading}
-              className="flex-1 py-2 rounded-lg text-white text-sm font-medium hover:opacity-90 transition flex items-center justify-center gap-2"
-              style={{ backgroundColor: RED }}
-            >
-              {actionLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-              Confirmer
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Modale de confirmation désinscription ────────────────────────────────────
-  if (confirmDesinscription) {
-    return (
-      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-        <div className="bg-white rounded-2xl shadow-xl p-7 max-w-sm w-full">
-          <AlertTriangle className="h-8 w-8 mb-3 text-red-500" />
-          <h2 className="text-base font-semibold text-gray-900 mb-2">
-            Confirmer l&apos;annulation
-          </h2>
-          <p className="text-sm text-gray-700 mb-5">
-            Êtes-vous sûr de vouloir annuler votre inscription aux oraux du{" "}
-            <strong>{formatDate(inscription!.date)}</strong> ?
-          </p>
-          <div className="flex gap-3">
-            <button
-              onClick={() => setConfirmDesinscription(false)}
-              disabled={actionLoading}
-              className="flex-1 py-2 rounded-lg border border-gray-200 text-sm text-gray-700 hover:bg-gray-50 transition"
-            >
-              Non, garder
-            </button>
-            <button
-              onClick={handleDesinscription}
-              disabled={actionLoading}
-              className="flex-1 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition flex items-center justify-center gap-2"
-            >
-              {actionLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-              Oui, annuler
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[calc(100vh-65px)]">
-        <Loader2 className="h-6 w-6 animate-spin text-gray-700" />
-      </div>
-    );
-  }
+  if (loading && !charge) return <PageLoader />;
 
   const availableDates = Array.from(new Set(triplets.map((t) => t.date))).sort();
   // Une seule liste filtrée + triée (date puis heure de début), partagée par le compteur,
@@ -283,167 +231,235 @@ export default function CandidatPlanningPage() {
   const tripletsAffiches = triplets
     .filter((t) => !filterDate || t.date === filterDate)
     .sort((a, b) => a.date.localeCompare(b.date) || a.heure_debut.localeCompare(b.heure_debut));
+  // Regroupement par journée (la liste est déjà triée par date)
+  const parJour: { date: string; triplets: TripletOut[] }[] = [];
+  for (const t of tripletsAffiches) {
+    const dernier = parJour[parJour.length - 1];
+    if (dernier && dernier.date === t.date) dernier.triplets.push(t);
+    else parJour.push({ date: t.date, triplets: [t] });
+  }
+
+  const pastille = (actif: boolean) =>
+    `shrink-0 px-3 py-1.5 rounded-full text-sm font-medium border transition ${
+      actif ? "text-white shadow-sm" : "bg-white text-gray-900 border-gray-300 hover:border-gray-400"
+    }`;
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
-      <button
-        onClick={() => router.push("/candidat/accueil")}
-        className="flex items-center gap-1 text-sm text-gray-700 hover:text-black mb-6 transition"
-      >
-        ← Retour à l&apos;accueil
-      </button>
-      <h1 className="text-xl font-bold text-gray-900 mb-6">Mes créneaux d&apos;oral</h1>
+    <div className="max-w-3xl mx-auto px-4 py-10">
+      <PageHeader
+        icon={<CalendarClock className="h-6 w-6" />}
+        title="Mes créneaux d'oral"
+        subtitle="Un triplet regroupe vos trois épreuves sur une même demi-journée."
+      />
 
-      {error && (
-        <div className="mb-5 rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600">
-          {error}
-        </div>
-      )}
+      {error && <Alert tone="error" className="mb-6">{error}</Alert>}
 
       {/* ── Inscription active ── */}
       {inscription ? (
-        <div
-          className="rounded-2xl border-2 p-5 mb-8"
-          style={{ borderColor: RED + "44", backgroundColor: RED + "06" }}
-        >
-          <div className="flex items-start justify-between gap-4 mb-3">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <CheckCircle2 className="h-5 w-5" style={{ color: "#16a34a" }} />
-                <span className="text-sm font-semibold text-gray-900">
+        <div className="relative overflow-hidden rounded-2xl bg-white border border-black/5 shadow-sm mb-10">
+          <div className="h-1" style={{ backgroundColor: RED }} />
+          <div className="p-5 sm:p-6">
+            <div className="flex flex-wrap items-start justify-between gap-4 mb-2">
+              <div>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 border border-green-200 px-2.5 py-0.5 text-xs font-semibold text-green-800 mb-2">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
                   Vous êtes inscrit
                 </span>
+                <p className="text-lg font-bold text-gray-900 capitalize">
+                  {formatDate(inscription.date)}
+                </p>
               </div>
-              <p className="text-base font-bold text-gray-900 capitalize">
-                {formatDate(inscription.date)}
-              </p>
+              <button
+                onClick={() => setConfirmDesinscription(true)}
+                disabled={actionLoading}
+                className="shrink-0 text-sm font-medium text-red-700 border border-red-200 rounded-lg px-3 py-1.5 hover:bg-red-50 transition disabled:opacity-50"
+              >
+                Je me désinscris
+              </button>
             </div>
-            <button
-              onClick={() => setConfirmDesinscription(true)}
-              disabled={actionLoading}
-              className="shrink-0 text-xs text-red-600 border border-red-200 rounded-lg px-3 py-1.5 hover:bg-red-50 transition disabled:opacity-50"
-            >
-              Je me désinscris
-            </button>
-          </div>
-          <div className="divide-y divide-gray-100 rounded-xl bg-white border border-gray-100 overflow-hidden">
-            {inscription.epreuves.map((ep) => (
-              <div key={ep.id} className="px-4">
-                <EpreuveRow ep={ep} />
-              </div>
-            ))}
+            <div className="divide-y divide-gray-100">
+              {inscription.epreuves.map((ep) => (
+                <EpreuveRow key={ep.id} ep={ep} />
+              ))}
+            </div>
           </div>
         </div>
       ) : (
-        <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800 mb-8">
-          Vous n&apos;êtes inscrit à aucun triplet de créneaux pour l&apos;instant.
-        </div>
+        <Alert tone="warning" className="mb-10">
+          Vous n&apos;êtes inscrit à aucun triplet de créneaux pour l&apos;instant. Choisissez-en
+          un ci-dessous.
+        </Alert>
       )}
 
       {/* ── Triplets disponibles ── */}
-      <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
-        <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
-          Triplets disponibles
+      <div className="flex items-baseline justify-between gap-3 mb-4">
+        <h2 className="text-lg font-bold text-gray-900">
+          {inscription ? "Changer de créneau" : "Triplets disponibles"}
         </h2>
-        {/* Liste déroulante plutôt qu'un <input type="date"> : seules les dates ayant
-            réellement des triplets sont proposées, et "Toutes les dates" retire le filtre. */}
-        {availableDates.length > 0 && (
-          <div className="flex items-center gap-2">
-            <label htmlFor="filtre-date" className="text-sm font-medium text-gray-900">Date :</label>
-            <select
-              id="filtre-date"
-              value={filterDate}
-              onChange={(e) => setFilterDate(e.target.value)}
-              className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-red-100 focus:border-red-300"
-            >
-              <option value="">Toutes les dates ({triplets.length})</option>
-              {availableDates.map((d) => (
-                <option key={d} value={d}>
-                  {formatDate(d)} ({triplets.filter((t) => t.date === d).length})
-                </option>
-              ))}
-            </select>
-            {filterDate && (
-              <button
-                onClick={() => setFilterDate("")}
-                className="text-sm font-medium hover:underline"
-                style={{ color: RED }}
-              >
-                Effacer
-              </button>
-            )}
-          </div>
-        )}
+        <span className="text-sm text-gray-700 tabular-nums">
+          {tripletsAffiches.length} triplet{tripletsAffiches.length > 1 ? "s" : ""}
+          {loading && <Loader2 className="inline h-3.5 w-3.5 ml-2 animate-spin" />}
+        </span>
       </div>
 
-      {/* Compteur explicite : rend le résultat du filtre vérifiable. Calculé sur la même
-          liste que l'affichage (tripletsAffiches). */}
-      {filterDate && (
-        <p className="text-sm text-gray-900 -mt-2 mb-3">
-          {tripletsAffiches.length} triplet{tripletsAffiches.length > 1 ? "s" : ""} pour le{" "}
-          <span className="font-semibold">{formatDate(filterDate)}</span>
-        </p>
-      )}
-
-      {triplets.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-300 p-12 text-center">
-          <CalendarDays className="h-7 w-7 mx-auto mb-3 text-gray-700" />
-          <p className="text-sm text-gray-900">Aucun triplet disponible pour l&apos;instant.</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {tripletsAffiches.length === 0 && (
-            <div className="rounded-xl border border-dashed border-gray-300 p-8 text-center">
-              <CalendarDays className="h-7 w-7 mx-auto mb-3 text-gray-700" />
-              <p className="text-sm text-gray-900">Aucun triplet pour cette date.</p>
-            </div>
-          )}
-          {tripletsAffiches.map((triplet) => {
-            const tripletKey = `${triplet.date}-${triplet.heure_debut}-${triplet.epreuves.map((e) => e.id).join(",")}`;
-            const firstHeure = triplet.epreuves.length > 0
-              ? (triplet.epreuves[0].heure_prepa ?? triplet.epreuves[0].heure_debut)
-              : triplet.heure_debut.slice(0, 5);
-            const lastHeure = triplet.epreuves.length > 0
-              ? triplet.epreuves[triplet.epreuves.length - 1].heure_fin
-              : triplet.heure_fin.slice(0, 5);
+      {/* Filtre par date : seules les dates ayant réellement des triplets sont proposées */}
+      {availableDates.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-2 mb-5 -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap">
+          <button
+            onClick={() => setFilterDate("")}
+            className={pastille(!filterDate)}
+            style={!filterDate ? { backgroundColor: RED, borderColor: RED } : undefined}
+          >
+            Toutes les dates ({triplets.length})
+          </button>
+          {availableDates.map((d) => {
+            const actif = filterDate === d;
             return (
-              <div
-                key={tripletKey}
-                className="rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden"
+              <button
+                key={d}
+                onClick={() => setFilterDate(d)}
+                className={`${pastille(actif)} capitalize`}
+                style={actif ? { backgroundColor: RED, borderColor: RED } : undefined}
               >
-                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-gray-200 bg-gray-50">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                    <Clock className="h-4 w-4 text-gray-900" />
-                    <span className="text-sm font-semibold text-gray-900 capitalize">
-                      {formatDate(triplet.date)}
-                    </span>
-                    <span className="text-sm font-medium text-gray-900 tabular-nums">
-                      {firstHeure} – {lastHeure}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => { setInscritKey(tripletKey); handleInscrireClick(triplet.date, triplet.heure_debut); }}
-                    disabled={actionLoading}
-                    className="text-xs text-white px-3 py-1.5 rounded-lg font-medium hover:opacity-90 transition disabled:opacity-50 flex items-center gap-1.5"
-                    style={{ backgroundColor: RED }}
-                  >
-                    {actionLoading && pendingTriplet === null && inscritKey === tripletKey && (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    )}
-                    Je m&apos;inscris
-                  </button>
-                </div>
-                <div className="px-4 divide-y divide-gray-100">
-                  {triplet.epreuves.map((ep) => (
-                    <EpreuveRow key={ep.id} ep={ep} />
-                  ))}
-                </div>
-              </div>
+                {formatDateCourte(d)} ({triplets.filter((t) => t.date === d).length})
+              </button>
             );
           })}
         </div>
       )}
 
+      {triplets.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-12 text-center">
+          <CalendarDays className="h-8 w-8 mx-auto mb-3" style={{ color: RED }} />
+          <p className="text-sm font-medium text-gray-900">Aucun triplet disponible pour l&apos;instant.</p>
+        </div>
+      ) : (
+        <div className="space-y-8">
+          {parJour.map(({ date, triplets: duJour }) => (
+            <section key={date}>
+              <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900 uppercase tracking-wide mb-3">
+                <CalendarDays className="h-4 w-4" style={{ color: RED }} />
+                <span className="capitalize">{formatDate(date)}</span>
+              </h3>
+              <div className="space-y-4">
+                {duJour.map((triplet) => {
+                  const tripletKey = `${triplet.date}-${triplet.heure_debut}-${triplet.epreuves.map((e) => e.id).join(",")}`;
+                  const firstHeure = triplet.epreuves.length > 0
+                    ? (triplet.epreuves[0].heure_prepa ?? triplet.epreuves[0].heure_debut)
+                    : triplet.heure_debut.slice(0, 5);
+                  const lastHeure = triplet.epreuves.length > 0
+                    ? triplet.epreuves[triplet.epreuves.length - 1].heure_fin
+                    : triplet.heure_fin.slice(0, 5);
+                  return (
+                    <div
+                      key={tripletKey}
+                      className="rounded-2xl border border-black/5 bg-white shadow-sm overflow-hidden transition hover:shadow-md"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-b border-gray-100">
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            className="h-8 w-8 rounded-lg flex items-center justify-center"
+                            style={{ backgroundColor: RED + "14", color: RED }}
+                          >
+                            <Clock className="h-4 w-4" />
+                          </div>
+                          <span className="text-base font-bold text-gray-900 tabular-nums">
+                            {firstHeure} – {lastHeure}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => { setInscritKey(tripletKey); handleInscrireClick(triplet.date, triplet.heure_debut); }}
+                          disabled={actionLoading}
+                          className="text-sm text-white px-4 py-1.5 rounded-lg font-semibold shadow-sm hover:opacity-90 transition disabled:opacity-50 flex items-center gap-1.5"
+                          style={{ backgroundColor: RED }}
+                        >
+                          {actionLoading && pendingTriplet === null && inscritKey === tripletKey && (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          )}
+                          Je m&apos;inscris
+                        </button>
+                      </div>
+                      <div className="px-5 divide-y divide-gray-100">
+                        {triplet.epreuves.map((ep) => (
+                          <EpreuveRow key={ep.id} ep={ep} />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+
+      {/* ── Modale de confirmation changement ── */}
+      {pendingTriplet && inscription && (
+        <Modale>
+          <div className="h-11 w-11 rounded-xl bg-amber-50 flex items-center justify-center mb-4">
+            <AlertTriangle className="h-6 w-6 text-amber-600" />
+          </div>
+          <h2 className="text-base font-semibold text-gray-900 mb-2">
+            Confirmer le changement d&apos;inscription
+          </h2>
+          <p className="text-sm text-gray-700 mb-6">
+            En validant, votre inscription du{" "}
+            <strong className="text-gray-900">{formatDate(inscription.date)}</strong> sera annulée et
+            remplacée par celle du <strong className="text-gray-900">{formatDate(pendingTriplet.date)}</strong>.
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setPendingTriplet(null)}
+              disabled={actionLoading}
+              className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-800 hover:bg-gray-50 transition"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={() => doInscrire(pendingTriplet.date, pendingTriplet.heure_debut)}
+              disabled={actionLoading}
+              className="flex-1 py-2 rounded-lg text-white text-sm font-semibold hover:opacity-90 transition flex items-center justify-center gap-2"
+              style={{ backgroundColor: RED }}
+            >
+              {actionLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+              Confirmer
+            </button>
+          </div>
+        </Modale>
+      )}
+
+      {/* ── Modale de confirmation désinscription ── */}
+      {confirmDesinscription && inscription && (
+        <Modale>
+          <div className="h-11 w-11 rounded-xl bg-red-50 flex items-center justify-center mb-4">
+            <AlertTriangle className="h-6 w-6 text-red-600" />
+          </div>
+          <h2 className="text-base font-semibold text-gray-900 mb-2">
+            Confirmer l&apos;annulation
+          </h2>
+          <p className="text-sm text-gray-700 mb-6">
+            Êtes-vous sûr de vouloir annuler votre inscription aux oraux du{" "}
+            <strong className="text-gray-900">{formatDate(inscription.date)}</strong> ?
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setConfirmDesinscription(false)}
+              disabled={actionLoading}
+              className="flex-1 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-800 hover:bg-gray-50 transition"
+            >
+              Non, garder
+            </button>
+            <button
+              onClick={handleDesinscription}
+              disabled={actionLoading}
+              className="flex-1 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition flex items-center justify-center gap-2"
+            >
+              {actionLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+              Oui, annuler
+            </button>
+          </div>
+        </Modale>
+      )}
     </div>
   );
 }
