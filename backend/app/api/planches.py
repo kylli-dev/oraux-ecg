@@ -6,6 +6,7 @@ pour éviter la perte des fichiers sur les redémarrages Render.
 from __future__ import annotations
 
 import io
+import re
 import zipfile
 from datetime import date as Date, datetime
 from typing import List, Optional
@@ -62,6 +63,7 @@ class PlancheOut(BaseModel):
     examinateur_id: Optional[int]
     examinateur_nom: Optional[str]
     statut: str
+    couleur: Optional[str] = None
     assignee: bool
     created_at: datetime
 
@@ -74,6 +76,8 @@ class PlancheUpdate(BaseModel):
     matiere_id: Optional[int] = None
     examinateur_id: Optional[int] = None
     statut: Optional[str] = None
+    # "#RRGGBB" ; null explicite = retour à la couleur automatique ; absent = inchangée
+    couleur: Optional[str] = None
 
 
 class AssignerPlancheIn(BaseModel):
@@ -107,6 +111,7 @@ def _planche_out(p: Planche, db: Session) -> PlancheOut:
         examinateur_id=p.examinateur_id,
         examinateur_nom=examinateur_nom,
         statut=p.statut,
+        couleur=p.couleur,
         assignee=_is_assigned(p.id, db),
         created_at=p.created_at,
     )
@@ -188,6 +193,13 @@ def update_planche(planche_id: int, body: PlancheUpdate, db: Session = Depends(g
         p.examinateur_id = body.examinateur_id
     if body.statut is not None:
         p.statut = body.statut.upper()
+    if "couleur" in body.model_fields_set:
+        if body.couleur is None:
+            p.couleur = None
+        elif re.fullmatch(r"#[0-9A-Fa-f]{6}", body.couleur.strip()):
+            p.couleur = body.couleur.strip().upper()
+        else:
+            raise HTTPException(status_code=422, detail="Couleur invalide : format attendu #RRGGBB")
     db.commit()
     db.refresh(p)
     return _planche_out(p, db)

@@ -22,6 +22,8 @@ class Planche(Base):
         ForeignKey("examinateur.id", ondelete="SET NULL"), nullable=True
     )
     statut: Mapped[str] = mapped_column(String(20), default="ACTIF", nullable=False)
+    # Couleur choisie par l'admin (#RRGGBB) ; NULL = couleur automatique dérivée de l'id
+    couleur: Mapped[Optional[str]] = mapped_column(String(7), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )

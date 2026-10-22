@@ -23,6 +23,7 @@ import {
   Download,
   Upload,
   Edit2,
+  Palette,
   UserPlus,
   Link2,
   GraduationCap,
@@ -180,6 +181,8 @@ type PlancheItem = {
   examinateur_id: number | null;
   examinateur_nom: string | null;
   statut: string;
+  // Couleur choisie par l'admin (#RRGGBB) ; null = couleur automatique
+  couleur?: string | null;
   assignee: boolean;
   created_at: string;
 };
@@ -11621,16 +11624,35 @@ function LogoutButton() {
 
 // ── Gestion des planches ───────────────────────────────────────────────────────
 // ── Code couleur des planches ─────────────────────────────────────────────────
-// Une couleur FIXE par planche (dérivée de son identifiant) : la même planche a toujours
-// la même couleur, dans l'assignation, la liste des sujets et la fenêtre d'assignation.
-// La palette étant limitée, le code court (P + numéro) lève toute ambiguïté.
+// Une couleur FIXE par planche : celle choisie par l'admin (sélecteur de couleur de
+// l'onglet « Gestion des sujets »), sinon une couleur automatique dérivée de son
+// identifiant. La même planche a toujours la même couleur, dans l'assignation, la liste
+// des sujets et la fenêtre d'assignation. Le code court (P + numéro) lève toute ambiguïté.
 const PALETTE_PLANCHES = [
   "#C62828", "#1565C0", "#2E7D32", "#EF6C00", "#6A1B9A", "#00838F", "#AD1457", "#827717",
   "#4E342E", "#283593", "#00695C", "#D84315", "#5D4037", "#0277BD", "#558B2F", "#8E24AA",
 ];
 
+// Couleurs choisies, par id de planche — renseigné au chargement de la liste des
+// planches, pour que les pastilles qui ne connaissent que l'id (tableau d'assignation)
+// affichent aussi la couleur choisie.
+const couleursChoisies = new Map<number, string>();
+
+function enregistrerCouleursPlanches(planches: PlancheItem[]) {
+  couleursChoisies.clear();
+  for (const p of planches) if (p.couleur) couleursChoisies.set(p.id, p.couleur);
+}
+
 function couleurPlanche(id: number): string {
-  return PALETTE_PLANCHES[Math.abs(id) % PALETTE_PLANCHES.length];
+  return couleursChoisies.get(id) ?? PALETTE_PLANCHES[Math.abs(id) % PALETTE_PLANCHES.length];
+}
+
+// Texte lisible sur une couleur claire (jaune, beige…) : on bascule alors sur du texte
+// foncé, la couleur restant visible par la bordure et la pastille.
+function estCouleurClaire(hex: string): boolean {
+  const n = parseInt(hex.slice(1), 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return 0.299 * r + 0.587 * g + 0.114 * b > 170;
 }
 
 function PastillePlanche({ id, nom }: { id: number; nom?: string | null }) {
@@ -11638,12 +11660,163 @@ function PastillePlanche({ id, nom }: { id: number; nom?: string | null }) {
   return (
     <span
       className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-xs font-semibold tabular-nums whitespace-nowrap"
-      style={{ borderColor: c, color: c, backgroundColor: c + "14" }}
+      style={{ borderColor: c, color: estCouleurClaire(c) ? "#1F2937" : c, backgroundColor: c + "14" }}
       title={nom ? `Planche « ${nom} » — code P${id}` : `Planche P${id}`}
     >
       <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: c }} />
       P{id}
     </span>
+  );
+}
+
+// Palette proposée dans le sélecteur : couleurs franches, bien distinctes entre elles
+const PALETTE_CHOIX_PLANCHES = [
+  "#C62828", "#E53935", "#AD1457", "#D81B60", "#8E24AA", "#6A1B9A", "#5E35B1", "#283593",
+  "#1565C0", "#0277BD", "#00838F", "#00695C", "#2E7D32", "#558B2F", "#827717", "#F9A825",
+  "#EF6C00", "#D84315", "#6D4C41", "#4E342E", "#546E7A", "#37474F", "#616161", "#212121",
+];
+
+// Sélecteur de couleur d'une planche : palette prédéfinie, nuancier libre (sélecteur
+// natif du navigateur) avec saisie hexadécimale, et retour à la couleur automatique.
+// Le panneau est en position fixe pour ne pas être rogné par le tableau (overflow).
+function SelecteurCouleurPlanche({
+  planche,
+  onChoisir,
+}: {
+  planche: PlancheItem;
+  onChoisir: (couleur: string | null) => Promise<void>;
+}) {
+  const [ouvert, setOuvert] = useState(false);
+  const [position, setPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const actuelle = couleurPlanche(planche.id);
+  const [perso, setPerso] = useState(actuelle);
+  const [enregistrement, setEnregistrement] = useState(false);
+  const bouton = useRef<HTMLButtonElement>(null);
+  const panneau = useRef<HTMLDivElement>(null);
+  const hexValide = /^#[0-9A-Fa-f]{6}$/.test(perso);
+
+  useEffect(() => {
+    if (!ouvert) return;
+    const fermer = (e: MouseEvent) => {
+      if (!panneau.current?.contains(e.target as Node) && !bouton.current?.contains(e.target as Node)) setOuvert(false);
+    };
+    const echap = (e: KeyboardEvent) => { if (e.key === "Escape") setOuvert(false); };
+    const surDefilement = () => setOuvert(false);
+    document.addEventListener("mousedown", fermer);
+    document.addEventListener("keydown", echap);
+    window.addEventListener("scroll", surDefilement, true);
+    return () => {
+      document.removeEventListener("mousedown", fermer);
+      document.removeEventListener("keydown", echap);
+      window.removeEventListener("scroll", surDefilement, true);
+    };
+  }, [ouvert]);
+
+  function basculer() {
+    if (!ouvert && bouton.current) {
+      const r = bouton.current.getBoundingClientRect();
+      const largeur = 272;
+      setPosition({ top: r.bottom + 6, left: Math.max(8, Math.min(r.left, window.innerWidth - largeur - 8)) });
+      setPerso(actuelle);
+    }
+    setOuvert((o) => !o);
+  }
+
+  async function choisir(couleur: string | null) {
+    setEnregistrement(true);
+    try {
+      await onChoisir(couleur);
+      setOuvert(false);
+    } finally {
+      setEnregistrement(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        ref={bouton}
+        type="button"
+        onClick={basculer}
+        className="group inline-flex items-center gap-1 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[#C62828]/40"
+        title="Choisir la couleur de la planche"
+      >
+        <PastillePlanche id={planche.id} nom={planche.nom} />
+        <Palette className="h-3.5 w-3.5 text-gray-700 opacity-60 group-hover:opacity-100 transition" />
+      </button>
+      {ouvert && (
+        <div
+          ref={panneau}
+          className="fixed z-[70] w-[272px] rounded-xl border border-black/10 bg-white shadow-xl p-3 space-y-3"
+          style={{ top: position.top, left: position.left }}
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold text-gray-900">Couleur de la planche P{planche.id}</p>
+            {enregistrement && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-700" />}
+          </div>
+
+          {/* Palette prédéfinie */}
+          <div className="grid grid-cols-8 gap-1.5">
+            {PALETTE_CHOIX_PLANCHES.map((c) => {
+              const actif = c.toUpperCase() === actuelle.toUpperCase();
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  disabled={enregistrement}
+                  onClick={() => choisir(c)}
+                  className={`h-6 w-6 rounded-full border border-black/10 transition hover:scale-110 disabled:opacity-50 ${actif ? "ring-2 ring-offset-2 ring-gray-900" : ""}`}
+                  style={{ backgroundColor: c }}
+                  title={c}
+                  aria-label={`Couleur ${c}`}
+                />
+              );
+            })}
+          </div>
+
+          {/* Nuancier libre */}
+          <div className="border-t border-black/5 pt-3">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-gray-700 mb-1.5">Couleur personnalisée</p>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={hexValide ? perso : actuelle}
+                onChange={(e) => setPerso(e.target.value.toUpperCase())}
+                className="h-8 w-10 cursor-pointer rounded border border-black/15 bg-white p-0.5"
+                title="Ouvrir le nuancier"
+              />
+              <input
+                type="text"
+                value={perso}
+                onChange={(e) => setPerso(e.target.value.trim().toUpperCase())}
+                maxLength={7}
+                placeholder="#RRGGBB"
+                className={`w-24 px-2 py-1.5 rounded border text-xs font-mono text-gray-900 ${hexValide ? "border-black/15" : "border-red-400 bg-red-50"}`}
+              />
+              <button
+                type="button"
+                onClick={() => choisir(perso)}
+                disabled={!hexValide || enregistrement}
+                className="ml-auto text-xs font-semibold text-white px-2.5 py-1.5 rounded-lg disabled:opacity-40"
+                style={{ backgroundColor: "#C62828" }}
+              >
+                Appliquer
+              </button>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => choisir(null)}
+            disabled={enregistrement || !planche.couleur}
+            className="w-full text-xs font-medium text-gray-800 hover:text-black px-2 py-1.5 rounded-lg border border-black/10 hover:bg-gray-50 transition disabled:opacity-40"
+            title={planche.couleur ? "Revenir à la couleur attribuée automatiquement" : "La couleur actuelle est déjà automatique"}
+          >
+            Couleur automatique
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -11910,10 +12083,24 @@ function PlanchesSection() {
   const loadPlanches = useCallback(() => {
     setLoadingP(true);
     get<PlancheItem[]>("planches/")
-      .then(setPlanches)
+      .then((ps) => { enregistrerCouleursPlanches(ps); setPlanches(ps); })
       .catch(() => {})
       .finally(() => setLoadingP(false));
   }, []);
+
+  async function changerCouleur(p: PlancheItem, couleur: string | null) {
+    try {
+      const maj = await patch<PlancheItem>(`planches/${p.id}`, { couleur });
+      setPlanches((prev) => {
+        const suivant = prev.map((x) => (x.id === p.id ? { ...x, couleur: maj?.couleur ?? couleur } : x));
+        enregistrerCouleursPlanches(suivant);
+        return suivant;
+      });
+      toast.success(couleur ? "Couleur de la planche enregistrée" : "Couleur automatique rétablie");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   useEffect(() => {
     loadPlanches();
@@ -12312,7 +12499,7 @@ function PlanchesSection() {
                         <>
                           <td className="px-4 py-3 font-medium text-sm">
                             <div className="flex items-center gap-2">
-                              <PastillePlanche id={p.id} nom={p.nom} />
+                              <SelecteurCouleurPlanche planche={p} onChoisir={(c) => changerCouleur(p, c)} />
                               {p.nom}
                             </div>
                           </td>

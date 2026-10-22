@@ -211,6 +211,8 @@ def _run_migrations():
         "ALTER TABLE admin_user ADD COLUMN email VARCHAR(255)",
         "ALTER TABLE admin_user ADD COLUMN reset_token VARCHAR(100)",
         "ALTER TABLE admin_user ADD COLUMN reset_token_expires_at TIMESTAMP WITH TIME ZONE",
+        # Planche : couleur choisie par l'admin (NULL = couleur automatique)
+        "ALTER TABLE planche ADD COLUMN couleur VARCHAR(7)",
     ]
     with engine.connect() as conn:
         for sql in migrations:
