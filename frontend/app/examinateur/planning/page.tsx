@@ -91,7 +91,9 @@ function heurePrepa(heure_debut: string, prep_min: number): string {
 // passage est un bloc placé à son horaire ; la préparation du candidat est une fine
 // barre à gauche (elle chevauche souvent le passage précédent, d'où la barre plutôt
 // qu'un bloc).
-const PX_PAR_MIN_DEFAUT = 1.4;
+// 2 px/min = 120 px par heure : un passage de 30 min (60 px) affiche lisiblement son
+// heure de début, le candidat et son heure de fin.
+const PX_PAR_MIN_DEFAUT = 2;
 const ENTETE_JOUR_PX = 44;
 
 function enMinutes(h: string) {
@@ -234,13 +236,19 @@ function EmploiDuTemps({ epreuves, onSelect }: { epreuves: Epreuve[]; onSelect: 
                 </div>
                 <div className="relative" style={{ height: hauteur }}>
                   {heures.map((m) => (
-                    <div key={m} className="absolute inset-x-0 border-t border-gray-100" style={{ top: (m - debut) * PX_PAR_MIN }} />
+                    <div key={m} className="absolute inset-x-0 border-t border-gray-200" style={{ top: (m - debut) * PX_PAR_MIN }} />
+                  ))}
+                  {/* Repères des demi-heures */}
+                  {heures.slice(0, -1).map((m) => (
+                    <div key={`d${m}`} className="absolute inset-x-0 border-t border-dashed border-gray-100" style={{ top: (m + 30 - debut) * PX_PAR_MIN }} />
                   ))}
                   {duJour.map((ep) => {
                     const d = enMinutes(ep.heure_debut);
                     const f = enMinutes(ep.heure_fin);
                     const prep = ep.preparation_minutes ?? 0;
-                    const h = Math.max((f - d) * PX_PAR_MIN, 20);
+                    const h = Math.max((f - d) * PX_PAR_MIN, 22);
+                    // Assez de hauteur : début en haut, fin en bas du bloc ; sinon « début – fin » sur une ligne
+                    const finEnBas = h >= 40;
                     const nom = ep.candidat_id
                       ? `${ep.candidat_prenom ?? ""} ${ep.candidat_nom ?? ""}`.trim()
                       : "Sans candidat";
@@ -259,12 +267,17 @@ function EmploiDuTemps({ epreuves, onSelect }: { epreuves: Epreuve[]; onSelect: 
                           style={{ top: (d - debut) * PX_PAR_MIN, height: h, "--tw-ring-color": RED, ...styleBloc(ep) } as React.CSSProperties}
                           title={`${ep.heure_debut} – ${ep.heure_fin} · ${ep.matiere} · ${nom}${ep.salle_intitule ? ` · Salle ${ep.salle_intitule}` : ""}`}
                         >
-                          <p className="text-[11px] font-semibold tabular-nums leading-tight">
-                            {ep.heure_debut} – {ep.heure_fin}
-                          </p>
-                          {h >= 32 && <p className="text-xs font-medium truncate leading-tight">{nom}</p>}
-                          {h >= 48 && ep.salle_intitule && (
-                            <p className="text-[11px] text-gray-800 truncate leading-tight">Salle {ep.salle_intitule}</p>
+                          <span className="block text-xs font-bold tabular-nums leading-tight">
+                            {finEnBas ? ep.heure_debut : `${ep.heure_debut} – ${ep.heure_fin}`}
+                          </span>
+                          {h >= 56 && <span className="block text-xs font-medium truncate leading-tight">{nom}</span>}
+                          {h >= 76 && ep.salle_intitule && (
+                            <span className="block text-[11px] text-gray-800 truncate leading-tight">Salle {ep.salle_intitule}</span>
+                          )}
+                          {finEnBas && (
+                            <span className="absolute bottom-0.5 left-1.5 text-[11px] font-semibold tabular-nums text-gray-800 leading-tight">
+                              → {ep.heure_fin}
+                            </span>
                           )}
                         </button>
                       </div>
