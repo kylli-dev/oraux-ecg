@@ -1,4 +1,5 @@
 import { CandidatHeader } from "./_ui";
+import { EspaceFooter } from "../_espace/ui";
 
 export default function CandidatLayout({
   children,
@@ -9,9 +10,7 @@ export default function CandidatLayout({
     <div className="min-h-screen bg-[#F5F5F5] flex flex-col">
       <CandidatHeader />
       <div className="flex-1">{children}</div>
-      <footer className="py-6 text-center text-xs text-gray-700">
-        Oraux ECG — ENSAE, Institut Polytechnique de Paris
-      </footer>
+      <EspaceFooter />
     </div>
   );
 }

@@ -4,25 +4,9 @@ import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Loader2, CheckCircle2, AlertCircle, Eye, EyeOff, KeyRound } from "lucide-react";
-import { RED, AuthCard, Alert, inputClass, inputStyle, primaryButtonClass } from "../_ui";
+import { RED, AuthCard, AuthEntete as Entete, Alert, inputClass, inputStyle, primaryButtonClass } from "../_ui";
 
 const API_BASE = process.env.NEXT_PUBLIC_PORTAL_API_URL ?? "http://localhost:8000";
-
-// En-tête centré (pastille d'icône + titre + texte) des différents états de la page
-function Entete({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
-  return (
-    <div className="text-center mb-6">
-      <div
-        className="h-12 w-12 rounded-2xl flex items-center justify-center mx-auto mb-5"
-        style={{ backgroundColor: RED + "14", color: RED }}
-      >
-        {icon}
-      </div>
-      <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
-      <p className="text-sm text-gray-700 mt-1.5">{children}</p>
-    </div>
-  );
-}
 
 function ResetForm() {
   const searchParams = useSearchParams();

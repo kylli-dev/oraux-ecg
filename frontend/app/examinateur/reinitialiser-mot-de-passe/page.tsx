@@ -1,15 +1,14 @@
 "use client";
 
 import { useState, useEffect, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Loader2, CheckCircle, AlertCircle, Eye, EyeOff } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, Eye, EyeOff, KeyRound } from "lucide-react";
+import { RED, AuthCard, AuthEntete as Entete, Alert, inputClass, inputStyle, primaryButtonClass } from "../_ui";
 
-const RED = "#C62828";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 function ResetForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get("token") ?? "";
 
@@ -58,48 +57,35 @@ function ResetForm() {
 
   if (success) {
     return (
-      <div className="text-center">
-        <CheckCircle className="h-10 w-10 mx-auto mb-4" style={{ color: "#16a34a" }} />
-        <h1 className="text-lg font-semibold text-gray-900 mb-2">Mot de passe réinitialisé</h1>
-        <p className="text-sm text-gray-700 mb-6">
+      <>
+        <Entete icon={<CheckCircle2 className="h-6 w-6 text-green-700" />} title="Mot de passe réinitialisé">
           Vous pouvez maintenant vous connecter avec votre nouveau mot de passe.
-        </p>
-        <Link
-          href="/examinateur"
-          className="block w-full py-2.5 rounded-lg text-white text-sm font-medium text-center transition hover:opacity-90"
-          style={{ backgroundColor: RED }}
-        >
+        </Entete>
+        <Link href="/examinateur" className={primaryButtonClass} style={{ backgroundColor: RED }}>
           Se connecter
         </Link>
-      </div>
+      </>
     );
   }
 
   if (!token) {
     return (
-      <div className="text-center">
-        <AlertCircle className="h-10 w-10 mx-auto mb-4 text-red-500" />
-        <h1 className="text-lg font-semibold text-gray-900 mb-2">Lien invalide</h1>
-        <p className="text-sm text-gray-700 mb-6">
+      <>
+        <Entete icon={<AlertCircle className="h-6 w-6" />} title="Lien invalide">
           Ce lien de réinitialisation est invalide ou a expiré.
-        </p>
-        <Link
-          href="/examinateur/mot-de-passe-oublie"
-          className="block w-full py-2.5 rounded-lg text-white text-sm font-medium text-center transition hover:opacity-90"
-          style={{ backgroundColor: RED }}
-        >
+        </Entete>
+        <Link href="/examinateur/mot-de-passe-oublie" className={primaryButtonClass} style={{ backgroundColor: RED }}>
           Redemander un lien
         </Link>
-      </div>
+      </>
     );
   }
 
   return (
     <>
-      <h1 className="text-xl font-semibold text-gray-900 mb-1">Nouveau mot de passe</h1>
-      <p className="text-sm text-gray-700 mb-6">
+      <Entete icon={<KeyRound className="h-6 w-6" />} title="Nouveau mot de passe">
         Choisissez un mot de passe d&apos;au moins 8 caractères.
-      </p>
+      </Entete>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {[
@@ -108,8 +94,8 @@ function ResetForm() {
         ].map(({ label, value, set }) => {
           const shown = !!visible[label];
           return (
-            <div key={label} className="space-y-1">
-              <label className="block text-xs font-medium text-gray-700 uppercase tracking-wide">
+            <div key={label} className="space-y-1.5">
+              <label className="block text-xs font-semibold text-gray-800 uppercase tracking-wide">
                 {label}
               </label>
               <div className="relative">
@@ -119,8 +105,8 @@ function ResetForm() {
                   onChange={(e) => set(e.target.value)}
                   placeholder="••••••••"
                   autoComplete="new-password"
-                  className="w-full pl-4 pr-11 py-2.5 rounded-lg border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:border-transparent"
-                  style={{ "--tw-ring-color": RED } as React.CSSProperties}
+                  className={`${inputClass} pr-11`}
+                  style={inputStyle}
                 />
                 <button
                   type="button"
@@ -136,14 +122,12 @@ function ResetForm() {
           );
         })}
 
-        {error && (
-          <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
-        )}
+        {error && <Alert tone="error">{error}</Alert>}
 
         <button
           type="submit"
           disabled={loading || !password || !confirm}
-          className="w-full py-2.5 rounded-lg text-white text-sm font-medium transition hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
+          className={primaryButtonClass}
           style={{ backgroundColor: RED }}
         >
           {loading && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -156,12 +140,10 @@ function ResetForm() {
 
 export default function ExaminateurReinitialisationPage() {
   return (
-    <div className="flex items-center justify-center min-h-screen bg-[#F5F5F5] px-4">
-      <div className="w-full max-w-sm bg-white rounded-2xl shadow-md border border-gray-100 p-8">
-        <Suspense>
-          <ResetForm />
-        </Suspense>
-      </div>
-    </div>
+    <AuthCard>
+      <Suspense>
+        <ResetForm />
+      </Suspense>
+    </AuthCard>
   );
 }

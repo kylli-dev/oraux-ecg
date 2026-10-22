@@ -2,7 +2,11 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, CheckCircle, Clock, FileText, Download, AlertTriangle, Lock, X, ExternalLink } from "lucide-react";
+import {
+  Loader2, CheckCircle, Clock, FileText, Download, AlertTriangle, Lock, X, ExternalLink,
+  CalendarDays, MapPin, Search, Users, BarChart3,
+} from "lucide-react";
+import { RED, PageHeader, Alert } from "../_ui";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
 
@@ -52,6 +56,17 @@ function isLocked(statut: string | null) {
   return ["VALIDE", "HARMONISE", "PUBLIE"].includes(statut ?? "");
 }
 
+// Pastille d'état de la note, affichée en haut à droite de chaque créneau
+function statutNote(statut: string | null): { label: string; cls: string } {
+  switch (statut) {
+    case "VALIDE": return { label: "Note validée", cls: "bg-green-50 border-green-200 text-green-800" };
+    case "HARMONISE": return { label: "Note harmonisée", cls: "bg-green-50 border-green-200 text-green-800" };
+    case "PUBLIE": return { label: "Note publiée", cls: "bg-green-50 border-green-200 text-green-800" };
+    case "BROUILLON": return { label: "Brouillon", cls: "bg-gray-100 border-gray-300 text-gray-800" };
+    default: return { label: "À noter", cls: "bg-amber-50 border-amber-200 text-amber-900" };
+  }
+}
+
 // Saisie au centième près (« 14,25 » ou « 14.25 »), jamais arrondie : plus de deux
 // décimales est refusé plutôt qu'arrondi.
 function parseNote(raw: string): number | null {
@@ -69,6 +84,34 @@ function heurePrepa(heure_debut: string, prep_min: number): string {
   const [h, m] = heure_debut.split(":").map(Number);
   const total = ((h * 60 + m - prep_min) % 1440 + 1440) % 1440;
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function StatsBloc({ label, data, accent }: { label: string; data: StatsMatiere; accent: boolean }) {
+  return (
+    <div
+      className={`rounded-xl p-4 border ${accent ? "" : "bg-gray-50 border-gray-100"}`}
+      style={accent ? { backgroundColor: RED + "0A", borderColor: RED + "33" } : undefined}
+    >
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-800 mb-3">{label}</p>
+      {data.count === 0 ? (
+        <p className="text-sm text-gray-700 italic">Aucune note</p>
+      ) : (
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            ["Candidats", String(data.count)],
+            ["Moyenne", data.moyenne?.toFixed(2) ?? "—"],
+            ["Écart-type", data.ecart_type?.toFixed(2) ?? "—"],
+            ["Min / Max", `${data.min} / ${data.max}`],
+          ].map(([l, v]) => (
+            <div key={l}>
+              <p className="text-[11px] font-medium text-gray-700">{l}</p>
+              <p className="text-base font-bold text-gray-900 tabular-nums">{v}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function ExaminateurPlanningPage() {
@@ -208,98 +251,120 @@ export default function ExaminateurPlanningPage() {
 
   const matieres = Object.keys(stats);
 
+  // Avancement de la saisie : notes validées (ou au-delà) parmi les créneaux ayant un candidat
+  const avecCandidat = epreuves.filter((e) => e.candidat_id);
+  const nbValidees = avecCandidat.filter((e) => isLocked(e.note_statut)).length;
+  const pctValidees = avecCandidat.length ? Math.round((nbValidees / avecCandidat.length) * 100) : 0;
+
+  const pastille = (actif: boolean) =>
+    `shrink-0 px-3 py-1.5 rounded-full text-sm font-medium border transition capitalize ${
+      actif ? "text-white shadow-sm" : "bg-white text-gray-900 border-gray-300 hover:border-gray-400"
+    }`;
+
   return (
-    <div className="min-h-screen bg-[#F5F5F5]">
-      <header className="bg-white border-b border-gray-100 shadow-sm">
-        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center gap-3">
-          <button onClick={() => router.back()} className="text-gray-700 hover:text-black transition">
-            <ArrowLeft className="h-5 w-5" />
+    <div className="max-w-4xl mx-auto px-4 py-10">
+      <PageHeader
+        icon={<CalendarDays className="h-6 w-6" />}
+        title="Mon planning & notes"
+        subtitle="Consultez vos créneaux d'oral, les sujets et saisissez les notes des candidats."
+        actions={(["pdf", "xlsx"] as const).map((f) => (
+          <button
+            key={f}
+            onClick={() => handleExport(f)}
+            disabled={exporting !== null || epreuves.length === 0}
+            title={filterDate ? "Exporter la journée filtrée" : "Exporter tout mon planning"}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border bg-white font-medium hover:bg-red-50 transition disabled:opacity-40"
+            style={{ borderColor: RED + "55", color: RED }}
+          >
+            {exporting === f ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {f === "pdf" ? "PDF" : "Excel"}
           </button>
-          <h1 className="text-lg font-semibold text-gray-900 flex-1">Mon planning & notes</h1>
-          <span className="hidden sm:inline text-xs text-gray-700">
-            {filterDate ? "Exporter la journée filtrée :" : "Exporter mon planning :"}
-          </span>
-          {(["pdf", "xlsx"] as const).map((f) => (
-            <button
-              key={f}
-              onClick={() => handleExport(f)}
-              disabled={exporting !== null || epreuves.length === 0}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-red-200 text-[#C62828] font-medium hover:bg-red-50 transition disabled:opacity-40"
-            >
-              {exporting === f ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-              {f === "pdf" ? "PDF" : "Excel"}
-            </button>
-          ))}
-        </div>
-      </header>
+        ))}
+      />
 
-      <main className="max-w-3xl mx-auto px-4 py-8 space-y-6">
-        {error && (
-          <div className="rounded-lg bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600">{error}</div>
-        )}
+      <div className="space-y-6">
+        {error && <Alert tone="error">{error}</Alert>}
 
-        {/* ── Dashboard stats ── */}
-        {matieres.length > 0 && (
-          <div className="space-y-3">
-            {matieres.map((mat) => {
-              const s = stats[mat];
-              return (
-                <div key={mat} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-                  <p className="text-sm font-semibold text-gray-800 mb-3">{mat} — Tableau de bord</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    {[
-                      { label: "Mes notes", data: s.mes_notes, color: "purple" },
-                      { label: "Toutes les notes", data: s.toutes_notes, color: "gray" },
-                    ].map(({ label, data, color }) => (
-                      <div key={label} className={`rounded-xl p-3 ${color === "purple" ? "bg-red-50 border border-red-100" : "bg-gray-50 border border-gray-100"}`}>
-                        <p className="text-xs font-semibold text-gray-700 mb-2">{label}</p>
-                        {data.count === 0 ? (
-                          <p className="text-xs text-gray-700 italic">Aucune note</p>
-                        ) : (
-                          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                            <span className="text-gray-700">Candidats</span><span className="font-semibold text-gray-800">{data.count}</span>
-                            <span className="text-gray-700">Moyenne</span><span className="font-semibold text-gray-800">{data.moyenne?.toFixed(2)}</span>
-                            <span className="text-gray-700">Écart-type</span><span className="font-semibold text-gray-800">{data.ecart_type?.toFixed(2)}</span>
-                            <span className="text-gray-700">Min / Max</span><span className="font-semibold text-gray-800">{data.min} / {data.max}</span>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
+        {/* ── Avancement de la saisie ── */}
+        {!loading && avecCandidat.length > 0 && (
+          <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-5">
+            <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+              <p className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                <Users className="h-4 w-4" style={{ color: RED }} />
+                Avancement de la saisie
+              </p>
+              <p className="text-sm text-gray-900 tabular-nums">
+                <span className="font-bold">{nbValidees}</span> / {avecCandidat.length} note{avecCandidat.length > 1 ? "s" : ""} validée{nbValidees > 1 ? "s" : ""}
+              </p>
+            </div>
+            <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
+              <div className="h-full rounded-full transition-all" style={{ width: `${pctValidees}%`, backgroundColor: RED }} />
+            </div>
           </div>
         )}
 
+        {/* ── Dashboard stats ── */}
+        {matieres.map((mat) => {
+          const s = stats[mat];
+          return (
+            <div key={mat} className="bg-white rounded-2xl border border-black/5 shadow-sm p-5">
+              <p className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <BarChart3 className="h-4 w-4" style={{ color: RED }} />
+                {mat} — Tableau de bord
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <StatsBloc label="Mes notes" data={s.mes_notes} accent />
+                <StatsBloc label="Toutes les notes" data={s.toutes_notes} accent={false} />
+              </div>
+            </div>
+          );
+        })}
+
         {/* ── Filtres ── */}
         {!loading && epreuves.length > 0 && (
-          <div className="flex gap-2 flex-wrap">
-            <select
-              value={filterDate}
-              onChange={(e) => setFilterDate(e.target.value)}
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C62828]/30 bg-white"
-            >
-              <option value="">Toutes les dates</option>
-              {dates.map((d) => (
-                <option key={d} value={d}>
-                  {new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}
-                </option>
-              ))}
-            </select>
-            <input
-              type="text"
-              value={searchCandidat}
-              onChange={(e) => setSearchCandidat(e.target.value)}
-              placeholder="Rechercher un candidat…"
-              className="flex-1 min-w-[180px] border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#C62828]/30 bg-white"
-            />
+          <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-4 space-y-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-700 pointer-events-none" />
+              <input
+                type="text"
+                value={searchCandidat}
+                onChange={(e) => setSearchCandidat(e.target.value)}
+                placeholder="Rechercher un candidat…"
+                className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:border-transparent"
+                style={{ "--tw-ring-color": RED } as React.CSSProperties}
+              />
+            </div>
+            {dates.length > 1 && (
+              <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap">
+                <button
+                  onClick={() => setFilterDate("")}
+                  className={pastille(!filterDate)}
+                  style={!filterDate ? { backgroundColor: RED, borderColor: RED } : undefined}
+                >
+                  Toutes les dates
+                </button>
+                {dates.map((d) => {
+                  const actif = filterDate === d;
+                  return (
+                    <button
+                      key={d}
+                      onClick={() => setFilterDate(d)}
+                      className={pastille(actif)}
+                      style={actif ? { backgroundColor: RED, borderColor: RED } : undefined}
+                    >
+                      {new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             {(filterDate || searchCandidat) && (
               <button
                 onClick={() => { setFilterDate(""); setSearchCandidat(""); }}
-                className="text-xs text-gray-700 hover:text-black px-2 transition"
+                className="text-sm font-medium hover:underline underline-offset-2"
+                style={{ color: RED }}
               >
-                Effacer
+                Effacer les filtres
               </button>
             )}
           </div>
@@ -308,189 +373,222 @@ export default function ExaminateurPlanningPage() {
         {/* ── Liste des créneaux ── */}
         {loading ? (
           <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-6 w-6 animate-spin text-[#C62828]/60" />
+            <Loader2 className="h-6 w-6 animate-spin" style={{ color: RED }} />
           </div>
         ) : epreuves.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-gray-200 p-16 text-center">
-            <Clock className="h-10 w-10 mx-auto mb-3 text-gray-700" />
-            <p className="text-base font-medium text-gray-900">Aucune épreuve pour l&apos;instant</p>
+          <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-16 text-center">
+            <Clock className="h-10 w-10 mx-auto mb-3" style={{ color: RED }} />
+            <p className="text-base font-semibold text-gray-900">Aucune épreuve pour l&apos;instant</p>
             <p className="text-sm text-gray-700 mt-1">Vos épreuves apparaîtront ici dès qu&apos;un candidat y sera affecté.</p>
           </div>
         ) : Object.keys(byDate).length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-gray-200 p-10 text-center">
-            <p className="text-sm font-medium text-gray-700">Aucun résultat pour cette sélection</p>
+          <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-10 text-center">
+            <p className="text-sm font-medium text-gray-900">Aucun résultat pour cette sélection</p>
           </div>
         ) : (
           <div className="space-y-8">
             {Object.entries(byDate).sort(([a], [b]) => a.localeCompare(b)).map(([date, eps]) => (
-              <div key={date}>
-                <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3 capitalize">
-                  {formatDate(date)}
+              <section key={date}>
+                <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-900 uppercase tracking-wide mb-3">
+                  <CalendarDays className="h-4 w-4" style={{ color: RED }} />
+                  <span className="capitalize">{formatDate(date)}</span>
+                  <span className="ml-auto text-xs font-medium normal-case tracking-normal text-gray-700">
+                    {eps.length} créneau{eps.length > 1 ? "x" : ""}
+                  </span>
                 </h2>
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                  {eps.map((ep, i) => {
+                <div className="bg-white rounded-2xl border border-black/5 shadow-sm overflow-hidden divide-y divide-gray-100">
+                  {eps.map((ep) => {
                     const locked = isLocked(ep.note_statut);
                     const raw = drafts[ep.id] ?? "";
                     const valid = raw === "" || isValidNote(raw);
                     const isDirty = raw !== "" || (comments[ep.id] ?? "") !== (ep.note_commentaire ?? "");
                     const isSaving = saving[ep.id];
+                    const statut = statutNote(ep.note_statut);
 
                     return (
-                      <div key={ep.id} className={`px-5 py-4 ${i > 0 ? "border-t border-gray-100" : ""} ${ep.conflit_etablissement ? "bg-amber-50/30" : ""}`}>
-                        {/* Infos épreuve */}
-                        <div className="flex items-start gap-2 mb-2 flex-wrap">
-                          <span className="text-sm font-semibold text-gray-900">{ep.matiere}</span>
-                          <span className="text-xs text-gray-700 font-mono">
-                            {ep.preparation_minutes
-                              ? `Prépa ${heurePrepa(ep.heure_debut, ep.preparation_minutes)} — `
-                              : ""}
-                            Passage {ep.heure_debut} – {ep.heure_fin}
-                          </span>
+                      <div key={ep.id} className={`flex gap-4 px-4 sm:px-5 py-5 ${ep.conflit_etablissement ? "bg-amber-50/40" : ""}`}>
+                        {/* Horaires */}
+                        <div className="w-[4.5rem] sm:w-20 shrink-0 self-start text-center rounded-xl bg-gray-50 border border-gray-100 py-2.5 tabular-nums">
+                          <p className="text-base sm:text-lg font-bold text-gray-900 leading-tight">{ep.heure_debut}</p>
+                          <p className="text-xs text-gray-700">→ {ep.heure_fin}</p>
+                          {ep.preparation_minutes ? (
+                            <p className="mt-1.5 pt-1.5 border-t border-gray-200 text-[11px] text-gray-700">
+                              Prépa<br /><span className="font-semibold text-gray-900">{heurePrepa(ep.heure_debut, ep.preparation_minutes)}</span>
+                            </p>
+                          ) : null}
                         </div>
 
-                        {ep.candidat_id ? (
-                          <p className="text-sm text-gray-700 mb-2">
-                            {ep.candidat_prenom} <span className="font-medium">{ep.candidat_nom}</span>
-                          </p>
-                        ) : (
-                          <p className="text-sm text-gray-700 italic mb-2">Aucun candidat assigné</p>
-                        )}
+                        <div className="flex-1 min-w-0 space-y-3">
+                          {/* Candidat + état de la note */}
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            {ep.candidat_id ? (
+                              <p className="text-base text-gray-900">
+                                {ep.candidat_prenom} <span className="font-bold uppercase">{ep.candidat_nom}</span>
+                              </p>
+                            ) : (
+                              <p className="text-sm text-gray-700 italic">Aucun candidat assigné</p>
+                            )}
+                            {ep.candidat_id && (
+                              <span className={`inline-flex items-center gap-1 text-xs font-semibold border rounded-full px-2.5 py-0.5 ${statut.cls}`}>
+                                {locked && <Lock className="h-3 w-3 shrink-0" />}
+                                {statut.label}
+                              </span>
+                            )}
+                          </div>
 
-                        {/* Salle + sujet */}
-                        <div className="flex flex-wrap gap-3 mb-2 text-xs text-gray-700">
-                          {ep.salle_preparation_intitule && (
-                            <span>🚪 Prépa : <span className="font-medium text-gray-700">{ep.salle_preparation_intitule}</span></span>
-                          )}
-                          {ep.salle_intitule && (
-                            <span>🏛 Salle : <span className="font-medium text-gray-700">{ep.salle_intitule}</span></span>
-                          )}
-                        </div>
+                          {/* Matière + salles */}
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span
+                              className="text-xs font-semibold px-2.5 py-0.5 rounded-full"
+                              style={{ backgroundColor: RED + "14", color: RED }}
+                            >
+                              {ep.matiere}
+                            </span>
+                            {ep.salle_preparation_intitule && (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-gray-300 bg-white px-2.5 py-0.5 text-xs font-medium text-gray-900">
+                                <MapPin className="h-3 w-3" />
+                                Prépa : {ep.salle_preparation_intitule}
+                              </span>
+                            )}
+                            {ep.salle_intitule && (
+                              <span
+                                className="inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-semibold text-gray-900"
+                                style={{ borderColor: RED + "55", backgroundColor: RED + "0D" }}
+                              >
+                                <MapPin className="h-3 w-3" style={{ color: RED }} />
+                                Salle : {ep.salle_intitule}
+                              </span>
+                            )}
+                          </div>
 
-                        {/* Sujet affecté au candidat */}
-                        <div className="mb-2">
+                          {/* Sujet affecté au candidat */}
                           {ep.planche_nom ? (
                             <button
                               onClick={() => ouvrirSujet(ep)}
-                              className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#C62828]/30 bg-red-50/60 text-[#C62828] font-medium hover:bg-red-50 transition"
+                              className="inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border bg-white font-medium hover:bg-red-50 transition max-w-full"
+                              style={{ borderColor: RED + "55", color: RED }}
                             >
                               <FileText className="h-4 w-4 shrink-0" />
-                              Consulter le sujet : <span className="font-semibold">{ep.planche_nom}</span>
+                              <span className="truncate">Consulter le sujet : <span className="font-semibold">{ep.planche_nom}</span></span>
                             </button>
                           ) : (
-                            <span className="inline-flex items-center gap-1.5 text-sm text-gray-700 italic">
+                            <p className="inline-flex items-center gap-1.5 text-sm text-gray-700 italic">
                               <FileText className="h-4 w-4 shrink-0" />
                               Aucun sujet affecté pour l&apos;instant
-                            </span>
+                            </p>
                           )}
-                        </div>
 
-                        {/* Alertes */}
-                        <div className="flex flex-wrap gap-2 mb-2">
-                          {ep.conflit_etablissement && (
-                            <span className="flex items-center gap-1 text-xs bg-amber-50 border border-amber-200 text-amber-700 rounded-full px-2 py-0.5 font-medium">
-                              <AlertTriangle className="h-3 w-3 shrink-0" />
-                              Même établissement que le candidat
-                            </span>
-                          )}
-                          {ep.co_examinateur && (
-                            <span className="flex items-center gap-1 text-xs bg-blue-50 border border-blue-200 text-blue-800 rounded-full px-2 py-0.5 font-medium">
-                              Jury avec {ep.co_examinateur}
-                              {ep.est_second_examinateur ? " (examinateur principal)" : " (2ᵉ examinateur)"}
-                              {" "}— note commune, saisissable par chacun
-                            </span>
-                          )}
-                          {locked && (
-                            <span className="flex items-center gap-1 text-xs bg-gray-100 border border-gray-200 text-gray-700 rounded-full px-2 py-0.5 font-medium">
-                              <Lock className="h-3 w-3 shrink-0" />
-                              {ep.note_statut === "VALIDE" ? "Note validée" : ep.note_statut === "HARMONISE" ? "Note harmonisée" : "Note publiée"}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Zone notation */}
-                        {ep.candidat_id && (
-                          <div className="mt-3 space-y-2">
-                            <div className="flex items-center gap-2">
-                              <div className="relative">
-                                <input
-                                  type="text"
-                                  inputMode="decimal"
-                                  value={raw}
-                                  onChange={(e) => setDrafts((d) => ({ ...d, [ep.id]: e.target.value }))}
-                                  placeholder="—"
-                                  disabled={locked}
-                                  className={`w-20 px-2.5 py-1.5 text-sm text-center rounded-lg border focus:outline-none focus:ring-2 transition disabled:bg-gray-50 disabled:text-gray-400 ${
-                                    raw && !valid
-                                      ? "border-red-400 bg-red-50 focus:ring-red-300"
-                                      : "border-gray-200 focus:ring-[#C62828]/40"
-                                  }`}
-                                />
-                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-700 pointer-events-none">/20</span>
-                              </div>
-                              {raw && !valid && (
-                                <span className="text-xs text-red-600">Note invalide : 0 à 20, deux décimales au maximum (ex. 14,25)</span>
+                          {/* Alertes */}
+                          {(ep.conflit_etablissement || ep.co_examinateur) && (
+                            <div className="flex flex-wrap gap-2">
+                              {ep.conflit_etablissement && (
+                                <span className="flex items-center gap-1 text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded-full px-2.5 py-0.5 font-medium">
+                                  <AlertTriangle className="h-3 w-3 shrink-0" />
+                                  Même établissement que le candidat
+                                </span>
                               )}
-                              {saved[ep.id] && (
-                                <span className="flex items-center gap-1 text-xs text-green-600">
-                                  <CheckCircle className="h-3.5 w-3.5" /> Enregistré
+                              {ep.co_examinateur && (
+                                <span className="flex items-center gap-1 text-xs bg-blue-50 border border-blue-200 text-blue-900 rounded-full px-2.5 py-0.5 font-medium">
+                                  Jury avec {ep.co_examinateur}
+                                  {ep.est_second_examinateur ? " (examinateur principal)" : " (2ᵉ examinateur)"}
+                                  {" "}— note commune, saisissable par chacun
                                 </span>
                               )}
                             </div>
+                          )}
 
-                            {!locked && (
-                              <textarea
-                                value={comments[ep.id] ?? ""}
-                                onChange={(e) => setComments((c) => ({ ...c, [ep.id]: e.target.value }))}
-                                placeholder="Commentaire (optionnel)"
-                                rows={2}
-                                className="w-full px-3 py-2 text-xs rounded-lg border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#C62828]/30 resize-none"
-                              />
-                            )}
-
-                            {locked && ep.note_commentaire && (
-                              <p className="text-xs text-gray-700 italic bg-gray-50 rounded-lg px-3 py-2">
-                                {ep.note_commentaire}
-                              </p>
-                            )}
-
-                            {!locked && (
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => saveNote(ep, false)}
-                                  disabled={!!isSaving || !isDirty || (!!raw && !valid)}
-                                  className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 transition disabled:opacity-40"
-                                >
-                                  {isSaving === "save" ? <Loader2 className="h-3 w-3 animate-spin inline" /> : null}
-                                  {" "}Enregistrer brouillon
-                                </button>
-                                <button
-                                  onClick={() => saveNote(ep, true)}
-                                  disabled={!!isSaving || !raw || !valid}
-                                  className="text-xs px-3 py-1.5 rounded-lg bg-[#C62828] text-white font-semibold hover:bg-[#B71C1C] transition disabled:opacity-40 flex items-center gap-1"
-                                >
-                                  {isSaving === "validate" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Lock className="h-3 w-3" />}
-                                  Valider la note
-                                </button>
+                          {/* Zone notation */}
+                          {ep.candidat_id && (
+                            <div className="rounded-xl bg-gray-50 border border-gray-100 p-3 space-y-2.5">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <label className="text-xs font-semibold uppercase tracking-wide text-gray-800">Note</label>
+                                <div className="relative">
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={raw}
+                                    onChange={(e) => setDrafts((d) => ({ ...d, [ep.id]: e.target.value }))}
+                                    placeholder="—"
+                                    disabled={locked}
+                                    className={`w-24 pl-3 pr-9 py-1.5 text-base font-semibold text-gray-900 text-center rounded-lg border bg-white focus:outline-none focus:ring-2 transition tabular-nums disabled:bg-gray-100 disabled:text-gray-700 ${
+                                      raw && !valid
+                                        ? "border-red-400 bg-red-50 focus:ring-red-300"
+                                        : "border-gray-300 focus:ring-[#C62828]/40"
+                                    }`}
+                                  />
+                                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-700 pointer-events-none">/20</span>
+                                </div>
+                                {raw && !valid && (
+                                  <span className="text-xs text-red-700">Note invalide : 0 à 20, deux décimales au maximum (ex. 14,25)</span>
+                                )}
+                                {saved[ep.id] && (
+                                  <span className="flex items-center gap-1 text-xs font-medium text-green-700">
+                                    <CheckCircle className="h-3.5 w-3.5" /> Enregistré
+                                  </span>
+                                )}
                               </div>
-                            )}
-                          </div>
-                        )}
+
+                              {!locked && (
+                                <textarea
+                                  value={comments[ep.id] ?? ""}
+                                  onChange={(e) => setComments((c) => ({ ...c, [ep.id]: e.target.value }))}
+                                  placeholder="Commentaire (optionnel)"
+                                  rows={2}
+                                  className="w-full px-3 py-2 text-sm text-gray-900 rounded-lg border border-gray-300 bg-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-[#C62828]/30 resize-none"
+                                />
+                              )}
+
+                              {locked && ep.note_commentaire && (
+                                <p className="text-sm text-gray-800 italic bg-white border border-gray-100 rounded-lg px-3 py-2">
+                                  {ep.note_commentaire}
+                                </p>
+                              )}
+
+                              {!locked && (
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    onClick={() => saveNote(ep, false)}
+                                    disabled={!!isSaving || !isDirty || (!!raw && !valid)}
+                                    className="text-sm px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-900 font-medium hover:bg-gray-50 transition disabled:opacity-40 flex items-center gap-1.5"
+                                  >
+                                    {isSaving === "save" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                                    Enregistrer brouillon
+                                  </button>
+                                  <button
+                                    onClick={() => saveNote(ep, true)}
+                                    disabled={!!isSaving || !raw || !valid}
+                                    className="text-sm px-3 py-1.5 rounded-lg text-white font-semibold shadow-sm hover:opacity-90 transition disabled:opacity-40 flex items-center gap-1.5"
+                                    style={{ backgroundColor: RED }}
+                                  >
+                                    {isSaving === "validate" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Lock className="h-3.5 w-3.5" />}
+                                    Valider la note
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
                 </div>
-              </div>
+              </section>
             ))}
           </div>
         )}
-      </main>
+      </div>
 
       {/* ── Consultation du sujet ── */}
       {sujet && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-3 sm:p-6" onClick={fermerSujet}>
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px] flex items-center justify-center p-3 sm:p-6" onClick={fermerSujet}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[92vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200">
-              <FileText className="h-5 w-5 text-[#C62828] shrink-0" />
+              <div
+                className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0"
+                style={{ backgroundColor: RED + "14", color: RED }}
+              >
+                <FileText className="h-5 w-5" />
+              </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-gray-900 truncate">{sujet.ep.planche_nom}</p>
                 <p className="text-xs text-gray-700 truncate">
@@ -514,7 +612,7 @@ export default function ExaminateurPlanningPage() {
             </div>
             <div className="flex-1 bg-gray-100">
               {sujet.loading ? (
-                <div className="h-full flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-[#C62828]" /></div>
+                <div className="h-full flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" style={{ color: RED }} /></div>
               ) : sujet.error ? (
                 <div className="h-full flex items-center justify-center text-sm text-red-700">{sujet.error}</div>
               ) : (
