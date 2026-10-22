@@ -41,12 +41,6 @@ function formatDate(d: string) {
   });
 }
 
-function formatDateCourte(d: string) {
-  return new Date(d + "T12:00:00").toLocaleDateString("fr-FR", {
-    weekday: "short", day: "numeric", month: "short",
-  });
-}
-
 function authHeaders(token: string) {
   return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 }
@@ -239,11 +233,6 @@ export default function CandidatPlanningPage() {
     else parJour.push({ date: t.date, triplets: [t] });
   }
 
-  const pastille = (actif: boolean) =>
-    `shrink-0 px-3 py-1.5 rounded-full text-sm font-medium border transition ${
-      actif ? "text-white shadow-sm" : "bg-white text-gray-900 border-gray-300 hover:border-gray-400"
-    }`;
-
   return (
     <div className="max-w-3xl mx-auto px-4 py-10">
       <PageHeader
@@ -302,29 +291,38 @@ export default function CandidatPlanningPage() {
         </span>
       </div>
 
-      {/* Filtre par date : seules les dates ayant réellement des triplets sont proposées */}
-      {availableDates.length > 1 && (
-        <div className="flex gap-2 overflow-x-auto pb-2 mb-5 -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap">
-          <button
-            onClick={() => setFilterDate("")}
-            className={pastille(!filterDate)}
-            style={!filterDate ? { backgroundColor: RED, borderColor: RED } : undefined}
+      {/* Filtre par date, toujours visible dès qu'il y a des triplets. Liste déroulante
+          plutôt qu'un <input type="date"> : seules les dates ayant réellement des triplets
+          sont proposées, et « Toutes les dates » retire le filtre. */}
+      {availableDates.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 mb-5 bg-white rounded-2xl border border-black/5 shadow-sm px-4 py-3">
+          <label htmlFor="filtre-date" className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+            <CalendarDays className="h-4 w-4" style={{ color: RED }} />
+            Filtrer par date
+          </label>
+          <select
+            id="filtre-date"
+            value={filterDate}
+            onChange={(e) => setFilterDate(e.target.value)}
+            className="flex-1 min-w-[200px] text-sm border border-gray-300 rounded-lg px-3 py-2 text-gray-900 bg-white focus:outline-none focus:ring-2 focus:border-transparent"
+            style={{ "--tw-ring-color": RED } as React.CSSProperties}
           >
-            Toutes les dates ({triplets.length})
-          </button>
-          {availableDates.map((d) => {
-            const actif = filterDate === d;
-            return (
-              <button
-                key={d}
-                onClick={() => setFilterDate(d)}
-                className={`${pastille(actif)} capitalize`}
-                style={actif ? { backgroundColor: RED, borderColor: RED } : undefined}
-              >
-                {formatDateCourte(d)} ({triplets.filter((t) => t.date === d).length})
-              </button>
-            );
-          })}
+            <option value="">Toutes les dates ({triplets.length})</option>
+            {availableDates.map((d) => (
+              <option key={d} value={d}>
+                {formatDate(d)} ({triplets.filter((t) => t.date === d).length})
+              </option>
+            ))}
+          </select>
+          {filterDate && (
+            <button
+              onClick={() => setFilterDate("")}
+              className="text-sm font-medium hover:underline underline-offset-2"
+              style={{ color: RED }}
+            >
+              Effacer
+            </button>
+          )}
         </div>
       )}
 
