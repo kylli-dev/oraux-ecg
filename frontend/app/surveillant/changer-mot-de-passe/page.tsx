@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, CheckCircle, Eye, EyeOff, ArrowLeft } from "lucide-react";
+import Link from "next/link";
+import { Loader2, CheckCircle2, Eye, EyeOff, KeyRound } from "lucide-react";
+import { RED, AuthCard, Alert, inputClass, inputStyle, primaryButtonClass } from "../_ui";
 
-const RED = "#C62828";
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 // Même fonctionnement que l'espace candidat : mot de passe actuel + nouveau (×2).
@@ -57,82 +58,77 @@ export default function SurveillantChangerMotDePassePage() {
 
   if (success) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-[#F5F5F5] px-4">
-        <div className="w-full max-w-sm bg-white rounded-2xl shadow-md border border-gray-100 p-8 text-center">
-          <CheckCircle className="h-10 w-10 mx-auto mb-4" style={{ color: "#16a34a" }} />
-          <h1 className="text-lg font-semibold text-gray-900 mb-2">Mot de passe modifié</h1>
-          <p className="text-sm text-gray-700 mb-6">Votre mot de passe a été mis à jour avec succès.</p>
-          <button
-            onClick={() => router.push("/surveillant/accueil")}
-            className="w-full py-2.5 rounded-lg text-white text-sm font-medium transition hover:opacity-90"
-            style={{ backgroundColor: RED }}
-          >
-            Retour à l&apos;accueil
-          </button>
-        </div>
-      </div>
+      <AuthCard
+        icon={<CheckCircle2 className="h-6 w-6 text-green-700" />}
+        title="Mot de passe modifié"
+        subtitle="Votre mot de passe a été mis à jour avec succès."
+      >
+        <button
+          onClick={() => router.push("/surveillant/accueil")}
+          className={primaryButtonClass}
+          style={{ backgroundColor: RED }}
+        >
+          Retour à l&apos;accueil
+        </button>
+      </AuthCard>
     );
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-[#F5F5F5] px-4">
-      <div className="w-full max-w-sm">
+    <AuthCard
+      icon={<KeyRound className="h-6 w-6" />}
+      title="Changer mon mot de passe"
+      subtitle="Choisissez un mot de passe d'au moins 8 caractères."
+      footer={
+        <Link href="/surveillant/accueil" className="text-sm font-medium text-gray-800 hover:text-black hover:underline underline-offset-2">
+          ← Retour à l&apos;accueil
+        </Link>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {[
+          { label: "Mot de passe actuel", value: current, set: setCurrent, auto: "current-password" },
+          { label: "Nouveau mot de passe", value: next, set: setNext, auto: "new-password" },
+          { label: "Confirmer le nouveau mot de passe", value: confirm, set: setConfirm, auto: "new-password" },
+        ].map(({ label, value, set, auto }, i) => (
+          <div key={label} className="space-y-1.5">
+            <label className="block text-xs font-semibold text-gray-800 uppercase tracking-wide">{label}</label>
+            <div className="relative">
+              <input
+                type={visible.has(i) ? "text" : "password"}
+                value={value}
+                onChange={(e) => set(e.target.value)}
+                autoComplete={auto}
+                placeholder="••••••••"
+                className={`${inputClass} pr-11`}
+                style={inputStyle}
+              />
+              <button
+                type="button"
+                onClick={() => toggleVisible(i)}
+                tabIndex={-1}
+                aria-label={visible.has(i) ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+                title={visible.has(i) ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+                className="absolute right-0 top-0 h-full px-3 flex items-center text-gray-700 hover:text-black transition"
+              >
+                {visible.has(i) ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+        ))}
+
+        {error && <Alert tone="error">{error}</Alert>}
+
         <button
-          onClick={() => router.push("/surveillant/accueil")}
-          className="flex items-center gap-1 text-sm text-gray-800 hover:text-black mb-4 transition"
+          type="submit"
+          disabled={loading || !current || !next || !confirm}
+          className={primaryButtonClass}
+          style={{ backgroundColor: RED }}
         >
-          <ArrowLeft className="h-4 w-4" /> Retour à l&apos;accueil
+          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+          {loading ? "Enregistrement…" : "Modifier le mot de passe"}
         </button>
-        <div className="bg-white rounded-2xl shadow-md border border-gray-100 p-8">
-          <h1 className="text-xl font-semibold text-gray-900 mb-1">Changer mon mot de passe</h1>
-          <p className="text-sm text-gray-700 mb-6">Choisissez un mot de passe d&apos;au moins 8 caractères.</p>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {[
-              { label: "Mot de passe actuel", value: current, set: setCurrent, auto: "current-password" },
-              { label: "Nouveau mot de passe", value: next, set: setNext, auto: "new-password" },
-              { label: "Confirmer le nouveau mot de passe", value: confirm, set: setConfirm, auto: "new-password" },
-            ].map(({ label, value, set, auto }, i) => (
-              <div key={label} className="space-y-1">
-                <label className="block text-xs font-medium text-gray-900 uppercase tracking-wide">{label}</label>
-                <div className="relative">
-                  <input
-                    type={visible.has(i) ? "text" : "password"}
-                    value={value}
-                    onChange={(e) => set(e.target.value)}
-                    autoComplete={auto}
-                    placeholder="••••••••"
-                    className="w-full px-4 py-2.5 pr-11 rounded-lg border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:border-transparent"
-                    style={{ "--tw-ring-color": RED } as React.CSSProperties}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => toggleVisible(i)}
-                    tabIndex={-1}
-                    aria-label={visible.has(i) ? "Masquer le mot de passe" : "Afficher le mot de passe"}
-                    title={visible.has(i) ? "Masquer le mot de passe" : "Afficher le mot de passe"}
-                    className="absolute right-0 top-0 h-full px-3 flex items-center text-gray-700 hover:text-black transition"
-                  >
-                    {visible.has(i) ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-              </div>
-            ))}
-
-            {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
-
-            <button
-              type="submit"
-              disabled={loading || !current || !next || !confirm}
-              className="w-full py-2.5 rounded-lg text-white text-sm font-medium transition hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
-              style={{ backgroundColor: RED }}
-            >
-              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {loading ? "Enregistrement…" : "Modifier le mot de passe"}
-            </button>
-          </form>
-        </div>
-      </div>
-    </div>
+      </form>
+    </AuthCard>
   );
 }

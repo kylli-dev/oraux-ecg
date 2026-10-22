@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Loader2, ShieldCheck, Eye, EyeOff } from "lucide-react";
+import { RED, AuthCard, Alert, inputClass, inputStyle, primaryButtonClass } from "./_ui";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
 
@@ -43,70 +45,77 @@ export default function SurveillantLoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F5F5F5] px-4">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-[#C62828] mb-4 shadow-lg">
-            <ShieldCheck className="h-7 w-7 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">Espace surveillant</h1>
-          <p className="text-sm text-gray-700 mt-1">Connectez-vous avec vos identifiants</p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Adresse email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="prenom.nom@etablissement.fr"
-              required
-              className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#C62828] focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Mot de passe</label>
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                autoComplete="current-password"
-                required
-                className="w-full pl-3.5 pr-11 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#C62828] focus:border-transparent"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
-                title={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
-                className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-700 hover:text-black transition"
-              >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-          </div>
-          {error && <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
-          <button
-            type="submit"
-            disabled={loading || !email.trim() || !password}
-            className="w-full py-2.5 px-4 bg-[#C62828] text-white text-sm font-semibold rounded-xl hover:bg-[#B71C1C] transition disabled:opacity-50 flex items-center justify-center gap-2"
+    <AuthCard
+      icon={<ShieldCheck className="h-6 w-6" />}
+      title="Espace surveillant"
+      subtitle="Connectez-vous avec vos identifiants."
+      footer={
+        <div className="space-y-2">
+          <Link
+            href="/surveillant/mot-de-passe-oublie"
+            className="block text-sm font-medium hover:underline underline-offset-2"
+            style={{ color: RED }}
           >
-            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-            Accéder à mon espace
-          </button>
-        </form>
-        <div className="text-center mt-4 space-y-2">
-          <a href="/surveillant/mot-de-passe-oublie" className="block text-sm text-[#C62828] hover:text-[#B71C1C] hover:underline transition">
             Mot de passe oublié ?
-          </a>
+          </Link>
           <p className="text-xs text-gray-700">
             Vos identifiants vous ont été communiqués par le service des admissions.
           </p>
         </div>
-      </div>
-    </div>
+      }
+    >
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-1.5">
+          <label className="block text-xs font-semibold text-gray-800 uppercase tracking-wide">Adresse email</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="prenom.nom@etablissement.fr"
+            autoComplete="username"
+            autoFocus
+            required
+            className={inputClass}
+            style={inputStyle}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="block text-xs font-semibold text-gray-800 uppercase tracking-wide">Mot de passe</label>
+          <div className="relative">
+            <input
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="current-password"
+              required
+              className={`${inputClass} pr-11`}
+              style={inputStyle}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+              title={showPassword ? "Masquer le mot de passe" : "Afficher le mot de passe"}
+              className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-700 hover:text-black transition"
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+        </div>
+
+        {error && <Alert tone="error">{error}</Alert>}
+
+        <button
+          type="submit"
+          disabled={loading || !email.trim() || !password}
+          className={primaryButtonClass}
+          style={{ backgroundColor: RED }}
+        >
+          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+          Accéder à mon espace
+        </button>
+      </form>
+    </AuthCard>
   );
 }
