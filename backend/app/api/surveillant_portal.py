@@ -10,7 +10,7 @@ from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.core.auth import (
     create_surveillant_token,
@@ -178,21 +178,25 @@ def mes_epreuves(
     s: Surveillant = Depends(get_current_surveillant),
     db: Session = Depends(get_db),
 ):
+    # Une seule requête (jointures externes) au lieu de 5 requêtes par épreuve : avec
+    # une centaine de créneaux, l'ancienne boucle faisait ~500 allers-retours vers la
+    # base et la page « Mon planning » mettait très longtemps à se charger.
+    SallePrep = aliased(Salle)
     rows = (
-        db.query(Epreuve, DemiJournee)
+        db.query(Epreuve, DemiJournee, Candidat, Salle, SallePrep, Planche, Examinateur)
         .join(DemiJournee, Epreuve.demi_journee_id == DemiJournee.id)
+        .outerjoin(Candidat, Epreuve.candidat_id == Candidat.id)
+        .outerjoin(Salle, Epreuve.salle_id == Salle.id)
+        .outerjoin(SallePrep, Epreuve.salle_preparation_id == SallePrep.id)
+        .outerjoin(Planche, Epreuve.planche_id == Planche.id)
+        .outerjoin(Examinateur, Epreuve.examinateur_id == Examinateur.id)
         .filter(Epreuve.surveillant_id == s.id)
         .order_by(DemiJournee.date, Epreuve.heure_debut)
         .all()
     )
 
     result = []
-    for ep, dj in rows:
-        candidat = db.get(Candidat, ep.candidat_id) if ep.candidat_id else None
-        salle = db.get(Salle, ep.salle_id) if ep.salle_id else None
-        salle_prep = db.get(Salle, ep.salle_preparation_id) if ep.salle_preparation_id else None
-        planche = db.get(Planche, ep.planche_id) if ep.planche_id else None
-        exam = db.get(Examinateur, ep.examinateur_id) if ep.examinateur_id else None
+    for ep, dj, candidat, salle, salle_prep, planche, exam in rows:
         result.append(EpreuveSurveillant(
             id=ep.id,
             date=dj.date,

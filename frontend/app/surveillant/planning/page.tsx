@@ -112,16 +112,42 @@ export default function SurveillantPlanningPage() {
     setTimeout(() => setSurligne((s) => (s === ep.id ? null : s)), 3000);
   }
 
+  // Chargement : le serveur (offre gratuite Render) peut mettre jusqu'à une minute à
+  // redémarrer après une période d'inactivité. On l'indique après quelques secondes,
+  // on abandonne après 90 s avec un bouton « Réessayer », et une réponse en erreur
+  // affiche un message au lieu de laisser la page tourner sans explication.
+  const [lent, setLent] = useState(false);
   const load = useCallback(async () => {
     const token = sessionStorage.getItem("surveillant_token");
     if (!token) { router.replace("/surveillant"); return; }
     setLoading(true);
+    setError("");
+    setLent(false);
+    const controleur = new AbortController();
+    const delaiMax = setTimeout(() => controleur.abort(), 90_000);
+    const delaiLent = setTimeout(() => setLent(true), 5_000);
     try {
-      const res = await fetch(`${API}/surveillant/me/epreuves`, { headers: authHeaders() });
+      const res = await fetch(`${API}/surveillant/me/epreuves`, { headers: authHeaders(), signal: controleur.signal });
       if (res.status === 401) { sessionStorage.removeItem("surveillant_token"); router.replace("/surveillant"); return; }
-      setEpreuves(await res.json());
-    } catch { setError("Erreur lors du chargement"); }
-    finally { setLoading(false); }
+      if (!res.ok) throw new Error(`Erreur serveur (${res.status}). Réessayez dans quelques instants.`);
+      const data = await res.json();
+      if (!Array.isArray(data)) throw new Error("Réponse inattendue du serveur.");
+      setEpreuves(data);
+    } catch (e: unknown) {
+      // AbortError : délai de 90 s dépassé ; TypeError : échec réseau de fetch
+      setError(
+        e instanceof DOMException && e.name === "AbortError"
+          ? "Le serveur ne répond pas. Vérifiez votre connexion puis réessayez."
+          : e instanceof TypeError || !(e instanceof Error)
+            ? "Impossible de contacter le serveur. Vérifiez votre connexion puis réessayez."
+            : e.message,
+      );
+    } finally {
+      clearTimeout(delaiMax);
+      clearTimeout(delaiLent);
+      setLent(false);
+      setLoading(false);
+    }
   }, [router]);
 
   useEffect(() => { load(); }, [load]);
@@ -204,7 +230,20 @@ export default function SurveillantPlanningPage() {
       />
 
       <div className="space-y-6">
-        {error && <Alert tone="error">{error}</Alert>}
+        {error && (
+          <Alert tone="error">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span>{error}</span>
+              <button
+                onClick={() => load()}
+                disabled={loading}
+                className="text-sm font-semibold underline underline-offset-2 disabled:opacity-50"
+              >
+                Réessayer
+              </button>
+            </div>
+          </Alert>
+        )}
 
         {/* ── Résumé ── */}
         {!loading && epreuves.length > 0 && (
@@ -292,8 +331,15 @@ export default function SurveillantPlanningPage() {
 
         {/* ── Créneaux ── */}
         {loading ? (
-          <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin" style={{ color: RED }} /></div>
-        ) : epreuves.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 py-20 text-center">
+            <Loader2 className="h-6 w-6 animate-spin" style={{ color: RED }} />
+            {lent && (
+              <p className="text-sm text-gray-800 max-w-xs">
+                Le serveur redémarre après une période d&apos;inactivité — cela peut prendre jusqu&apos;à une minute…
+              </p>
+            )}
+          </div>
+        ) : error && epreuves.length === 0 ? null : epreuves.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-16 text-center">
             <Clock className="h-10 w-10 mx-auto mb-3" style={{ color: RED }} />
             <p className="text-base font-semibold text-gray-900">Aucune épreuve assignée</p>
