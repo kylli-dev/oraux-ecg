@@ -1,10 +1,10 @@
 ﻿"use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Loader2, CheckCircle, Clock, FileText, Download, AlertTriangle, Lock, X, ExternalLink,
-  CalendarDays, MapPin, Search, Users, BarChart3, List, CalendarRange,
+  CalendarDays, MapPin, Search, Users, BarChart3, List, CalendarRange, Maximize2, Minimize2,
 } from "lucide-react";
 import { RED, PageHeader, Alert } from "../_ui";
 
@@ -91,7 +91,7 @@ function heurePrepa(heure_debut: string, prep_min: number): string {
 // passage est un bloc placé à son horaire ; la préparation du candidat est une fine
 // barre à gauche (elle chevauche souvent le passage précédent, d'où la barre plutôt
 // qu'un bloc).
-const PX_PAR_MIN = 1.4;
+const PX_PAR_MIN_DEFAUT = 1.4;
 const ENTETE_JOUR_PX = 44;
 
 function enMinutes(h: string) {
@@ -111,9 +111,48 @@ function styleBloc(ep: Epreuve): React.CSSProperties {
 }
 
 function EmploiDuTemps({ epreuves, onSelect }: { epreuves: Epreuve[]; onSelect: (ep: Epreuve) => void }) {
+  // Plein écran : API Fullscreen du navigateur quand elle existe, sinon (iPhone…) simple
+  // calque fixe sur toute la fenêtre. Dans les deux cas l'échelle s'agrandit pour que la
+  // journée occupe toute la hauteur de l'écran.
+  const conteneur = useRef<HTMLDivElement>(null);
+  const [pleinEcran, setPleinEcran] = useState(false);
+  const [hauteurEcran, setHauteurEcran] = useState(0);
+
+  function entrerPleinEcran() {
+    setPleinEcran(true);
+    try {
+      Promise.resolve(conteneur.current?.requestFullscreen?.()).catch(() => { /* calque fixe de repli */ });
+    } catch { /* calque fixe de repli */ }
+  }
+
+  function quitterPleinEcran() {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    setPleinEcran(false);
+  }
+
+  useEffect(() => {
+    if (!pleinEcran) return;
+    const mesurer = () => setHauteurEcran(window.innerHeight);
+    const surChangement = () => { if (!document.fullscreenElement) setPleinEcran(false); };
+    const surTouche = (e: KeyboardEvent) => { if (e.key === "Escape") quitterPleinEcran(); };
+    mesurer();
+    window.addEventListener("resize", mesurer);
+    document.addEventListener("fullscreenchange", surChangement);
+    document.addEventListener("keydown", surTouche);
+    return () => {
+      window.removeEventListener("resize", mesurer);
+      document.removeEventListener("fullscreenchange", surChangement);
+      document.removeEventListener("keydown", surTouche);
+    };
+  }, [pleinEcran]);
+
   const jours = [...new Set(epreuves.map((e) => e.date))].sort();
   const debut = Math.floor(Math.min(...epreuves.map((e) => enMinutes(e.heure_debut) - (e.preparation_minutes ?? 0))) / 60) * 60;
   const fin = Math.ceil(Math.max(...epreuves.map((e) => enMinutes(e.heure_fin))) / 60) * 60;
+  // ~150 px réservés au titre, à la légende et aux en-têtes de journée
+  const PX_PAR_MIN = pleinEcran && hauteurEcran
+    ? Math.max(PX_PAR_MIN_DEFAUT, (hauteurEcran - 150) / Math.max(fin - debut, 60))
+    : PX_PAR_MIN_DEFAUT;
   const hauteur = (fin - debut) * PX_PAR_MIN;
   const heures: number[] = [];
   for (let m = debut; m <= fin; m += 60) heures.push(m);
@@ -126,7 +165,20 @@ function EmploiDuTemps({ epreuves, onSelect }: { epreuves: Epreuve[]; onSelect: 
   ];
 
   return (
-    <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-4">
+    <div
+      ref={conteneur}
+      className={
+        pleinEcran
+          ? "fixed inset-0 z-[60] bg-white p-4 sm:p-6 overflow-auto"
+          : "bg-white rounded-2xl border border-black/5 shadow-sm p-4"
+      }
+    >
+      {pleinEcran && (
+        <p className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
+          <CalendarRange className="h-5 w-5" style={{ color: RED }} />
+          Mon emploi du temps
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4 text-xs text-gray-900">
         {legende.map((l) => (
           <span key={l.label} className="flex items-center gap-1.5">
@@ -139,6 +191,15 @@ function EmploiDuTemps({ epreuves, onSelect }: { epreuves: Epreuve[]; onSelect: 
           Préparation du candidat
         </span>
         <span className="ml-auto text-gray-700">Cliquez sur un créneau pour le noter</span>
+        <button
+          onClick={pleinEcran ? quitterPleinEcran : entrerPleinEcran}
+          className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border bg-white font-medium hover:bg-red-50 transition"
+          style={{ borderColor: RED + "55", color: RED }}
+          title={pleinEcran ? "Quitter le plein écran (Échap)" : "Afficher en plein écran"}
+        >
+          {pleinEcran ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          {pleinEcran ? "Quitter le plein écran" : "Plein écran"}
+        </button>
       </div>
 
       <div className="overflow-x-auto">
@@ -193,7 +254,7 @@ function EmploiDuTemps({ epreuves, onSelect }: { epreuves: Epreuve[]; onSelect: 
                           />
                         )}
                         <button
-                          onClick={() => onSelect(ep)}
+                          onClick={() => { if (pleinEcran) quitterPleinEcran(); onSelect(ep); }}
                           className="absolute left-3.5 right-1 rounded-md border border-l-4 px-1.5 py-0.5 text-left overflow-hidden text-gray-900 transition hover:shadow-md hover:z-10 focus:outline-none focus-visible:ring-2"
                           style={{ top: (d - debut) * PX_PAR_MIN, height: h, "--tw-ring-color": RED, ...styleBloc(ep) } as React.CSSProperties}
                           title={`${ep.heure_debut} – ${ep.heure_fin} · ${ep.matiere} · ${nom}${ep.salle_intitule ? ` · Salle ${ep.salle_intitule}` : ""}`}
@@ -280,7 +341,8 @@ export default function ExaminateurPlanningPage() {
     changerVue("liste");
     setFilterDate(ep.date);
     setSurligne(ep.id);
-    setTimeout(() => document.getElementById(`ep-${ep.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 80);
+    // Délai suffisant pour laisser le navigateur sortir du plein écran le cas échéant
+    setTimeout(() => document.getElementById(`ep-${ep.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 300);
     setTimeout(() => setSurligne((s) => (s === ep.id ? null : s)), 3000);
   }
   // Sujet (planche PDF) affiché dans la page — plus fiable qu'une fenêtre surgissante,
