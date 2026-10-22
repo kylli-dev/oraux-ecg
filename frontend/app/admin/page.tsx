@@ -11676,8 +11676,103 @@ const PALETTE_CHOIX_PLANCHES = [
   "#EF6C00", "#D84315", "#6D4C41", "#4E342E", "#546E7A", "#37474F", "#616161", "#212121",
 ];
 
-// Sélecteur de couleur d'une planche : palette prédéfinie, nuancier libre (sélecteur
-// natif du navigateur) avec saisie hexadécimale, et retour à la couleur automatique.
+// ── Nuancier à curseurs (teinte / saturation / luminosité) ──────────────────────
+function hexVersHsv(hex: string): { h: number; s: number; v: number } {
+  const n = parseInt(hex.slice(1), 16);
+  const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  let h = 0;
+  if (d) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h = (h * 60 + 360) % 360;
+  }
+  return { h, s: max ? d / max : 0, v: max };
+}
+
+function hsvVersHex(h: number, s: number, v: number): string {
+  const f = (n: number) => {
+    const k = (n + h / 60) % 6;
+    return Math.round((v - v * s * Math.max(0, Math.min(k, 4 - k, 1))) * 255);
+  };
+  return "#" + [f(5), f(3), f(1)].map((x) => x.toString(16).padStart(2, "0")).join("").toUpperCase();
+}
+
+// Carré saturation × luminosité + barre de teinte, chacun avec un curseur qu'on fait
+// glisser (souris, stylet ou doigt). La teinte est gardée dans l'état : elle ne se
+// perd pas quand on passe par le blanc, le noir ou un gris.
+function NuancierCurseurs({ valeur, onChange }: { valeur: string; onChange: (hex: string) => void }) {
+  const [hsv, setHsv] = useState(() => hexVersHsv(/^#[0-9A-Fa-f]{6}$/.test(valeur) ? valeur : "#C62828"));
+  const carre = useRef<HTMLDivElement>(null);
+  const barre = useRef<HTMLDivElement>(null);
+
+  // Saisie hexadécimale externe : on resynchronise les curseurs
+  useEffect(() => {
+    if (/^#[0-9A-Fa-f]{6}$/.test(valeur) && valeur.toUpperCase() !== hsvVersHex(hsv.h, hsv.s, hsv.v)) {
+      const n = hexVersHsv(valeur);
+      setHsv((prev) => ({ ...n, h: n.s === 0 ? prev.h : n.h }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [valeur]);
+
+  function maj(n: { h: number; s: number; v: number }) {
+    setHsv(n);
+    onChange(hsvVersHex(n.h, n.s, n.v));
+  }
+
+  function surCarre(e: React.PointerEvent) {
+    const r = carre.current!.getBoundingClientRect();
+    const s = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    const v = 1 - Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+    maj({ ...hsv, s, v });
+  }
+
+  function surBarre(e: React.PointerEvent) {
+    const r = barre.current!.getBoundingClientRect();
+    const h = Math.min(359.9, Math.max(0, ((e.clientX - r.left) / r.width) * 360));
+    maj({ ...hsv, h });
+  }
+
+  const glisser = (gestion: (e: React.PointerEvent) => void) => ({
+    onPointerDown: (e: React.PointerEvent) => { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); gestion(e); },
+    onPointerMove: (e: React.PointerEvent) => { if (e.buttons & 1) gestion(e); },
+  });
+
+  const couleur = hsvVersHex(hsv.h, hsv.s, hsv.v);
+  return (
+    <div className="space-y-2.5 select-none">
+      <div
+        ref={carre}
+        {...glisser(surCarre)}
+        className="relative h-36 w-full rounded-lg cursor-crosshair touch-none overflow-hidden"
+        style={{ backgroundColor: `hsl(${hsv.h}, 100%, 50%)` }}
+      >
+        <div className="absolute inset-0" style={{ background: "linear-gradient(to right, #fff, rgba(255,255,255,0))" }} />
+        <div className="absolute inset-0" style={{ background: "linear-gradient(to top, #000, rgba(0,0,0,0))" }} />
+        <div
+          className="absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.4)] pointer-events-none"
+          style={{ left: `${hsv.s * 100}%`, top: `${(1 - hsv.v) * 100}%`, backgroundColor: couleur }}
+        />
+      </div>
+      <div
+        ref={barre}
+        {...glisser(surBarre)}
+        className="relative h-3.5 w-full rounded-full cursor-pointer touch-none"
+        style={{ background: "linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)" }}
+        title="Teinte"
+      >
+        <div
+          className="absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,0.4)] pointer-events-none"
+          style={{ left: `${(hsv.h / 360) * 100}%`, backgroundColor: `hsl(${hsv.h}, 100%, 50%)` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Sélecteur de couleur d'une planche : nuancier à curseurs avec saisie hexadécimale,
+// palette prédéfinie, et retour à la couleur automatique.
 // Le panneau est en position fixe pour ne pas être rogné par le tableau (overflow).
 function SelecteurCouleurPlanche({
   planche,
@@ -11755,35 +11850,16 @@ function SelecteurCouleurPlanche({
             {enregistrement && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-700" />}
           </div>
 
-          {/* Palette prédéfinie */}
-          <div className="grid grid-cols-8 gap-1.5">
-            {PALETTE_CHOIX_PLANCHES.map((c) => {
-              const actif = c.toUpperCase() === actuelle.toUpperCase();
-              return (
-                <button
-                  key={c}
-                  type="button"
-                  disabled={enregistrement}
-                  onClick={() => choisir(c)}
-                  className={`h-6 w-6 rounded-full border border-black/10 transition hover:scale-110 disabled:opacity-50 ${actif ? "ring-2 ring-offset-2 ring-gray-900" : ""}`}
-                  style={{ backgroundColor: c }}
-                  title={c}
-                  aria-label={`Couleur ${c}`}
-                />
-              );
-            })}
-          </div>
+          {/* Nuancier à curseurs */}
+          <NuancierCurseurs valeur={perso} onChange={setPerso} />
 
-          {/* Nuancier libre */}
-          <div className="border-t border-black/5 pt-3">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-gray-700 mb-1.5">Couleur personnalisée</p>
+          {/* Aperçu + code hexadécimal */}
+          <div>
             <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={hexValide ? perso : actuelle}
-                onChange={(e) => setPerso(e.target.value.toUpperCase())}
-                className="h-8 w-10 cursor-pointer rounded border border-black/15 bg-white p-0.5"
-                title="Ouvrir le nuancier"
+              <span
+                className="h-8 w-10 rounded-lg border border-black/15 shrink-0"
+                style={{ backgroundColor: hexValide ? perso : actuelle }}
+                title="Aperçu"
               />
               <input
                 type="text"
@@ -11802,6 +11878,28 @@ function SelecteurCouleurPlanche({
               >
                 Appliquer
               </button>
+            </div>
+          </div>
+
+          {/* Couleurs rapides : un clic enregistre directement */}
+          <div className="border-t border-black/5 pt-3">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-gray-700 mb-1.5">Couleurs rapides</p>
+            <div className="grid grid-cols-8 gap-1.5">
+              {PALETTE_CHOIX_PLANCHES.map((c) => {
+                const actif = c.toUpperCase() === actuelle.toUpperCase();
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    disabled={enregistrement}
+                    onClick={() => choisir(c)}
+                    className={`h-6 w-6 rounded-full border border-black/10 transition hover:scale-110 disabled:opacity-50 ${actif ? "ring-2 ring-offset-2 ring-gray-900" : ""}`}
+                    style={{ backgroundColor: c }}
+                    title={c}
+                    aria-label={`Couleur ${c}`}
+                  />
+                );
+              })}
             </div>
           </div>
 
