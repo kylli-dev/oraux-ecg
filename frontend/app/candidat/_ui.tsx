@@ -10,9 +10,9 @@ import { ArrowLeft, GraduationCap, Loader2, LogOut, CheckCircle2, AlertTriangle,
 
 export const RED = "#C62828";
 
-// Hauteur disponible entre l'en-tête (bandeau 4px + barre 64px + bordure 1px) et le
-// pied de page (~64px), pour centrer les cartes sans faire défiler la page
-export const PAGE_MIN_H = "min-h-[calc(100vh-133px)]";
+// Hauteur disponible entre l'en-tête rouge (64px) et le pied de page (~64px), pour
+// centrer les cartes sans faire défiler la page
+export const PAGE_MIN_H = "min-h-[calc(100vh-128px)]";
 
 export const inputClass =
   "w-full px-4 py-2.5 rounded-lg border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:border-transparent transition";
@@ -30,19 +30,15 @@ export function CandidatHeader() {
   const connecte = !PAGES_PUBLIQUES.includes(pathname.replace(/\/$/, ""));
 
   return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-black/5">
-      <div className="h-1" style={{ backgroundColor: RED }} />
+    <header className="sticky top-0 z-40 shadow-md" style={{ backgroundColor: RED }}>
       <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
         <Link href={connecte ? "/candidat/accueil" : "/candidat"} className="flex items-center gap-3 min-w-0">
-          <div
-            className="h-9 w-9 rounded-xl flex items-center justify-center shadow-sm shrink-0"
-            style={{ backgroundColor: RED }}
-          >
-            <GraduationCap className="h-5 w-5 text-white" />
+          <div className="h-9 w-9 rounded-xl bg-white flex items-center justify-center shadow-sm shrink-0">
+            <GraduationCap className="h-5 w-5" style={{ color: RED }} />
           </div>
           <div className="leading-tight min-w-0">
-            <p className="text-sm font-bold text-gray-900">Oraux ECG</p>
-            <p className="text-xs text-gray-700 truncate">ENSAE — IP Paris · Espace candidat</p>
+            <p className="text-sm font-bold text-white">Oraux ECG</p>
+            <p className="text-xs text-white/90 truncate">ENSAE — IP Paris · Espace candidat</p>
           </div>
         </Link>
         {connecte && (
@@ -51,7 +47,7 @@ export function CandidatHeader() {
               sessionStorage.removeItem("candidat_token");
               router.push("/candidat");
             }}
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-800 hover:text-black px-3 py-1.5 rounded-lg hover:bg-gray-100 transition shrink-0"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-white px-3 py-1.5 rounded-lg border border-white/40 hover:bg-white/15 transition shrink-0"
           >
             <LogOut className="h-4 w-4" />
             <span className="hidden sm:inline">Se déconnecter</span>
