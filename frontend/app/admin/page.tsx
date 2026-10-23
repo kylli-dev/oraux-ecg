@@ -11553,12 +11553,13 @@ function Sidebar({
       style={{ backgroundColor: RED }}
     >
       <div className="p-5 pb-4">
-        <div className="rounded-xl bg-white px-4 py-3 shadow-sm flex flex-col items-center gap-2">
+        <div className="flex flex-col items-center gap-2">
+          {/* Logo rendu en blanc pour s'accorder au bandeau rouge */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/logo-ensae.png"
             alt="ENSAE — IP Paris"
-            className="h-24 w-auto select-none"
+            className="h-24 w-auto select-none brightness-0 invert"
             draggable={false}
           />
           <EnvBadge />
