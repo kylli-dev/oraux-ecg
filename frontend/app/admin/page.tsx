@@ -11589,16 +11589,42 @@ function Sidebar({
         ))}
       </nav>
 
-      <div className="p-4 border-t border-white/10 space-y-1">
-        <LogoutButton />
+      <div className="p-3 border-t border-white/10">
+        <ProfilMenu />
       </div>
     </aside>
   );
 }
 
-function LogoutButton() {
+// Cercle de profil (initiale de l'utilisateur connecté) ; un clic ouvre un menu
+// avec la déconnexion. Se ferme au clic extérieur ou sur Échap.
+function ProfilMenu() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [ouvert, setOuvert] = useState(false);
+  const [profil, setProfil] = useState<{ username: string | null; role: string } | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => data && setProfil({ username: data.username ?? null, role: data.role ?? "admin" }))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!ouvert) return;
+    const clic = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOuvert(false);
+    };
+    const touche = (e: KeyboardEvent) => e.key === "Escape" && setOuvert(false);
+    document.addEventListener("mousedown", clic);
+    document.addEventListener("keydown", touche);
+    return () => {
+      document.removeEventListener("mousedown", clic);
+      document.removeEventListener("keydown", touche);
+    };
+  }, [ouvert]);
 
   const handleLogout = async () => {
     setLoading(true);
@@ -11607,15 +11633,58 @@ function LogoutButton() {
     router.refresh();
   };
 
+  const nom = profil?.username?.trim() || "Administrateur";
+  const initiale = nom.charAt(0).toUpperCase();
+  const role = profil?.role === "super_admin" ? "Super admin" : "Admin";
+
   return (
-    <button
-      onClick={handleLogout}
-      disabled={loading}
-      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-white/50 hover:bg-white/10 hover:text-white/80 transition text-xs"
-    >
-      <LogOut className="h-3.5 w-3.5" />
-      {loading ? "Déconnexion…" : "Se déconnecter"}
-    </button>
+    <div ref={ref} className="relative">
+      {ouvert && (
+        <div className="absolute bottom-full left-0 right-0 mb-2 rounded-xl bg-white shadow-lg ring-1 ring-black/10 overflow-hidden text-gray-900">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3">
+            <span
+              className="h-9 w-9 shrink-0 rounded-full grid place-items-center text-white font-semibold"
+              style={{ backgroundColor: RED }}
+            >
+              {initiale}
+            </span>
+            <div className="min-w-0 leading-tight">
+              <div className="text-sm font-semibold truncate">{nom}</div>
+              <div className="text-xs text-gray-700">{role}</div>
+            </div>
+          </div>
+          <button
+            onClick={handleLogout}
+            disabled={loading}
+            className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium hover:bg-red-50 transition disabled:opacity-60"
+            style={{ color: RED }}
+          >
+            <LogOut className="h-4 w-4" />
+            {loading ? "Déconnexion…" : "Se déconnecter"}
+          </button>
+        </div>
+      )}
+      <button
+        onClick={() => setOuvert((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={ouvert}
+        title="Mon profil"
+        className={`w-full flex items-center gap-3 px-2 py-2 rounded-lg transition text-left ${
+          ouvert ? "bg-white/15" : "hover:bg-black/10"
+        }`}
+      >
+        <span
+          className="h-9 w-9 shrink-0 rounded-full bg-white grid place-items-center font-bold text-base"
+          style={{ color: RED }}
+        >
+          {initiale}
+        </span>
+        <span className="min-w-0 flex-1 leading-tight">
+          <span className="block text-sm font-semibold truncate">{nom}</span>
+          <span className="block text-xs text-white/80">{role}</span>
+        </span>
+      </button>
+    </div>
   );
 }
 
