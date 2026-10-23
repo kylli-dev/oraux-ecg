@@ -11553,19 +11553,15 @@ function Sidebar({
       style={{ backgroundColor: RED }}
     >
       <div className="p-5 pb-4">
-        <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-full border border-white/30 grid place-items-center">
-            <div className="h-5 w-5 rounded-full border border-white/50" />
-          </div>
-          <div className="leading-tight">
-            <div className="flex items-center gap-2">
-              <span className="text-white font-semibold tracking-wide text-sm">
-                ENSAE
-              </span>
-              <EnvBadge />
-            </div>
-            <div className="text-white/60 text-xs">IP Paris</div>
-          </div>
+        <div className="rounded-xl bg-white px-4 py-3 shadow-sm flex flex-col items-center gap-2">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo-ensae.png"
+            alt="ENSAE — IP Paris"
+            className="h-24 w-auto select-none"
+            draggable={false}
+          />
+          <EnvBadge />
         </div>
       </div>
 
@@ -14041,9 +14037,9 @@ export default function AdminPage() {
           >
             <Menu className="h-4 w-4" />
           </button>
-          <span className="text-sm font-semibold text-gray-900">
-            ENSAE — Admin
-          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-ensae.png" alt="ENSAE — IP Paris" className="h-9 w-auto" />
+          <span className="text-sm font-semibold text-gray-900">Admin</span>
         </div>
 
         <main className="flex-1 overflow-auto">
