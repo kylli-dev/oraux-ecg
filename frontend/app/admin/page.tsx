@@ -263,6 +263,7 @@ type CandidatListeItem = {
   inscription_id: number | null;
   is_liste_attente: boolean;
   statut: string;
+  profil: string | null;
 };
 
 type TripletEpreuveGestion = {
@@ -7218,6 +7219,7 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
   const [triplets, setTriplets] = useState<TripletDisponible[]>([]);
   const [search, setSearch] = useState("");
   const [filterStatut, setFilterStatut] = useState<"" | "inscrits" | "non_inscrits" | "attente">("");
+  const [filterProfil, setFilterProfil] = useState<"" | "HGG" | "ESH">("");
   const [loadingAction, setLoadingAction] = useState(false);
 
   const loadListe = useCallback(() => {
@@ -7274,6 +7276,7 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
     if (filterStatut === "inscrits" && !c.is_inscrit) return false;
     if (filterStatut === "non_inscrits" && c.is_inscrit) return false;
     if (filterStatut === "attente" && !c.is_liste_attente) return false;
+    if (filterProfil && c.profil !== filterProfil) return false;
     const q = search.toLowerCase();
     return !q || `${c.nom} ${c.prenom} ${c.email} ${c.code_candidat ?? ""}`.toLowerCase().includes(q);
   });
@@ -7317,6 +7320,23 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
             <option value="non_inscrits">Non inscrits ({liste.filter(c => !c.is_inscrit).length})</option>
             <option value="attente">En liste d&apos;attente ({liste.filter(c => c.is_liste_attente).length})</option>
           </select>
+          <div className="mt-1.5 flex gap-1">
+            {(["", "HGG", "ESH"] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setFilterProfil(p)}
+                className={`flex-1 text-xs font-semibold px-2 py-1 rounded-lg border transition ${
+                  filterProfil === p
+                    ? p === "HGG" ? "bg-purple-100 text-purple-700 border-purple-300"
+                      : p === "ESH" ? "bg-emerald-100 text-emerald-700 border-emerald-300"
+                      : "bg-black/10 text-gray-900 border-black/20"
+                    : "bg-white text-gray-700 border-black/10 hover:bg-black/[0.03]"
+                }`}
+              >
+                {p === "" ? "Tous" : p}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="overflow-y-auto flex-1 divide-y divide-black/5">
           {filtered.map(c => (

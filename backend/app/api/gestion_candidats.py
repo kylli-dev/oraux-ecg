@@ -41,6 +41,7 @@ class CandidatListeItem(BaseModel):
     inscription_id: Optional[int] = None
     is_liste_attente: bool
     statut: str
+    profil: Optional[str] = None
 
 
 class TripletEpreuveOut(BaseModel):
@@ -191,6 +192,7 @@ def _build_inscription_out(insc: Inscription, db: Session) -> InscriptionOut:
 @router.get("/{planning_id}/candidats", response_model=List[CandidatListeItem])
 def list_candidats_gestion(planning_id: int, db: Session = Depends(get_db)):
     """Liste tous les candidats d'un planning avec leur statut d'inscription (batch, sans N+1)."""
+    from app.api.portal import _profil_effectif  # import local, comme _matiere_exclue
     candidats = (
         db.query(Candidat)
         .filter_by(planning_id=planning_id)
@@ -231,6 +233,7 @@ def list_candidats_gestion(planning_id: int, db: Session = Depends(get_db)):
             # Un candidat inscrit n'est plus en attente, même si une ancienne entrée subsiste
             is_liste_attente=c.id in listes_attente and c.id not in inscriptions,
             statut=c.statut,
+            profil=_profil_effectif(c) or None,
         )
         for c in candidats
     ]
