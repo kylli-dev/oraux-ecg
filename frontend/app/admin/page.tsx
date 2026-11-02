@@ -6762,8 +6762,8 @@ function CompactageTab({
               </div>
             )
           ) : (
-            <div className="rounded-xl border border-amber-200 bg-white shadow-sm overflow-hidden">
-              <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-200 text-sm text-amber-900 flex flex-wrap gap-x-4 gap-y-1">
+            <div className="rounded-xl border border-gray-300 bg-white shadow-sm overflow-hidden">
+              <div className="px-4 py-2.5 bg-gray-100 border-b border-gray-300 text-sm text-gray-900 flex flex-wrap gap-x-4 gap-y-1">
                 <span className="font-semibold">{trous.length} créneau{trous.length > 1 ? "x" : ""} vide{trous.length > 1 ? "s" : ""}</span>
                 {nbAbsents > 0 && <span>dont {nbAbsents} absence{nbAbsents > 1 ? "s" : ""}</span>}
                 {filtresActifs && <span>{trousFiltres.length} affiché{trousFiltres.length > 1 ? "s" : ""}</span>}
