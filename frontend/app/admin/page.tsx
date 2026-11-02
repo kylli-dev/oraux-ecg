@@ -7220,6 +7220,8 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
   const [search, setSearch] = useState("");
   const [filterStatut, setFilterStatut] = useState<"" | "inscrits" | "non_inscrits" | "attente">("");
   const [filterProfil, setFilterProfil] = useState<"" | "HGG" | "ESH">("");
+  const [filterDateCreneau, setFilterDateCreneau] = useState("");
+  const [filterHeureCreneau, setFilterHeureCreneau] = useState("");
   const [loadingAction, setLoadingAction] = useState(false);
 
   const loadListe = useCallback(() => {
@@ -7288,10 +7290,23 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
     (_classeUp.includes("ESH") ? "ESH" : _classeUp.includes("HGG") ? "HGG" : "");
   const _matiereExclue = _PROFIL_EXCL[_profilUp];
 
+  const tripletsProfil = triplets.filter(t =>
+    !(_matiereExclue && t.epreuves.some(e => e.matiere.toUpperCase() === _matiereExclue))
+  );
+
+  // Une date ou une heure qui n'est plus proposée (autre candidat, créneau pris) ne filtre plus
+  const datesCreneaux = [...new Set(tripletsProfil.map(t => t.date))].sort();
+  const dateCreneau = datesCreneaux.includes(filterDateCreneau) ? filterDateCreneau : "";
+  const heuresCreneaux = [...new Set(
+    tripletsProfil.filter(t => !dateCreneau || t.date === dateCreneau).map(t => t.heure_debut)
+  )].sort();
+  const heureCreneau = heuresCreneaux.includes(filterHeureCreneau) ? filterHeureCreneau : "";
+
   // Group triplets by date
   const tripletsByDate: Record<string, TripletDisponible[]> = {};
-  for (const t of triplets) {
-    if (_matiereExclue && t.epreuves.some(e => e.matiere.toUpperCase() === _matiereExclue)) continue;
+  for (const t of tripletsProfil) {
+    if (dateCreneau && t.date !== dateCreneau) continue;
+    if (heureCreneau && t.heure_debut !== heureCreneau) continue;
     if (!tripletsByDate[t.date]) tripletsByDate[t.date] = [];
     tripletsByDate[t.date].push(t);
   }
@@ -7480,7 +7495,33 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
 
             {/* Triplets disponibles */}
             <div className="rounded-xl border bg-white shadow-sm p-5">
-              <p className="text-sm font-semibold mb-3">Créneaux disponibles à l&apos;inscription</p>
+              <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
+                <p className="text-sm font-semibold">Créneaux disponibles à l&apos;inscription</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <select
+                    aria-label="Filtrer les créneaux par date"
+                    value={dateCreneau}
+                    onChange={e => setFilterDateCreneau(e.target.value)}
+                    className="text-xs text-gray-900 px-2 py-1.5 border rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-[#C62828]"
+                  >
+                    <option value="">Toutes les dates</option>
+                    {datesCreneaux.map(d => (
+                      <option key={d} value={d}>{fmt_date(d)}</option>
+                    ))}
+                  </select>
+                  <select
+                    aria-label="Filtrer les créneaux par heure"
+                    value={heureCreneau}
+                    onChange={e => setFilterHeureCreneau(e.target.value)}
+                    className="text-xs text-gray-900 px-2 py-1.5 border rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-[#C62828]"
+                  >
+                    <option value="">Toutes les heures</option>
+                    {heuresCreneaux.map(h => (
+                      <option key={h} value={h}>{h}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               {Object.keys(tripletsByDate).length === 0 ? (
                 <p className="text-sm text-gray-700">Aucun créneau disponible</p>
               ) : (
