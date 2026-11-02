@@ -14189,7 +14189,7 @@ export default function AdminPage() {
         </div>
 
         <main className="flex-1 overflow-auto">
-          <div className={`${(section === "plannings" && selectedPlanning) || section === "salles" || section === "candidats" ? "max-w-none" : "max-w-6xl"} mx-auto px-4 md:px-8 py-8`}>
+          <div className={`${(section === "plannings" && selectedPlanning) || section === "salles" || section === "candidats" || section === "examinateurs" ? "max-w-none" : "max-w-6xl"} mx-auto px-4 md:px-8 py-8`}>
             {section === "plannings" && !selectedPlanning && (
               <PlanningsSection onSelect={setSelectedPlanning} />
             )}
