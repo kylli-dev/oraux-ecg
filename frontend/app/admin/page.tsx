@@ -7217,6 +7217,7 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
   const [fiche, setFiche] = useState<FicheCandidat | null>(null);
   const [triplets, setTriplets] = useState<TripletDisponible[]>([]);
   const [search, setSearch] = useState("");
+  const [filterStatut, setFilterStatut] = useState<"" | "inscrits" | "non_inscrits" | "attente">("");
   const [loadingAction, setLoadingAction] = useState(false);
 
   const loadListe = useCallback(() => {
@@ -7270,6 +7271,9 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
     new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
 
   const filtered = liste.filter(c => {
+    if (filterStatut === "inscrits" && !c.is_inscrit) return false;
+    if (filterStatut === "non_inscrits" && c.is_inscrit) return false;
+    if (filterStatut === "attente" && !c.is_liste_attente) return false;
     const q = search.toLowerCase();
     return !q || `${c.nom} ${c.prenom} ${c.email} ${c.code_candidat ?? ""}`.toLowerCase().includes(q);
   });
@@ -7302,6 +7306,17 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
             onChange={e => setSearch(e.target.value)}
             className="w-full text-xs px-2.5 py-1.5 border rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-[#C62828]"
           />
+          <select
+            aria-label="Filtrer par statut"
+            value={filterStatut}
+            onChange={e => setFilterStatut(e.target.value as typeof filterStatut)}
+            className="mt-1.5 w-full text-xs text-gray-900 px-2 py-1.5 border rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-[#C62828]"
+          >
+            <option value="">Tous les candidats ({liste.length})</option>
+            <option value="inscrits">Inscrits ({liste.filter(c => c.is_inscrit).length})</option>
+            <option value="non_inscrits">Non inscrits ({liste.filter(c => !c.is_inscrit).length})</option>
+            <option value="attente">En liste d&apos;attente ({liste.filter(c => c.is_liste_attente).length})</option>
+          </select>
         </div>
         <div className="overflow-y-auto flex-1 divide-y divide-black/5">
           {filtered.map(c => (
