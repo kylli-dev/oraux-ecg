@@ -173,11 +173,11 @@ function TripletCell({ k, statut, onClick }) {
 function DragDropRow({ blocId, rowIdx, overflow, isDraggingThis, isDropTarget, children }) {
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: `rowdrop-${blocId}-${rowIdx}`,
-    data: { type: "row-target", rowIdx },
+    data: { type: "row-target", blocId, rowIdx },
   });
   const { attributes, listeners, setNodeRef: setHandleRef, isDragging } = useDraggable({
     id: `row-${blocId}-${rowIdx}`,
-    data: { type: "row", rowIdx },
+    data: { type: "row", blocId, rowIdx },
   });
   return (
     <tr
@@ -204,11 +204,11 @@ function DragDropRow({ blocId, rowIdx, overflow, isDraggingThis, isDropTarget, c
 function DraggableTripletCell({ k, statut, onClick, blocId, rowIdx, matIdx }) {
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: `celldrop-${blocId}-${rowIdx}-${matIdx}`,
-    data: { type: "cell-target", rowIdx, matIdx },
+    data: { type: "cell-target", blocId, rowIdx, matIdx, k },
   });
   const { attributes, listeners, setNodeRef: setHandleRef, isDragging } = useDraggable({
     id: `cell-${blocId}-${rowIdx}-${matIdx}`,
-    data: { type: "cell", rowIdx, matIdx, k },
+    data: { type: "cell", blocId, rowIdx, matIdx, k },
   });
   const statutOpt = STATUT_OPTIONS.find((s) => s.value === statut) ?? STATUT_OPTIONS[0];
   return (
@@ -251,8 +251,28 @@ function DraggableTripletCell({ k, statut, onClick, blocId, rowIdx, matIdx }) {
   );
 }
 
+// Corps complet d'un bloc pour la route PUT, qui remplace tous les champs : un champ absent
+// est remis à sa valeur par défaut (nb_slots, durées par matière…).
+function corpsBloc(bloc, custom_matrix) {
+  return {
+    ordre: bloc.ordre,
+    heure_debut: bloc.heure_debut?.slice(0, 5),
+    heure_fin: bloc.heure_fin?.slice(0, 5),
+    matieres: bloc.matieres,
+    matieres_config: bloc.matieres_config ?? null,
+    duree_minutes: bloc.duree_minutes ?? null,
+    pause_minutes: bloc.pause_minutes ?? null,
+    preparation_minutes: bloc.preparation_minutes ?? null,
+    salles_par_matiere: bloc.salles_par_matiere ?? 1,
+    nb_slots: bloc.nb_slots ?? null,
+    bonus_slots: bloc.bonus_slots ?? 0,
+    type_demi_journee: bloc.type_demi_journee ?? null,
+    custom_matrix,
+  };
+}
+
 // ── Matrice journée type ───────────────────────────────────────────────────────
-function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletOffset = 0, onReload }) {
+function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletOffset = 0, onReload, registre, onSaveAll, onCancelAll, onResetAll }) {
   const C = bloc.nb_slots ?? bloc.matieres.length ** 2;
   const matrix = buildMatrix(bloc, jt, tripletOffset);
   const N = bloc.matieres.length;
@@ -276,7 +296,6 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
   const [rowOrder, setRowOrder] = useState(defaultOrder);
   // Initialisé depuis custom_matrix sauvegardé, sinon formule N²
   const [cellMatrix, setCellMatrix] = useState(() => customValide ?? n2Default());
-  const [activeDrag, setActiveDrag] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState(null);
   // Tracks état serveur sans dépendre du prop bloc (évite le bug remount)
@@ -298,42 +317,18 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
 
   const hasUnsaved = isDirty;
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
-
-  function handleDragStart(event) {
-    setActiveDrag(event.active.data.current ?? null);
+  function setCell(rowIdx, matIdx, k) {
+    setCellMatrix((prev) => {
+      const next = prev.map((r) => [...r]);
+      next[rowIdx][matIdx] = k;
+      return next;
+    });
+    setIsDirty(true);
   }
 
-  function handleDragEnd(event) {
-    setActiveDrag(null);
-    const { active, over } = event;
-    if (!over) return;
-    const ad = active.data.current;
-    const od = over.data.current;
-
-    if (ad?.type === "row" && od?.type === "row-target" && ad.rowIdx !== od.rowIdx) {
-      setRowOrder((prev) => {
-        const oldPos = prev.indexOf(ad.rowIdx);
-        const newPos = prev.indexOf(od.rowIdx);
-        return arrayMove(prev, oldPos, newPos);
-      });
-      setIsDirty(true);
-      return;
-    }
-
-    if (ad?.type === "cell" && od?.type === "cell-target") {
-      const { rowIdx: rA, matIdx: mA } = ad;
-      const { rowIdx: rB, matIdx: mB } = od;
-      if (rA === rB && mA === mB) return;
-      setCellMatrix((prev) => {
-        const next = prev.map((r) => [...r]);
-        const tmp = next[rA][mA];
-        next[rA][mA] = next[rB][mB];
-        next[rB][mB] = tmp;
-        return next;
-      });
-      setIsDirty(true);
-    }
+  function moveRow(rowIdx, versRowIdx) {
+    setRowOrder((prev) => arrayMove(prev, prev.indexOf(rowIdx), prev.indexOf(versRowIdx)));
+    setIsDirty(true);
   }
 
   // Annuler les modifications locales — retour à la dernière sauvegarde
@@ -347,17 +342,7 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
   async function saveMatrix() {
     setSaving(true); setSaveMsg(null);
     try {
-      await apiFetch("PUT", `journee-types/blocs/${bloc.id}`, {
-        ordre: bloc.ordre,
-        heure_debut: bloc.heure_debut?.slice(0, 5),
-        heure_fin: bloc.heure_fin?.slice(0, 5),
-        matieres: bloc.matieres,
-        duree_minutes: bloc.duree_minutes ?? null,
-        pause_minutes: bloc.pause_minutes ?? null,
-        preparation_minutes: bloc.preparation_minutes ?? null,
-        salles_par_matiere: bloc.salles_par_matiere ?? 1,
-        custom_matrix: cellMatrix,
-      });
+      await apiFetch("PUT", `journee-types/blocs/${bloc.id}`, corpsBloc(bloc, cellMatrix));
       lastSavedRef.current = cellMatrix.map((r) => [...r]);
       setIsDirty(false);
       setHasServerCustom(true);
@@ -375,17 +360,7 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
   async function resetMatrix() {
     setSaving(true); setSaveMsg(null);
     try {
-      await apiFetch("PUT", `journee-types/blocs/${bloc.id}`, {
-        ordre: bloc.ordre,
-        heure_debut: bloc.heure_debut?.slice(0, 5),
-        heure_fin: bloc.heure_fin?.slice(0, 5),
-        matieres: bloc.matieres,
-        duree_minutes: bloc.duree_minutes ?? null,
-        pause_minutes: bloc.pause_minutes ?? null,
-        preparation_minutes: bloc.preparation_minutes ?? null,
-        salles_par_matiere: bloc.salles_par_matiere ?? 1,
-        custom_matrix: null,
-      });
+      await apiFetch("PUT", `journee-types/blocs/${bloc.id}`, corpsBloc(bloc, null));
       const fresh = n2Default();
       lastSavedRef.current = fresh;
       setRowOrder(defaultOrder);
@@ -401,6 +376,13 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
       setSaving(false);
     }
   }
+
+  // Actions appelées au niveau du gabarit (glisser-déposer, sauvegarde commune)
+  useEffect(() => {
+    const blocs = registre.current;
+    blocs.set(bloc.id, { setCell, moveRow, resetAll, saveMatrix, resetMatrix, isDirty, hasServerCustom });
+    return () => { blocs.delete(bloc.id); };
+  });
 
   // N3 — indicateurs
   const overflowRows = matrix.filter((r) => r.overflow);
@@ -469,17 +451,17 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
         {isDirty && (
           <>
             <button
-              onClick={resetAll}
+              onClick={onCancelAll}
               className="text-[10px] px-2 py-0.5 rounded-full bg-black/5 text-black/40 hover:bg-black/10 transition shrink-0"
-              title="Annuler — retour à la dernière sauvegarde"
+              title="Annuler — retour à la dernière sauvegarde, pour tous les blocs de cette journée"
             >
               ↺ Annuler
             </button>
             <button
-              onClick={saveMatrix}
+              onClick={onSaveAll}
               disabled={saving}
               className="flex items-center gap-1 text-[10px] px-2.5 py-0.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-semibold transition disabled:opacity-50 shrink-0"
-              title="Sauvegarder cette disposition"
+              title="Sauvegarder la disposition de tous les blocs modifiés de cette journée"
             >
               {saving ? <RefreshCw className="h-2.5 w-2.5 animate-spin" /> : <Check className="h-2.5 w-2.5" />}
               Sauvegarder
@@ -490,10 +472,10 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
         {/* Reset serveur → formule N² (seulement si disposition perso sauvegardée) */}
         {hasServerCustom && !isDirty && (
           <button
-            onClick={resetMatrix}
+            onClick={onResetAll}
             disabled={saving}
             className="text-[10px] px-2 py-0.5 rounded-full bg-black/5 text-black/40 hover:bg-red-50 hover:text-red-500 transition shrink-0"
-            title="Supprimer la disposition personnalisée et revenir à la formule N²"
+            title="Supprimer la disposition personnalisée de tous les blocs de cette journée et revenir à la formule N²"
           >
             ↺ N²
           </button>
@@ -517,12 +499,6 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
             : "Aucun créneau généré — vérifiez les horaires de début et de fin"}
         </div>
       ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-        >
           <div className="overflow-x-auto rounded-xl border border-black/8 bg-white">
             <table className="w-full border-collapse text-xs">
               <thead>
@@ -602,29 +578,6 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
               </tbody>
             </table>
           </div>
-
-          {/* Ghost drag overlay */}
-          <DragOverlay dropAnimation={{ duration: 150, easing: "ease" }}>
-            {activeDrag?.type === "cell" && (
-              <div
-                className="inline-flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-lg font-semibold text-[11px] shadow-xl opacity-90 pointer-events-none border-2 border-blue-400"
-                style={{
-                  backgroundColor: TRIPLET_BG[activeDrag.k % TRIPLET_BG.length],
-                  color: "#374151",
-                  minWidth: 48,
-                }}
-              >
-                <span>T{activeDrag.k + 1}</span>
-              </div>
-            )}
-            {activeDrag?.type === "row" && (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 border-amber-400 bg-amber-50 text-xs font-medium shadow-xl opacity-90 pointer-events-none">
-                <GripVertical className="h-3 w-3 text-amber-500" />
-                <span className="font-mono">Ligne {activeDrag.rowIdx + 1}</span>
-              </div>
-            )}
-          </DragOverlay>
-        </DndContext>
       )}
     </div>
   );
@@ -1190,6 +1143,50 @@ export default function InterfaceAdminENSAEPlanning() {
     });
   }, []);
 
+  // Glisser-déposer commun à tous les blocs de la journée : un triplet peut être échangé avec
+  // n'importe quelle case, y compris entre le matin et l'après-midi. Les lignes, elles, ne se
+  // réordonnent qu'au sein de leur bloc.
+  const registreBlocs = React.useRef(new Map());
+  const [activeDrag, setActiveDrag] = useState(null);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+
+  const collisionMatrice = useCallback((args) => {
+    const ad = args.active.data.current;
+    return closestCenter({
+      ...args,
+      droppableContainers: args.droppableContainers.filter((c) => {
+        const od = c.data.current;
+        return ad?.type === "cell" ? od?.type === "cell-target" : od?.type === "row-target" && od.blocId === ad?.blocId;
+      }),
+    });
+  }, []);
+
+  const handleDragEnd = ({ active, over }) => {
+    setActiveDrag(null);
+    const ad = active.data.current;
+    const od = over?.data.current;
+    if (!ad || !od) return;
+    const blocs = registreBlocs.current;
+    if (ad.type === "row" && od.type === "row-target") {
+      if (ad.rowIdx !== od.rowIdx) blocs.get(ad.blocId)?.moveRow(ad.rowIdx, od.rowIdx);
+      return;
+    }
+    if (ad.type === "cell" && od.type === "cell-target") {
+      if (ad.blocId === od.blocId && ad.rowIdx === od.rowIdx && ad.matIdx === od.matIdx) return;
+      blocs.get(ad.blocId)?.setCell(ad.rowIdx, ad.matIdx, od.k);
+      blocs.get(od.blocId)?.setCell(od.rowIdx, od.matIdx, ad.k);
+    }
+  };
+
+  const blocsMatrice = () => [...registreBlocs.current.values()];
+  const sauvegarderDispositions = async () => {
+    for (const b of blocsMatrice().filter((m) => m.isDirty)) await b.saveMatrix();
+  };
+  const annulerDispositions = () => blocsMatrice().forEach((b) => b.resetAll());
+  const reinitialiserDispositions = async () => {
+    for (const b of blocsMatrice().filter((m) => m.hasServerCustom)) await b.resetMatrix();
+  };
+
   const handleApply = async () => {
     if (!selectedJT || !selPlanningId || !applyDate) return;
     setApplying(true);
@@ -1302,6 +1299,17 @@ export default function InterfaceAdminENSAEPlanning() {
                       </div>
                     ) : (
                       <>
+                        <p className="text-xs text-gray-700">
+                          Glissez un triplet vers n'importe quelle case pour l'échanger, y compris entre le matin et l'après-midi.
+                          Les positions sont gardées avec la journée type, mais ne changent pas les triplets proposés aux candidats.
+                        </p>
+                        <DndContext
+                          sensors={sensors}
+                          collisionDetection={collisionMatrice}
+                          onDragStart={({ active }) => setActiveDrag(active.data.current ?? null)}
+                          onDragCancel={() => setActiveDrag(null)}
+                          onDragEnd={handleDragEnd}
+                        >
                         {blocGeneration.reduce((acc, bloc) => {
                           const offset = acc.offset;
                           const Nb = bloc.matieres.length;
@@ -1314,6 +1322,10 @@ export default function InterfaceAdminENSAEPlanning() {
                               onTripletClick={handleTripletClick}
                               tripletOffset={offset}
                               onReload={(silent) => loadBlocs(selectedJT, silent)}
+                              registre={registreBlocs}
+                              onSaveAll={sauvegarderDispositions}
+                              onCancelAll={annulerDispositions}
+                              onResetAll={reinitialiserDispositions}
                             />
                           );
                           // Le décalage pour le bloc suivant doit refléter le nombre RÉEL de
@@ -1322,6 +1334,28 @@ export default function InterfaceAdminENSAEPlanning() {
                           acc.offset += bloc.nb_slots ?? Nb * Nb;
                           return acc;
                         }, { els: [], offset: 0 }).els}
+          {/* Ghost drag overlay */}
+          <DragOverlay dropAnimation={{ duration: 150, easing: "ease" }}>
+            {activeDrag?.type === "cell" && (
+              <div
+                className="inline-flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-lg font-semibold text-[11px] shadow-xl opacity-90 pointer-events-none border-2 border-blue-400"
+                style={{
+                  backgroundColor: TRIPLET_BG[activeDrag.k % TRIPLET_BG.length],
+                  color: "#374151",
+                  minWidth: 48,
+                }}
+              >
+                <span>T{activeDrag.k + 1}</span>
+              </div>
+            )}
+            {activeDrag?.type === "row" && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border-2 border-amber-400 bg-amber-50 text-xs font-medium shadow-xl opacity-90 pointer-events-none">
+                <GripVertical className="h-3 w-3 text-amber-500" />
+                <span className="font-mono">Ligne {activeDrag.rowIdx + 1}</span>
+              </div>
+            )}
+          </DragOverlay>
+                        </DndContext>
                         {totalCandidats > 0 && (
                           <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-5">
                             <LegendeStatuts tripletStatuts={tripletStatuts} onTripletClick={handleTripletClick} totalNsq={totalCandidats} />
