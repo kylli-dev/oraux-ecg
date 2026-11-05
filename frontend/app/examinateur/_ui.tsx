@@ -19,6 +19,7 @@ export function ExaminateurHeader() {
         "/examinateur/reinitialiser-mot-de-passe",
         "/examinateur/code-perdu",
       ]}
+      logoEnsae
     />
   );
 }
