@@ -1043,14 +1043,14 @@ function PlanningsSection({
           sub="Créez votre premier planning pour commencer."
         />
       ) : (
-        <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+        <div className="rounded-xl border bg-white shadow-sm overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-[#F5F5F5] text-left">
-                {["Nom", "Période", "Statut", ""].map((h) => (
+                {["Nom", "Période", "Statut", "Actions"].map((h) => (
                   <th
                     key={h}
-                    className="px-5 py-3.5 text-xs font-semibold text-gray-800 tracking-wide"
+                    className={`px-5 py-3.5 text-xs font-semibold text-gray-800 tracking-wide ${h === "Actions" ? "text-right" : ""}`}
                   >
                     {h}
                   </th>
@@ -1064,7 +1064,7 @@ function PlanningsSection({
                   className="border-t border-black/5 hover:bg-black/[0.012] transition"
                 >
                   <td className="px-5 py-3.5 font-medium">{p.nom}</td>
-                  <td className="px-5 py-3.5 text-gray-800 text-xs">
+                  <td className="px-5 py-3.5 text-gray-800 text-xs whitespace-nowrap">
                     {formatDateCourte(p.date_debut)} &rarr; {formatDateCourte(p.date_fin)}
                   </td>
                   <td className="px-5 py-3.5">
@@ -1082,28 +1082,30 @@ function PlanningsSection({
                     </div>
                   </td>
                   <td className="px-5 py-3.5 text-right">
-                    <div className="flex items-center justify-end gap-2 flex-wrap">
-                      <Btn
-                        label="Voir"
-                        onClick={() => onSelect(p)}
-                        small
-                        variant="ghost"
-                        icon={CalendarDays}
-                      />
-                      <Btn
-                        label="Modifier"
-                        onClick={() => setEditPlanning(p)}
-                        small
-                        variant="ghost"
-                        icon={Edit2}
-                      />
-                      <Btn
-                        label="Export"
-                        onClick={() => handleExport(p.id)}
-                        small
-                        variant="ghost"
-                        icon={Download}
-                      />
+                    <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+                      <div className="flex items-center gap-0.5 rounded-lg border border-black/10 p-0.5">
+                        <Btn
+                          label="Voir"
+                          onClick={() => onSelect(p)}
+                          small
+                          variant="ghost"
+                          icon={CalendarDays}
+                        />
+                        <Btn
+                          label="Modifier"
+                          onClick={() => setEditPlanning(p)}
+                          small
+                          variant="ghost"
+                          icon={Edit2}
+                        />
+                        <Btn
+                          label="Export"
+                          onClick={() => handleExport(p.id)}
+                          small
+                          variant="ghost"
+                          icon={Download}
+                        />
+                      </div>
                       <Btn
                         label="Supprimer"
                         onClick={() => handleDelete(p.id)}
