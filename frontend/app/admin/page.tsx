@@ -1445,16 +1445,16 @@ function minToHm(total: number): string {
 
 function statutBadgeCell(statut: string) {
   if (statut === "LIBRE")
-    return <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-medium bg-green-100 text-green-700">Libre</span>;
+    return <span className="inline-block px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">Libre</span>;
   if (statut === "PRERESERVEE")
-    return <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-medium bg-amber-100 text-amber-700">Prérés.</span>;
+    return <span className="inline-block px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700">Prérés.</span>;
   if (statut === "ATTRIBUEE")
-    return <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-medium bg-blue-100 text-blue-700">Réservé</span>;
+    return <span className="inline-block px-1.5 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">Réservé</span>;
   if (statut === "EN_EVALUATION")
-    return <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-medium bg-purple-100 text-purple-700">En éval.</span>;
+    return <span className="inline-block px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700">En éval.</span>;
   if (statut === "FINALISEE")
-    return <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-medium bg-gray-200 text-gray-700">Finalisé</span>;
-  return <span className="inline-block px-1.5 py-0.5 rounded text-[11px] bg-gray-100 text-gray-700">{statut}</span>;
+    return <span className="inline-block px-1.5 py-0.5 rounded text-xs font-medium bg-gray-200 text-gray-700">Finalisé</span>;
+  return <span className="inline-block px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-700">{statut}</span>;
 }
 
 function rowStatut(byMat: Record<string, EpreuveFlat[]>): string {
@@ -1735,7 +1735,8 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
         </div>
       )}
 
-      {/* Tableau croisé */}
+      {/* Tableau croisé — border-separate : avec border-collapse, les bordures des cellules
+          figées disparaissent au défilement */}
       <div
         ref={scrollRef}
         onPointerDown={onScrollPointerDown}
@@ -1744,38 +1745,32 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
         onPointerLeave={endScrollDrag}
         className={`overflow-x-auto rounded-xl border bg-white shadow-sm max-h-[72vh] overflow-y-auto ${dragging ? "cursor-grabbing select-none" : "cursor-grab"}`}
       >
-        <table className="text-sm border-collapse min-w-max">
+        <table className="text-sm border-separate border-spacing-0 min-w-max">
           <thead className="sticky top-0 z-20">
-            {/* Ligne 1 : en-têtes matières */}
-            <tr className="bg-gray-100 border-b">
-              <th className="sticky left-0 z-30 bg-gray-100 w-[100px] min-w-[100px] max-w-[100px] overflow-hidden px-3 py-2.5 text-left text-xs font-semibold text-gray-900 whitespace-nowrap border-r border-black/10">Date</th>
-              <th className="sticky left-[100px] z-30 bg-gray-100 w-[100px] min-w-[100px] max-w-[100px] overflow-hidden px-3 py-2.5 text-left text-xs font-medium text-gray-800 whitespace-nowrap border-r border-black/10">Statut</th>
-              <th className="sticky left-[200px] z-30 bg-gray-100 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2.5 text-left text-xs font-medium text-gray-800 whitespace-nowrap">Dép. prépa</th>
-              <th className="sticky left-[290px] z-30 bg-gray-100 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2.5 text-left text-xs font-medium text-gray-800 whitespace-nowrap">Dép. exam</th>
-              <th className="sticky left-[380px] z-30 bg-gray-100 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2.5 text-left text-xs font-medium text-gray-800 whitespace-nowrap border-r border-black/10">Fin exam</th>
-              {matieres.map((m) => (
+            {/* Ligne 1 : en-têtes matières (h-10) */}
+            <tr className="h-10 bg-gray-100">
+              <th rowSpan={2} className="sticky left-0 z-30 bg-gray-100 w-[92px] min-w-[92px] max-w-[92px] px-3 text-left text-xs font-semibold text-gray-900 whitespace-nowrap border-b border-gray-300">Statut</th>
+              <th rowSpan={2} className="sticky left-[92px] z-30 bg-gray-100 w-[80px] min-w-[80px] max-w-[80px] px-2 text-left text-xs font-semibold text-gray-900 whitespace-nowrap border-b border-gray-300">Dép. prépa</th>
+              <th rowSpan={2} className="sticky left-[172px] z-30 bg-gray-100 w-[80px] min-w-[80px] max-w-[80px] px-2 text-left text-xs font-semibold text-gray-900 whitespace-nowrap border-b border-gray-300">Dép. exam</th>
+              <th rowSpan={2} className="sticky left-[252px] z-30 bg-gray-100 w-[80px] min-w-[80px] max-w-[80px] px-2 text-left text-xs font-semibold text-gray-900 whitespace-nowrap border-b border-r-2 border-gray-300">Fin exam</th>
+              {matieres.map((m, i) => (
                 <th
                   key={m}
                   colSpan={4}
-                  className="px-3 py-2.5 text-center text-xs font-semibold whitespace-nowrap border-l border-black/10"
+                  className={`px-3 text-center text-sm font-bold text-gray-900 whitespace-nowrap border-b border-gray-200 ${i > 0 ? "border-l-2 border-l-gray-300" : ""}`}
                 >
                   {m}
                 </th>
               ))}
             </tr>
-            {/* Ligne 2 : sous-colonnes par matière */}
-            <tr className="bg-gray-50 border-b text-[11px] text-gray-700">
-              <th className="sticky left-0 z-30 bg-gray-50 w-[100px] min-w-[100px] max-w-[100px] border-r border-black/10" />
-              <th className="sticky left-[100px] z-30 bg-gray-50 w-[100px] min-w-[100px] max-w-[100px] border-r border-black/10" colSpan={1} />
-              <th className="sticky left-[200px] z-30 bg-gray-50 w-[90px] min-w-[90px] max-w-[90px]" />
-              <th className="sticky left-[290px] z-30 bg-gray-50 w-[90px] min-w-[90px] max-w-[90px]" />
-              <th className="sticky left-[380px] z-30 bg-gray-50 w-[90px] min-w-[90px] max-w-[90px] border-r border-black/10" />
-              {matieres.map((m) => (
+            {/* Ligne 2 : sous-colonnes par matière (h-8) */}
+            <tr className="h-8 bg-gray-50 text-xs text-gray-800">
+              {matieres.map((m, i) => (
                 <React.Fragment key={m}>
-                  <th className="px-3 py-1.5 text-left font-normal border-l border-black/10">Candidat</th>
-                  <th className="px-3 py-1.5 text-left font-normal">Examinateur</th>
-                  <th className="px-3 py-1.5 text-left font-normal">Salle</th>
-                  <th className="px-3 py-1.5 text-left font-normal">Surveillant</th>
+                  <th className={`px-3 min-w-[170px] text-left font-medium border-b border-gray-300 ${i > 0 ? "border-l-2 border-l-gray-300" : ""}`}>Candidat</th>
+                  <th className="px-3 min-w-[120px] text-left font-medium border-b border-gray-300">Examinateur</th>
+                  <th className="px-3 min-w-[110px] text-left font-medium border-b border-gray-300">Salle</th>
+                  <th className="px-3 min-w-[110px] text-left font-medium border-b border-gray-300">Surveillant</th>
                 </React.Fragment>
               ))}
             </tr>
@@ -1783,14 +1778,14 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
           <tbody>
             {[...rowsByDate.entries()].map(([date, dateRows]) => (
               <React.Fragment key={date}>
-                {/* En-tête de date */}
+                {/* En-tête de date, figé sous les deux lignes d'en-tête (40 + 32 px) : la date reste
+                    visible en permanence, quel que soit le défilement */}
                 <tr>
                   <td
-                    colSpan={5 + matieres.length * 4}
-                    className="px-4 py-2 bg-gray-100 font-semibold text-gray-900 text-xs uppercase tracking-widest"
+                    colSpan={4 + matieres.length * 4}
+                    className="sticky top-[72px] z-[15] h-9 px-3 bg-gray-100 border-b border-gray-300 text-sm font-bold text-gray-900"
                   >
-                    {/* Libellé figé à gauche : reste visible pendant le défilement horizontal */}
-                    <label className="sticky left-4 inline-flex items-center gap-2 cursor-pointer">
+                    <label className="sticky left-3 inline-flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
                         checked={selectedDates.has(date)}
@@ -1802,7 +1797,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                           });
                         }}
                         title="Sélectionner cette journée pour suppression"
-                        className="cursor-pointer normal-case"
+                        className="cursor-pointer"
                       />
                       {formatDate(date)}
                     </label>
@@ -1811,104 +1806,95 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                 {dateRows.map((row) => {
                   const key = `${row.date}|${row.heure_debut}`;
                   const rs = rowStatut(row.byMat);
-                  const stickyBg =
-                    rs === "LIBRE" ? "bg-green-50"
-                    : rs === "PRERESERVEE" ? "bg-amber-50"
-                    : rs === "ATTRIBUEE" ? "bg-blue-50"
-                    : "bg-white";
-                  const rowBg =
-                    rs === "LIBRE" ? "bg-green-50/50"
-                    : rs === "PRERESERVEE" ? "bg-amber-50/50"
-                    : rs === "ATTRIBUEE" ? "bg-blue-50/30"
-                    : "";
+                  // Fond opaque sur toutes les cellules : la teinte du statut reste identique entre
+                  // les colonnes figées et le reste de la ligne, survol compris
+                  const fond =
+                    rs === "LIBRE" ? "bg-green-50 group-hover:bg-green-100"
+                    : rs === "PRERESERVEE" ? "bg-amber-50 group-hover:bg-amber-100"
+                    : rs === "ATTRIBUEE" ? "bg-blue-50 group-hover:bg-blue-100"
+                    : "bg-white group-hover:bg-gray-50";
+                  const cellule = `px-3 py-1.5 align-top border-b border-black/10 ${fond}`;
+                  // Hauteur fixe : avec plusieurs épreuves dans une matière, les colonnes restent
+                  // alignées ligne à ligne
+                  const ligne = "h-6 flex items-center whitespace-nowrap";
 
                   return (
-                    <tr key={key} className={`border-b border-black/[0.06] hover:bg-black/[0.02] transition ${rowBg}`}>
-                      {/* Date — sticky : visible en permanence, quel que soit le défilement */}
-                      <td className={`sticky left-0 z-10 w-[100px] min-w-[100px] max-w-[100px] overflow-hidden px-3 py-2 text-sm font-medium text-gray-900 tabular-nums whitespace-nowrap border-r border-black/[0.06] ${stickyBg}`}>
-                        {formatDateCourte(row.date)}
+                    <tr key={key} className="group">
+                      {/* Statut et horaires — figés */}
+                      <td className={`sticky left-0 z-10 w-[92px] min-w-[92px] max-w-[92px] whitespace-nowrap ${cellule}`}>
+                        <div className={ligne}>{statutBadgeCell(rs)}</div>
                       </td>
-                      {/* Statut — sticky */}
-                      <td className={`sticky left-[100px] z-10 w-[100px] min-w-[100px] max-w-[100px] overflow-hidden px-3 py-2 whitespace-nowrap border-r border-black/[0.06] ${stickyBg}`}>
-                        {statutBadgeCell(rs)}
+                      <td className={`sticky left-[92px] z-10 w-[80px] min-w-[80px] max-w-[80px] !px-2 text-[13px] text-gray-700 tabular-nums ${cellule}`}>
+                        <div className={ligne}>{debPrepaMap.get(key) ?? "—"}</div>
                       </td>
-                      {/* Dép. prépa — sticky */}
-                      <td className={`sticky left-[200px] z-10 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2 text-gray-700 font-mono text-xs whitespace-nowrap ${stickyBg}`}>
-                        {debPrepaMap.get(key) ?? "—"}
+                      <td className={`sticky left-[172px] z-10 w-[80px] min-w-[80px] max-w-[80px] !px-2 text-sm font-semibold text-gray-900 tabular-nums ${cellule}`}>
+                        <div className={ligne}>{row.heure_debut}</div>
                       </td>
-                      {/* Dép. exam — sticky */}
-                      <td className={`sticky left-[290px] z-10 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2 font-mono text-xs whitespace-nowrap ${stickyBg}`}>
-                        {row.heure_debut}
-                      </td>
-                      {/* Fin exam — sticky */}
-                      <td className={`sticky left-[380px] z-10 w-[90px] min-w-[90px] max-w-[90px] overflow-hidden px-3 py-2 text-gray-700 font-mono text-xs whitespace-nowrap border-r border-black/[0.06] ${stickyBg}`}>
-                        {row.heure_fin}
+                      <td className={`sticky left-[252px] z-10 w-[80px] min-w-[80px] max-w-[80px] !px-2 text-[13px] text-gray-700 tabular-nums border-r-2 border-r-gray-300 ${cellule}`}>
+                        <div className={ligne}>{row.heure_fin}</div>
                       </td>
                       {/* Par matière */}
-                      {matieres.map((m) => {
+                      {matieres.map((m, i) => {
                         const eps = row.byMat[m] ?? [];
+                        const separateur = i > 0 ? "border-l-2 border-l-gray-300" : "";
                         if (eps.length === 0) {
                           return (
                             <React.Fragment key={m}>
-                              <td className="px-3 py-2 text-gray-700 text-xs border-l border-black/[0.06]" colSpan={4}>—</td>
+                              <td className={`text-[13px] text-gray-700 ${separateur} ${cellule}`} colSpan={4}>
+                                <div className={ligne}>—</div>
+                              </td>
                             </React.Fragment>
                           );
                         }
                         return (
                           <React.Fragment key={m}>
                             {/* Candidat */}
-                            <td className="px-3 py-2 border-l border-black/[0.06]">
+                            <td className={`${separateur} ${cellule}`}>
                               {eps.map((e) => (
-                                <div key={e.id}>
+                                <div key={e.id} className={ligne}>
                                   {e.candidat_nom ? (
-                                    <span className="font-medium text-sm">
+                                    <span className="font-semibold text-sm text-gray-900">
                                       {e.candidat_nom} {e.candidat_prenom}
                                     </span>
                                   ) : (
-                                    <span className="text-gray-700 text-xs italic">—</span>
+                                    <span className="text-gray-700 text-[13px]">—</span>
                                   )}
                                 </div>
                               ))}
                             </td>
                             {/* Examinateur */}
-                            <td className="px-3 py-2">
+                            <td className={cellule}>
                               {eps.map((e) => (
-                                <div key={e.id} className="text-xs text-gray-800">
+                                <div key={e.id} className={`${ligne} text-[13px] text-gray-800`}>
                                   {e.examinateur_nom
                                     ? `${e.examinateur_nom}${e.examinateur_prenom ? " " + e.examinateur_prenom[0] + "." : ""}`
-                                    : <span className="text-gray-700 italic">—</span>}
+                                    : "—"}
                                 </div>
                               ))}
                             </td>
                             {/* Salle */}
-                            <td className="px-3 py-2">
+                            <td className={cellule}>
                               {eps.map((e) => (
-                                <div key={e.id} className="text-xs text-gray-800">
+                                <div key={e.id} className={`${ligne} text-[13px] text-gray-800`}>
                                   {e.salle_intitule ? (
-                                    <>
+                                    <span>
                                       {e.salle_preparation_intitule && (
                                         <span className="text-gray-700" title="Salle préparation">{e.salle_preparation_intitule} → </span>
                                       )}
                                       <span title="Salle oral">{e.salle_intitule}</span>
-                                    </>
-                                  ) : (
-                                    <span className="text-gray-700 italic">—</span>
-                                  )}
+                                    </span>
+                                  ) : "—"}
                                 </div>
                               ))}
                             </td>
-                            {/* Surveillant(s) */}
-                            <td className="px-3 py-2">
+                            {/* Surveillant(s) — sur une seule ligne, pour garder l'alignement */}
+                            <td className={cellule}>
                               {eps.map((e) => (
-                                <div key={e.id} className="text-xs text-gray-800">
-                                  {e.surveillant_nom ? (
-                                    <div>{e.surveillant_nom}{e.surveillant_prenom ? " " + e.surveillant_prenom[0] + "." : ""}</div>
-                                  ) : (
-                                    <span className="text-gray-700 italic">—</span>
-                                  )}
-                                  {e.surveillant2_nom && (
-                                    <div>{e.surveillant2_nom}{e.surveillant2_prenom ? " " + e.surveillant2_prenom[0] + "." : ""}</div>
-                                  )}
+                                <div key={e.id} className={`${ligne} text-[13px] text-gray-800`}>
+                                  {e.surveillant_nom
+                                    ? `${e.surveillant_nom}${e.surveillant_prenom ? " " + e.surveillant_prenom[0] + "." : ""}`
+                                    : "—"}
+                                  {e.surveillant2_nom && ` / ${e.surveillant2_nom}${e.surveillant2_prenom ? " " + e.surveillant2_prenom[0] + "." : ""}`}
                                 </div>
                               ))}
                             </td>
