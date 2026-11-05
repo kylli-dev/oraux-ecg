@@ -53,7 +53,7 @@ export function EspaceHeader({
             <img
               src="/logo-ensae.png"
               alt="ENSAE — IP Paris"
-              className="h-12 w-auto shrink-0 select-none brightness-0 invert"
+              className="h-12 w-auto shrink-0 -ml-2 mr-2 xl:-ml-4 xl:mr-4 select-none brightness-0 invert"
               draggable={false}
             />
           ) : (
