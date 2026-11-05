@@ -44,16 +44,17 @@ export function EspaceHeader({
 
   return (
     <header className="sticky top-0 z-40 shadow-md" style={{ backgroundColor: RED }}>
-      {/* Sur petit écran, les onglets passent sur une seconde ligne qui défile horizontalement */}
-      <div className="px-4 py-2 lg:py-0 lg:h-16 flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-4">
-        <Link href={connecte ? `${base}/accueil` : base} className="flex flex-1 lg:flex-none items-center gap-3 min-w-0">
+      {/* Identité à gauche, onglets centrés, déconnexion à droite. Sur petit écran, les onglets
+          passent sur une seconde ligne qui défile horizontalement. */}
+      <div className="px-4 lg:px-6 py-2 lg:py-0 lg:h-16 flex flex-wrap lg:grid lg:grid-cols-[1fr_auto_1fr] items-center justify-between gap-x-4">
+        <Link href={connecte ? `${base}/accueil` : base} className="flex flex-1 lg:flex-none items-center gap-4 min-w-0">
           {logoEnsae ? (
             // Logo rendu en blanc pour s'accorder au bandeau rouge, comme dans l'espace admin
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src="/logo-ensae.png"
               alt="ENSAE — IP Paris"
-              className="h-12 w-auto shrink-0 -ml-2 mr-2 xl:ml-0 xl:mr-4 select-none brightness-0 invert"
+              className="h-12 w-auto shrink-0 select-none brightness-0 invert"
               draggable={false}
             />
           ) : (
@@ -61,13 +62,13 @@ export function EspaceHeader({
               <GraduationCap className="h-5 w-5" style={{ color: RED }} />
             </div>
           )}
-          <div className="leading-tight min-w-0">
+          <div className={`leading-tight min-w-0 ${logoEnsae ? "border-l border-white/40 pl-4" : ""}`}>
             <p className="text-sm font-bold text-white">Oraux ECG</p>
-            <p className="text-xs text-white/90 truncate">ENSAE — IP Paris · {libelle}</p>
+            <p className="text-xs text-white/90 truncate">{logoEnsae ? libelle : `ENSAE — IP Paris · ${libelle}`}</p>
           </div>
         </Link>
         {connecte && onglets.length > 0 && (
-          <nav aria-label={libelle} className="order-3 lg:order-none w-full lg:w-auto lg:flex-1 min-w-0 mt-2 lg:mt-0 flex items-center gap-1 overflow-x-auto">
+          <nav aria-label={libelle} className="order-3 lg:order-none w-full lg:w-auto min-w-0 mt-2 lg:mt-0 flex items-center gap-1 overflow-x-auto">
             {onglets.map((o) => {
               const actif = pathname === o.href || pathname.startsWith(`${o.href}/`);
               return (
@@ -92,7 +93,7 @@ export function EspaceHeader({
               sessionStorage.removeItem(tokenKey);
               router.push(base);
             }}
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-white px-3 py-1.5 rounded-lg border border-white/40 hover:bg-white/15 transition shrink-0"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-white px-3 py-1.5 rounded-lg border border-white/40 hover:bg-white/15 transition shrink-0 lg:justify-self-end"
           >
             <LogOut className="h-4 w-4" />
             <span className="hidden sm:inline">Se déconnecter</span>
