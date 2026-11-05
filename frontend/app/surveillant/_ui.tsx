@@ -15,6 +15,11 @@ export function SurveillantHeader() {
       tokenKey="surveillant_token"
       pagesPubliques={["/surveillant", "/surveillant/mot-de-passe-oublie", "/surveillant/reinitialiser-mot-de-passe"]}
       logoEnsae
+      onglets={[
+        { href: "/surveillant/accueil", label: "Accueil" },
+        { href: "/surveillant/planning", label: "Mon planning" },
+        { href: "/surveillant/changer-mot-de-passe", label: "Mot de passe" },
+      ]}
     />
   );
 }

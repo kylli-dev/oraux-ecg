@@ -29,21 +29,24 @@ export function EspaceHeader({
   tokenKey,
   pagesPubliques,
   logoEnsae = false,
+  onglets = [],
 }: {
   libelle: string;
   base: string;
   tokenKey: string;
   pagesPubliques: string[];
   logoEnsae?: boolean;
+  onglets?: { href: string; label: string }[];
 }) {
-  const pathname = usePathname();
+  const pathname = usePathname().replace(/\/$/, "");
   const router = useRouter();
-  const connecte = !pagesPubliques.includes(pathname.replace(/\/$/, ""));
+  const connecte = !pagesPubliques.includes(pathname);
 
   return (
     <header className="sticky top-0 z-40 shadow-md" style={{ backgroundColor: RED }}>
-      <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
-        <Link href={connecte ? `${base}/accueil` : base} className="flex items-center gap-3 min-w-0">
+      {/* Sur petit écran, les onglets passent sur une seconde ligne qui défile horizontalement */}
+      <div className="max-w-6xl mx-auto px-4 py-2 lg:py-0 lg:h-16 flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-4">
+        <Link href={connecte ? `${base}/accueil` : base} className="flex flex-1 lg:flex-none items-center gap-3 min-w-0">
           {logoEnsae ? (
             // Logo rendu en blanc pour s'accorder au bandeau rouge, comme dans l'espace admin
             // eslint-disable-next-line @next/next/no-img-element
@@ -63,6 +66,26 @@ export function EspaceHeader({
             <p className="text-xs text-white/90 truncate">ENSAE — IP Paris · {libelle}</p>
           </div>
         </Link>
+        {connecte && onglets.length > 0 && (
+          <nav aria-label={libelle} className="order-3 lg:order-none w-full lg:w-auto lg:flex-1 min-w-0 mt-2 lg:mt-0 flex items-center gap-1 overflow-x-auto">
+            {onglets.map((o) => {
+              const actif = pathname === o.href || pathname.startsWith(`${o.href}/`);
+              return (
+                <Link
+                  key={o.href}
+                  href={o.href}
+                  aria-current={actif ? "page" : undefined}
+                  className={`text-sm px-3 py-1.5 rounded-lg whitespace-nowrap transition ${
+                    actif ? "bg-white font-semibold" : "font-medium text-white hover:bg-white/15"
+                  }`}
+                  style={actif ? { color: RED } : undefined}
+                >
+                  {o.label}
+                </Link>
+              );
+            })}
+          </nav>
+        )}
         {connecte && (
           <button
             onClick={() => {

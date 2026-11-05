@@ -20,6 +20,11 @@ export function ExaminateurHeader() {
         "/examinateur/code-perdu",
       ]}
       logoEnsae
+      onglets={[
+        { href: "/examinateur/accueil", label: "Accueil" },
+        { href: "/examinateur/planning", label: "Planning & notes" },
+        { href: "/examinateur/changer-mot-de-passe", label: "Mot de passe" },
+      ]}
     />
   );
 }

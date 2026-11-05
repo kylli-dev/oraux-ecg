@@ -15,6 +15,13 @@ export function CandidatHeader() {
       tokenKey="candidat_token"
       pagesPubliques={["/candidat", "/candidat/mot-de-passe-oublie", "/candidat/reinitialiser-mot-de-passe"]}
       logoEnsae
+      onglets={[
+        { href: "/candidat/accueil", label: "Accueil" },
+        { href: "/candidat/planning", label: "Mes créneaux" },
+        { href: "/candidat/notes", label: "Mes notes" },
+        { href: "/candidat/liste-attente", label: "Liste d'attente" },
+        { href: "/candidat/changer-mot-de-passe", label: "Mot de passe" },
+      ]}
     />
   );
 }
