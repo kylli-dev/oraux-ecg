@@ -28,6 +28,8 @@ class JourneeTypeBlocCreate(BaseModel):
     matieres: Optional[List[str]] = None
     # Durées variables par matière (optionnel — remplace matieres si fourni)
     matieres_config: Optional[List[MatiereConfigItem]] = None
+    # Positions des triplets déplacés à la main (None = formule automatique)
+    custom_matrix: Optional[List[List[int]]] = None
 
     # Paramètres globaux du bloc (fallback quand matieres_config absent)
     duree_minutes: Optional[int] = Field(default=None, ge=5, le=240)

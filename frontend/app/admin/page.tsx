@@ -98,6 +98,7 @@ type Bloc = {
   nb_slots: number | null;
   bonus_slots: number;
   type_demi_journee: "MATIN" | "APRES_MIDI" | null;
+  custom_matrix?: number[][] | null;
 };
 
 type Epreuve = {
@@ -4212,6 +4213,33 @@ function effectiveDjType(bloc: BlocWizard): "MATIN" | "APRES_MIDI" {
   return parseInt(bloc.heure_debut) < 12 ? "MATIN" : "APRES_MIDI";
 }
 
+// Replace sur la matrice calculée les positions de triplets enregistrées (bloc.custom_matrix).
+// La correspondance se fait par horaires et matières : en journée complète, un bloc de
+// l'assistant correspond à deux blocs enregistrés, de part et d'autre de la pause déjeuner.
+function appliquerDisposition(base: MatrixRow[], p: WizardParams, blocs: Bloc[]): { rows: MatrixRow[]; perdue: boolean } {
+  const rows = base.map(r => ({ ...r, candidates: [...r.candidates] }));
+  const cle = (noms: string[]) => [...noms].sort().join(",");
+  let perdue = false;
+  for (const b of blocs) {
+    const custom = b.custom_matrix;
+    if (!custom) continue;
+    const deb = b.heure_debut.slice(0, 5);
+    const fin = b.heure_fin.slice(0, 5);
+    const cibles = rows.filter(r =>
+      !r.isPause && r.deb_prepa >= deb && r.deb_prepa < fin
+      && cle(p.blocs[r.bloc_idx].matieres_config.map(c => c.nom)) === cle(b.matieres)
+    );
+    if (cibles.length !== custom.length || cibles.some((r, i) => r.candidates.length !== custom[i].length)) {
+      perdue = true;
+      continue;
+    }
+    cibles.forEach((r, i) => { r.candidates = [...custom[i]]; });
+  }
+  return { rows, perdue };
+}
+
+const AVIS_DISPOSITION_PERDUE = "Les paramètres ne correspondent plus à la disposition enregistrée : les positions des triplets reviennent à la formule automatique.";
+
 function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; editJt?: { jt: JourneeType; blocs: Bloc[] } }) {
   const isEdit = !!editJt;
   const [step, setStep] = useState<1 | 2>(1);
@@ -4296,7 +4324,13 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
   };
 
   const [p, setP] = useState<WizardParams>(initParams);
-  const [matrix, setMatrix] = useState<MatrixRow[]>([]);
+  // `base` = la matrice telle que calculée par la formule, `matrix` = avec les déplacements de
+  // triplets. Comparer les deux dit ce qui a été déplacé ; `base` dit aussi si les paramètres
+  // ont changé depuis (les positions n'ont alors plus de sens).
+  const [base, setBase] = useState<MatrixRow[]>(() => buildMatrix(p));
+  const dispositionInitiale = () => appliquerDisposition(base, p, editJt?.blocs ?? []);
+  const [matrix, setMatrix] = useState<MatrixRow[]>(() => dispositionInitiale().rows);
+  const [avisDisposition, setAvisDisposition] = useState(() => dispositionInitiale().perdue ? AVIS_DISPOSITION_PERDUE : "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [editMode, setEditMode] = useState(false);
@@ -4343,14 +4377,27 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
   });
   const removeBloc = (idx: number) => setP((prev) => ({ ...prev, blocs: prev.blocs.filter((_, i) => i !== idx) }));
 
-  const handleGenerate = () => {
-    if (!p.nom.trim()) { setError("Nom requis"); return; }
+  const allerMatrice = () => {
     if (p.blocs.every(b => b.matieres_config.length === 0)) {
       setError("Sélectionnez au moins une matière dans un bloc"); return;
     }
     setError("");
-    setMatrix(buildMatrix(p));
+    // Tant que les paramètres ne changent pas, on garde la matrice telle quelle, déplacements compris
+    const calculee = buildMatrix(p);
+    if (JSON.stringify(calculee) !== JSON.stringify(base)) {
+      if (JSON.stringify(matrix) !== JSON.stringify(base)) setAvisDisposition(AVIS_DISPOSITION_PERDUE);
+      setBase(calculee);
+      setMatrix(calculee);
+    }
     setStep(2);
+  };
+
+  // Positions à enregistrer pour un bloc : null tant qu'aucun triplet n'a été déplacé, le bloc
+  // suit alors la formule automatique
+  const dispositionDe = (rows: MatrixRow[]) => {
+    const orales = rows.filter(r => !r.isPause);
+    const deplace = orales.some(r => JSON.stringify(r.candidates) !== JSON.stringify(base[matrix.indexOf(r)].candidates));
+    return deplace ? orales.map(r => r.candidates) : null;
   };
 
   const saveBlocsToJt = async (jtId: number) => {
@@ -4384,7 +4431,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
         const pauseRowIdx = blocRows.findIndex(r => r.isPause);
         const oralBefore = pauseRowIdx === -1 ? blocRows.filter(r => !r.isPause) : blocRows.slice(0, pauseRowIdx);
         const oralAfter = pauseRowIdx === -1 ? [] : blocRows.slice(pauseRowIdx + 1).filter(r => !r.isPause);
-        if (oralBefore.length) await post(`journee-types/${jtId}/blocs`, { ...blocPayload, ordre: ordre++, heure_debut: oralBefore[0].deb_prepa + ":00", heure_fin: oralBefore[oralBefore.length - 1].fin_exam + ":00", nb_slots: oralBefore.length });
+        if (oralBefore.length) await post(`journee-types/${jtId}/blocs`, { ...blocPayload, ordre: ordre++, heure_debut: oralBefore[0].deb_prepa + ":00", heure_fin: oralBefore[oralBefore.length - 1].fin_exam + ":00", nb_slots: oralBefore.length, custom_matrix: dispositionDe(oralBefore) });
         if (oralBefore.length && oralAfter.length) {
           // La pause déjeuner devient un vrai bloc PAUSE (pas juste un trou horaire implicite
           // entre deux blocs GENERATION), sur l'écart fin du matin -> début de la prépa de
@@ -4406,14 +4453,15 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
             });
           }
         }
-        if (oralAfter.length) await post(`journee-types/${jtId}/blocs`, { ...blocPayload, ordre: ordre++, heure_debut: oralAfter[0].deb_prepa + ":00", heure_fin: oralAfter[oralAfter.length - 1].fin_exam + ":00", nb_slots: oralAfter.length });
+        if (oralAfter.length) await post(`journee-types/${jtId}/blocs`, { ...blocPayload, ordre: ordre++, heure_debut: oralAfter[0].deb_prepa + ":00", heure_fin: oralAfter[oralAfter.length - 1].fin_exam + ":00", nb_slots: oralAfter.length, custom_matrix: dispositionDe(oralAfter) });
       } else {
-        await post(`journee-types/${jtId}/blocs`, { ...blocPayload, ordre: ordre++, heure_debut: bloc.heure_debut + ":00", heure_fin: blocRows[blocRows.length - 1].fin_exam + ":00", nb_slots: bloc.nb_slots ?? null });
+        await post(`journee-types/${jtId}/blocs`, { ...blocPayload, ordre: ordre++, heure_debut: bloc.heure_debut + ":00", heure_fin: blocRows[blocRows.length - 1].fin_exam + ":00", nb_slots: bloc.nb_slots ?? null, custom_matrix: dispositionDe(blocRows) });
       }
     }
   };
 
   const handleSave = async () => {
+    if (!p.nom.trim()) { setError("Nom requis : renseignez-le à l'étape 1 (Paramétrage)"); return; }
     setLoading(true);
     setError("");
     try {
@@ -4459,8 +4507,14 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
         onClick={() => step === 2 && setStep(1)}
       >Paramétrage</button>
       <span className="text-gray-700 text-xs mx-1">→</span>
-      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${step === 2 ? "bg-black text-white" : "border border-black/20 text-gray-700"}`}>2</span>
-      <span className={`text-xs ${step === 2 ? "font-semibold text-gray-900" : "text-gray-700"}`}>Matrice & enregistrement</span>
+      <button
+        className={`text-[11px] font-bold px-2 py-0.5 rounded-full transition ${step === 2 ? "bg-black text-white" : "border border-black/20 text-gray-700 hover:border-black/50"}`}
+        onClick={() => step === 1 && allerMatrice()}
+      >2</button>
+      <button
+        className={`text-xs transition ${step === 2 ? "font-semibold text-gray-900" : "text-gray-700 hover:text-black"}`}
+        onClick={() => step === 1 && allerMatrice()}
+      >Matrice & enregistrement</button>
     </div>
   );
 
@@ -4801,7 +4855,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
         </button>
 
         <ErrorMsg msg={error} />
-        <Btn label="Générer la matrice →" icon={LayoutGrid} onClick={handleGenerate} disabled={!p.nom.trim() || p.blocs.every(b => b.matieres_config.length === 0)} />
+        <Btn label="Voir la matrice →" icon={LayoutGrid} onClick={allerMatrice} disabled={p.blocs.every(b => b.matieres_config.length === 0)} />
       </div>
     );
   }
@@ -4865,6 +4919,10 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
         })()}
       </div>
 
+      {avisDisposition && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-900">{avisDisposition}</div>
+      )}
+
       {/* Barre d'outils matrice */}
       <div className="flex items-center justify-between">
         <p className="text-xs text-gray-700">
@@ -4883,7 +4941,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
       </div>
       {editMode && (
         <p className="text-[11px] text-gray-700 -mt-2">
-          Glissez un triplet vers une autre cellule pour l'échanger.
+          Glissez un triplet vers une autre cellule pour l'échanger. Les positions sont gardées à l'enregistrement de la journée type, mais ne changent pas les triplets proposés aux candidats.
         </p>
       )}
 

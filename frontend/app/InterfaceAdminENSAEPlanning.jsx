@@ -267,26 +267,31 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
   // N2 — row order + cell matrix
   const defaultOrder = matrix.map((r) => r.index);
   const n2Default = () => matrix.map((r) => [...r.candidates]);
+  // Disposition enregistrée, ignorée si elle ne correspond plus aux lignes de la matrice (elle
+  // peut aussi venir de l'assistant de création, dont le nombre de lignes peut différer)
+  const customValide = bloc.custom_matrix?.length === matrix.length && bloc.custom_matrix.every((r) => r.length === N)
+    ? bloc.custom_matrix
+    : null;
 
   const [rowOrder, setRowOrder] = useState(defaultOrder);
   // Initialisé depuis custom_matrix sauvegardé, sinon formule N²
-  const [cellMatrix, setCellMatrix] = useState(() => bloc.custom_matrix ?? n2Default());
+  const [cellMatrix, setCellMatrix] = useState(() => customValide ?? n2Default());
   const [activeDrag, setActiveDrag] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState(null);
   // Tracks état serveur sans dépendre du prop bloc (évite le bug remount)
-  const [hasServerCustom, setHasServerCustom] = useState(() => bloc.custom_matrix != null);
+  const [hasServerCustom, setHasServerCustom] = useState(() => customValide != null);
   const [isDirty, setIsDirty] = useState(false);
   // Référence vers la dernière disposition connue-sauvegardée (évite remount)
-  const lastSavedRef = React.useRef(bloc.custom_matrix ?? n2Default());
+  const lastSavedRef = React.useRef(customValide ?? n2Default());
 
   // Sync uniquement quand le bloc change de structure (config sauvegardée → reload)
   useEffect(() => {
-    const fresh = bloc.custom_matrix ?? n2Default();
+    const fresh = customValide ?? n2Default();
     setRowOrder(defaultOrder);
     setCellMatrix(fresh);
     lastSavedRef.current = fresh;
-    setHasServerCustom(bloc.custom_matrix != null);
+    setHasServerCustom(customValide != null);
     setIsDirty(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bloc.id, matrix.length]);
