@@ -45,7 +45,7 @@ export function EspaceHeader({
   return (
     <header className="sticky top-0 z-40 shadow-md" style={{ backgroundColor: RED }}>
       {/* Sur petit écran, les onglets passent sur une seconde ligne qui défile horizontalement */}
-      <div className="max-w-6xl mx-auto px-4 py-2 lg:py-0 lg:h-16 flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-4">
+      <div className="px-4 py-2 lg:py-0 lg:h-16 flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-4">
         <Link href={connecte ? `${base}/accueil` : base} className="flex flex-1 lg:flex-none items-center gap-3 min-w-0">
           {logoEnsae ? (
             // Logo rendu en blanc pour s'accorder au bandeau rouge, comme dans l'espace admin
@@ -53,7 +53,7 @@ export function EspaceHeader({
             <img
               src="/logo-ensae.png"
               alt="ENSAE — IP Paris"
-              className="h-12 w-auto shrink-0 -ml-2 mr-2 xl:-ml-4 xl:mr-4 select-none brightness-0 invert"
+              className="h-12 w-auto shrink-0 -ml-2 mr-2 xl:ml-0 xl:mr-4 select-none brightness-0 invert"
               draggable={false}
             />
           ) : (
