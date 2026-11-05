@@ -28,11 +28,13 @@ export function EspaceHeader({
   base,
   tokenKey,
   pagesPubliques,
+  logoEnsae = false,
 }: {
   libelle: string;
   base: string;
   tokenKey: string;
   pagesPubliques: string[];
+  logoEnsae?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -42,9 +44,20 @@ export function EspaceHeader({
     <header className="sticky top-0 z-40 shadow-md" style={{ backgroundColor: RED }}>
       <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
         <Link href={connecte ? `${base}/accueil` : base} className="flex items-center gap-3 min-w-0">
-          <div className="h-9 w-9 rounded-xl bg-white flex items-center justify-center shadow-sm shrink-0">
-            <GraduationCap className="h-5 w-5" style={{ color: RED }} />
-          </div>
+          {logoEnsae ? (
+            // Logo rendu en blanc pour s'accorder au bandeau rouge, comme dans l'espace admin
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src="/logo-ensae.png"
+              alt="ENSAE — IP Paris"
+              className="h-12 w-auto shrink-0 select-none brightness-0 invert"
+              draggable={false}
+            />
+          ) : (
+            <div className="h-9 w-9 rounded-xl bg-white flex items-center justify-center shadow-sm shrink-0">
+              <GraduationCap className="h-5 w-5" style={{ color: RED }} />
+            </div>
+          )}
           <div className="leading-tight min-w-0">
             <p className="text-sm font-bold text-white">Oraux ECG</p>
             <p className="text-xs text-white/90 truncate">ENSAE — IP Paris · {libelle}</p>

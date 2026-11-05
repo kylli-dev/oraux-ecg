@@ -14,6 +14,7 @@ export function CandidatHeader() {
       base="/candidat"
       tokenKey="candidat_token"
       pagesPubliques={["/candidat", "/candidat/mot-de-passe-oublie", "/candidat/reinitialiser-mot-de-passe"]}
+      logoEnsae
     />
   );
 }
