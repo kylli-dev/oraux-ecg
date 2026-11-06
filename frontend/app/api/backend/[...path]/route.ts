@@ -2,21 +2,27 @@ import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 10;
+export const maxDuration = 60;
 
 const BASE = process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 const KEY  = process.env.ADMIN_API_KEY ?? "";
 
 // Le backend Render (plan Free) se met en veille après 15 min d'inactivité et met
 // 30-60s à redémarrer. On abandonne notre propre fetch avant la limite Vercel
-// (maxDuration=10s) pour renvoyer une réponse contrôlée plutôt qu'un
+// (maxDuration) pour renvoyer une réponse contrôlée plutôt qu'un
 // FUNCTION_INVOCATION_TIMEOUT brut — le frontend peut alors afficher un message
 // clair et réessayer automatiquement (voir `apiCall` dans admin/page.tsx).
+// Les lectures abandonnent vite (8 s) pour afficher tôt le message de réveil. Les écritures
+// ont plus de temps : certaines (générer une journée…) dépassent 8 s sur un serveur bien
+// réveillé, et les couper les faisait passer pour un réveil puis renvoyer en boucle alors
+// que le serveur continuait à les traiter.
 const BACKEND_TIMEOUT_MS = 8000;
+const BACKEND_TIMEOUT_ECRITURE_MS = 55000;
 
 async function fetchBackend(url: string, init: RequestInit): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS);
+  const delai = !init.method || init.method === "GET" ? BACKEND_TIMEOUT_MS : BACKEND_TIMEOUT_ECRITURE_MS;
+  const timer = setTimeout(() => controller.abort(), delai);
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } finally {

@@ -11,8 +11,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.epreuve import Epreuve
 from app.models.inscription import Inscription, InscriptionEpreuve
 
 
@@ -29,16 +31,20 @@ def annuler_inscriptions_orphelines(db: Session) -> int:
     Ne fait pas de commit : à l'appelant de valider la transaction.
     """
     db.flush()
+    # Requêtes groupées : parcourir chaque inscription une à une (plusieurs requêtes chacune)
+    # rendait la génération d'une journée trop lente en production, au-delà du délai du proxy.
+    liens_orphelins = (
+        select(InscriptionEpreuve.id)
+        .outerjoin(Epreuve, Epreuve.id == InscriptionEpreuve.epreuve_id)
+        .where(Epreuve.id.is_(None))
+    )
+    db.query(InscriptionEpreuve).filter(InscriptionEpreuve.id.in_(liens_orphelins)).delete(synchronize_session=False)
     db.expire_all()
     annulees = 0
-    for insc in db.query(Inscription).filter_by(statut="ACTIVE").all():
-        orphelins = [ie for ie in insc.epreuves if ie.epreuve is None]
-        for ie in orphelins:
-            db.delete(ie)
-        if len(insc.epreuves) - len(orphelins) == 0:
-            insc.statut = "ANNULEE"
-            insc.cancelled_at = datetime.now(timezone.utc).replace(tzinfo=None)  # UTC naïf, comme ailleurs
-            if insc.candidat is not None and insc.candidat.statut == "INSCRIT":
-                insc.candidat.statut = "IMPORTE"
-            annulees += 1
+    for insc in db.query(Inscription).filter(Inscription.statut == "ACTIVE", ~Inscription.epreuves.any()).all():
+        insc.statut = "ANNULEE"
+        insc.cancelled_at = datetime.now(timezone.utc).replace(tzinfo=None)  # UTC naïf, comme ailleurs
+        if insc.candidat is not None and insc.candidat.statut == "INSCRIT":
+            insc.candidat.statut = "IMPORTE"
+        annulees += 1
     return annulees
