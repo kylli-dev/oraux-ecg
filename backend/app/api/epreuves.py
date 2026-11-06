@@ -91,6 +91,8 @@ def dupliquer_triplet(body: DupliquerTripletIn, db: Session = Depends(get_db)):
             preparation_minutes=o.preparation_minutes,
             salle_preparation_id=o.salle_preparation_id,
             statut="LIBRE",
+            # Salle en parallèle de la même case : même triplet de la matrice
+            triplet_num=o.triplet_num,
         )
         db.add(c)
         copies.append(c)

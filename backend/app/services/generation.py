@@ -24,6 +24,7 @@ Modèle rotatif N² (generate_in_range) :
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, date, time, timedelta
 from typing import List, Optional, Tuple
@@ -37,6 +38,7 @@ from app.models.journee_type_bloc import JourneeTypeBloc
 from app.models.planning_salle_defaut import PlanningMatiereSalleDefaut
 from app.schemas.generation import GenerateEpreuvesIn, SkipRange
 from app.services.inscriptions import annuler_inscriptions_orphelines
+from app.services.triplets import MARGIN_TRANSITION_MINUTES
 
 # ── Constantes ────────────────────────────────────────────────────────────────
 
@@ -71,9 +73,13 @@ class BlocParams:
     matieres_config: Optional[List[dict]] = None  # durées variables par matière
     nb_slots: Optional[int] = None                # si None → N² automatique
     bonus_slots: int = 0                          # créneaux bonus urgences (statut LIBRE)
+    # Numérotation des triplets comme dans la matrice de la journée type : premier numéro
+    # du bloc (les blocs se suivent dans l'ordre) et positions déplacées à la main
+    triplet_offset: Optional[int] = None
+    custom_matrix: Optional[List[List[int]]] = None
 
     @classmethod
-    def from_bloc(cls, bloc: JourneeTypeBloc, jt: JourneeType) -> "BlocParams":
+    def from_bloc(cls, bloc: JourneeTypeBloc, jt: JourneeType, triplet_offset: Optional[int] = None) -> "BlocParams":
         """
         Construit un BlocParams en appliquant les surcharges du bloc
         et les valeurs par défaut du gabarit.
@@ -107,6 +113,8 @@ class BlocParams:
             matieres_config=matieres_config,
             nb_slots=bloc.nb_slots,
             bonus_slots=bloc.bonus_slots,
+            triplet_offset=triplet_offset,
+            custom_matrix=bloc.custom_matrix,
         )
 
 
@@ -169,6 +177,14 @@ def build_journee_plan(journee_type: JourneeType) -> List[PeriodePlan]:
     groupes = _split_blocs_by_periode(journee_type.blocs)
     plans: List[PeriodePlan] = []
 
+    # Premier numéro de triplet de chaque bloc, comme la matrice de la journée type : les
+    # blocs GENERATION dans leur ordre, chacun réservant nb_slots (ou N²) numéros
+    offsets: dict = {}
+    suivant = 0
+    for b in sorted((b for b in journee_type.blocs if b.type_bloc == "GENERATION"), key=lambda b: b.ordre):
+        offsets[b.id] = suivant
+        suivant += b.nb_slots if b.nb_slots is not None else len(b.matieres) ** 2
+
     for type_dj, blocs_periode in groupes.items():
         blocs_gen = [b for b in blocs_periode if b.type_bloc == "GENERATION"]
         if not blocs_gen:
@@ -178,7 +194,7 @@ def build_journee_plan(journee_type: JourneeType) -> List[PeriodePlan]:
             type_dj=type_dj,
             heure_debut=blocs_periode[0].heure_debut,
             heure_fin=blocs_periode[-1].heure_fin,
-            blocs=[BlocParams.from_bloc(b, journee_type) for b in blocs_gen],
+            blocs=[BlocParams.from_bloc(b, journee_type, offsets.get(b.id)) for b in blocs_gen],
         ))
 
     return plans
@@ -222,6 +238,8 @@ def generate_in_range(
     matieres_config: Optional[List[dict]] = None,
     nb_slots: Optional[int] = None,
     bonus_slots: int = 0,
+    triplet_offset: Optional[int] = None,
+    custom_matrix: Optional[List[List[int]]] = None,
 ) -> int:
     """
     Génère et persiste les épreuves dans la plage [debut, fin[.
@@ -276,6 +294,30 @@ def generate_in_range(
     count = 0
     slots_placed = 0
 
+    # Numéro de triplet de chaque case, calculé exactement comme la matrice de la journée
+    # type (InterfaceAdminENSAEPlanning.jsx, buildMatrix) : ligne i, matière j →
+    # offset + (i − j × écart) mod nombre de lignes, ou la position déplacée à la main.
+    # Les salles en parallèle d'une même case partagent le numéro.
+    numero_triplet = None
+    if triplet_offset is not None and not skip_ranges:
+        nb_lignes = 0
+        tt = t
+        while nb_lignes < n_slots_max and tt + prep_delta + slot_advance <= fin_dt:
+            nb_lignes += 1
+            tt = tt + slot_advance + pause
+        intervalle = max_duree + pause_minutes
+        ecart = max(1, math.ceil((max_prep + max_duree + MARGIN_TRANSITION_MINUTES) / intervalle)) if intervalle > 0 else 1
+        custom_ok = (
+            custom_matrix is not None
+            and len(custom_matrix) == nb_lignes
+            and all(len(r) == n_matieres for r in custom_matrix)
+        )
+        if nb_lignes:
+            def numero_triplet(ligne: int, j: int) -> int:
+                if custom_ok:
+                    return custom_matrix[ligne][j] + 1
+                return triplet_offset + (ligne - j * ecart) % nb_lignes + 1
+
     while slots_placed < n_slots_max and t + prep_delta + slot_advance <= fin_dt:
         exam_start = t + prep_delta
         exam_end_max = exam_start + slot_advance
@@ -285,7 +327,7 @@ def generate_in_range(
             t = _time_to_dt(skip_fin) - prep_delta
             continue
 
-        for nom, duree_j, prep_j, salles_j in zip(names, durees, preps, salles_list):
+        for j, (nom, duree_j, prep_j, salles_j) in enumerate(zip(names, durees, preps, salles_list)):
             exam_end_j = exam_start + timedelta(minutes=duree_j)
             for _ in range(salles_j):
                 db.add(Epreuve(
@@ -295,6 +337,7 @@ def generate_in_range(
                     heure_fin=exam_end_j.time(),
                     statut=statut_initial,
                     preparation_minutes=prep_j if prep_j > 0 else None,
+                    triplet_num=numero_triplet(slots_placed, j) if numero_triplet else None,
                 ))
         count += sum(salles_list)
         slots_placed += 1
@@ -413,6 +456,8 @@ def _apply_periode_plan(
             matieres_config=bloc.matieres_config,
             nb_slots=bloc.nb_slots,
             bonus_slots=bloc.bonus_slots,
+            triplet_offset=bloc.triplet_offset,
+            custom_matrix=bloc.custom_matrix,
         )
         total += n
         matiere_offset += n

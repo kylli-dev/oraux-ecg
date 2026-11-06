@@ -213,6 +213,8 @@ def _run_migrations():
         "ALTER TABLE admin_user ADD COLUMN reset_token_expires_at TIMESTAMP WITH TIME ZONE",
         # Planche : couleur choisie par l'admin (NULL = couleur automatique)
         "ALTER TABLE planche ADD COLUMN couleur VARCHAR(7)",
+        # Numéro de triplet issu de la matrice de la journée type
+        "ALTER TABLE epreuve ADD COLUMN triplet_num INTEGER",
     ]
     with engine.connect() as conn:
         for sql in migrations:

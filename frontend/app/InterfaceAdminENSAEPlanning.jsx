@@ -1301,7 +1301,8 @@ export default function InterfaceAdminENSAEPlanning() {
                       <>
                         <p className="text-xs text-gray-700">
                           Glissez un triplet vers n'importe quelle case pour l'échanger, y compris entre le matin et l'après-midi.
-                          Les positions sont gardées avec la journée type, mais ne changent pas les triplets proposés aux candidats.
+                          Les positions sont gardées avec la journée type : les triplets proposés aux candidats (et la Vue triplets du planning) suivent
+                          cette matrice pour les dates générées après l'enregistrement. Pour une date déjà générée, réappliquez la journée type.
                         </p>
                         <DndContext
                           sensors={sensors}

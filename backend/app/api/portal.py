@@ -116,6 +116,9 @@ class InscriptionIn(BaseModel):
 class TripletInscrireIn(BaseModel):
     date: Date
     heure_debut: time  # nouveau
+    # Identifiant du triplet choisi (TripletOut.cle) : plusieurs triplets peuvent commencer à
+    # la même heure. Absent (ancienne page) : triplet retrouvé par son heure de début.
+    cle: Optional[str] = None
 
 
 class NoteOut(BaseModel):
@@ -161,6 +164,8 @@ class TripletOut(BaseModel):
     heure_fin: time    # nouveau
     nb_epreuves: int
     epreuves: List[TripletEpreuveOut]
+    cle: Optional[str] = None      # identifiant du triplet dans la journée (voir services/triplets)
+    numero: Optional[int] = None   # numéro de la matrice de la journée type (T5 → 5)
 
 
 class InscriptionActiveOut(BaseModel):
@@ -397,58 +402,13 @@ def _cutoff_date(planning: Planning) -> Date:
     return today_paris + timedelta(days=1)        # avant préavis : J+1 minimum
 
 
-# Marge minimale entre la fin d'un passage et le début de préparation du suivant, pour un
-# même candidat (le temps de changer de salle) — DOIT rester synchronisée avec
-# MARGIN_TRANSITION_MINUTES côté frontend (admin/page.tsx et InterfaceAdminENSAEPlanning.jsx).
-MARGIN_TRANSITION_MINUTES = 30
-
-
-def _rotation_offset(all_day_epreuves: list, all_slots: list, N_rooms: int) -> int:
-    """
-    Écart (en nombre de créneaux) entre deux passages d'un même candidat dans la rotation
-    circulaire (k + i × offset). L'ancien modèle utilisait offset = total_slots // N_rooms,
-    qui étale systématiquement chaque matière sur toute la journée (potentiellement
-    plusieurs heures d'écart entre deux passages d'un même candidat, même quand un écart
-    bien plus petit suffirait).
-
-    On cherche ici le plus petit écart physiquement viable : celui pour lequel, en avançant
-    de `o` créneaux dans la liste triée des horaires, la PRÉPARATION du créneau suivant
-    (qui démarre `preparation_minutes` avant heure_debut, PAS à heure_debut) ne commence
-    jamais avant MARGIN_TRANSITION_MINUTES après la fin de l'examen précédent — donc aucun
-    chevauchement horaire réel pour le candidat, prépa comprise, et une marge pour changer
-    de salle. Calculé à partir des heure_fin/heure_debut/preparation_minutes réels des
-    épreuves (et non d'un intervalle supposé constant) : reste valable même si les blocs ont
-    des durées différentes ou qu'il y a un trou (pause déjeuner) entre deux créneaux.
-    Retombe sur l'ancien comportement (total_slots // N_rooms) si aucun écart plus petit
-    n'est sûr, par sécurité.
-    """
-    total_slots = len(all_slots)
-    if N_rooms <= 0 or total_slots == 0:
-        return 1
-
-    def to_min(t) -> int:
-        return t.hour * 60 + t.minute
-
-    fin_max_par_slot: dict = {}
-    deb_prepa_min_par_slot: dict = {}
-    for e in all_day_epreuves:
-        fin_min = to_min(e.heure_fin)
-        if fin_min > fin_max_par_slot.get(e.heure_debut, -1):
-            fin_max_par_slot[e.heure_debut] = fin_min
-
-        deb_prepa = to_min(e.heure_debut) - (e.preparation_minutes or 0)
-        if deb_prepa < deb_prepa_min_par_slot.get(e.heure_debut, deb_prepa + 1):
-            deb_prepa_min_par_slot[e.heure_debut] = deb_prepa
-
-    fallback = total_slots // N_rooms or 1
-    for o in range(1, total_slots):
-        if all(
-            fin_max_par_slot.get(all_slots[idx], to_min(all_slots[idx])) + MARGIN_TRANSITION_MINUTES
-            <= deb_prepa_min_par_slot.get(all_slots[idx + o], to_min(all_slots[idx + o]))
-            for idx in range(total_slots - o)
-        ):
-            return o
-    return fallback
+# Composition des triplets : partagée avec la Vue triplets et l'inscription par l'admin
+from app.services.triplets import (  # noqa: E402
+    MARGIN_TRANSITION_MINUTES,
+    rotation_offset as _rotation_offset,
+    groupes_pour_profil,
+    choisir_epreuves,
+)
 
 
 @router.get("/me/triplets", response_model=List[TripletOut])
@@ -457,11 +417,9 @@ def get_triplets(
     db: Session = Depends(get_db),
 ):
     """
-    Retourne les rotations disponibles à l'inscription (modèle jury rotatif).
-
-    Pour chaque date, calcule les rotations valides : une rotation k est disponible
-    si pour chaque salle i (matière), il existe un créneau LIBRE à l'horaire
-    all_slots[(k + i × offset) % total_slots].
+    Retourne les triplets disponibles à l'inscription : ceux de la matrice de la journée
+    type quand la journée en vient, sinon la rotation (voir services/triplets). Un triplet
+    est disponible si chacune de ses cases a une épreuve LIBRE.
     """
     c = db.get(Candidat, candidat_id)
     if not c:
@@ -485,8 +443,6 @@ def get_triplets(
     djs_by_date: dict = defaultdict(list)
     for dj in djs:
         djs_by_date[dj.date].append(dj)
-
-    from collections import defaultdict as _dd
 
     result = []
     for date in sorted(djs_by_date.keys()):
@@ -516,42 +472,15 @@ def get_triplets(
         matiere_exclue = _PROFIL_EXCLUSION.get(profil_upper)
         if matiere_exclue:
             had_exclusion = any(e.matiere.upper() == matiere_exclue for e in all_day_epreuves_raw)
-            all_day_epreuves = [e for e in all_day_epreuves_raw if e.matiere.upper() != matiere_exclue]
-            if had_exclusion and not any(e.matiere.upper() == profil_upper for e in all_day_epreuves):
+            if had_exclusion and not any(e.matiere.upper() == profil_upper for e in all_day_epreuves_raw):
                 continue
-        else:
-            all_day_epreuves = all_day_epreuves_raw
-
-        matieres_sorted = sorted(set(e.matiere for e in all_day_epreuves))
-        N_rooms = len(matieres_sorted)
-        if N_rooms == 0:
-            continue
-
-        all_slots = sorted(set(e.heure_debut for e in all_day_epreuves))
-        total_slots = len(all_slots)
-        # Écart minimal viable entre deux passages d'un même candidat (voir _rotation_offset).
-        offset = _rotation_offset(all_day_epreuves, all_slots, N_rooms)
-
-        # Index : (matiere, heure_debut) → liste d'épreuves LIBRES
-        libres_multi: dict = _dd(list)
-        for e in all_day_epreuves:
-            if e.statut == "LIBRE":
-                libres_multi[(e.matiere, e.heure_debut)].append(e)
 
         seen: set = set()
-        for k in range(total_slots):
-            candidate: list = []
-            valid = True
-            for i, matiere in enumerate(matieres_sorted):
-                slot_idx = (k + i * offset) % total_slots
-                ep_list = libres_multi.get((matiere, all_slots[slot_idx]), [])
-                if not ep_list:
-                    valid = False
-                    break
-                candidate.append((ep_list[0], epreuve_to_dj[ep_list[0].id]))
-
-            if not valid or not candidate:
+        for groupe in groupes_pour_profil(all_day_epreuves_raw, profil_upper, matiere_exclue):
+            choisies = choisir_epreuves(groupe, ("LIBRE",))
+            if not choisies:
                 continue
+            candidate = [(e, epreuve_to_dj[e.id]) for e in choisies]
 
             # Déduplication par combinaison d'épreuves
             key = frozenset(e.id for e, _ in candidate)
@@ -584,6 +513,8 @@ def get_triplets(
                     heure_fin=heure_fin_last,
                     nb_epreuves=len(candidate),
                     epreuves=epreuves_out,
+                    cle=groupe.cle,
+                    numero=groupe.numero,
                 )
             )
 
@@ -692,8 +623,6 @@ def s_inscrire_triplet(
             )
 
     # Récupérer toutes les demi-journées du jour pour reconstituer la grille de rotation
-    from collections import defaultdict as _dd
-
     djs = (
         db.query(DemiJournee)
         .filter_by(planning_id=c.planning_id)
@@ -718,46 +647,21 @@ def s_inscrire_triplet(
             all_day_epreuves_raw.append(e)
             epreuve_to_dj[e.id] = dj
 
-    # Filtrage par profil candidat (HGG / ESH)
+    # Même composition des triplets que get_triplets (profil HGG / ESH compris)
     profil_upper = _profil_effectif(c)
     matiere_exclue = _PROFIL_EXCLUSION.get(profil_upper)
-    if matiere_exclue:
-        all_day_epreuves = [e for e in all_day_epreuves_raw if e.matiere.upper() != matiere_exclue]
-    else:
-        all_day_epreuves = all_day_epreuves_raw
-
-    matieres_sorted = sorted(set(e.matiere for e in all_day_epreuves))
-    N_rooms = len(matieres_sorted)
-
-    all_slots = sorted(set(e.heure_debut for e in all_day_epreuves))
-    total_slots = len(all_slots)
-    # Écart minimal viable entre deux passages d'un même candidat (voir _rotation_offset).
-    offset = _rotation_offset(all_day_epreuves, all_slots, N_rooms)
-
-    libres_multi: dict = _dd(list)
-    for e in all_day_epreuves:
-        if e.statut == "LIBRE":
-            libres_multi[(e.matiere, e.heure_debut)].append(e)
 
     epreuves_a_attribuer = None
-
-    for k in range(total_slots):
-        candidate: list = []
-        valid = True
-        for i, matiere in enumerate(matieres_sorted):
-            slot_idx = (k + i * offset) % total_slots
-            ep_list = libres_multi.get((matiere, all_slots[slot_idx]), [])
-            if not ep_list:
-                valid = False
-                break
-            candidate.append(ep_list[0])
-
-        if not valid or not candidate:
+    for groupe in groupes_pour_profil(all_day_epreuves_raw, profil_upper, matiere_exclue):
+        choisies = choisir_epreuves(groupe, ("LIBRE",))
+        if not choisies:
             continue
-
-        heure_debut_first = min(e.heure_debut for e in candidate)
-        if heure_debut_first == body.heure_debut:
-            epreuves_a_attribuer = candidate
+        if body.cle is not None:
+            trouve = groupe.cle == body.cle
+        else:
+            trouve = min(e.heure_debut for e in choisies) == body.heure_debut
+        if trouve:
+            epreuves_a_attribuer = choisies
             break
 
     if epreuves_a_attribuer is None:

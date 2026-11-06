@@ -25,7 +25,11 @@ type TripletOut = {
   heure_fin: string;
   nb_epreuves: number;
   epreuves: EpreuveOut[];
+  // Identifiant du triplet dans la journée : plusieurs triplets peuvent commencer à la même heure
+  cle?: string | null;
 };
+
+type Choix = { date: string; heure_debut: string; cle?: string | null };
 
 type InscriptionActive = {
   id: number;
@@ -115,7 +119,7 @@ export default function CandidatPlanningPage() {
   // Confirmation de désinscription
   const [confirmDesinscription, setConfirmDesinscription] = useState(false);
   // Confirmation de changement
-  const [pendingTriplet, setPendingTriplet] = useState<{ date: string; heure_debut: string } | null>(null);
+  const [pendingTriplet, setPendingTriplet] = useState<Choix | null>(null);
   // Filtre par date
   const [filterDate, setFilterDate] = useState("");
   // Triplet dont l'inscription est en cours — le spinner ne s'affiche que sur son bouton
@@ -164,14 +168,14 @@ export default function CandidatPlanningPage() {
     if (filterDate && !triplets.some((t) => t.date === filterDate)) setFilterDate("");
   }, [triplets, filterDate]);
 
-  const doInscrire = async (date: string, heure_debut: string) => {
+  const doInscrire = async ({ date, heure_debut, cle }: Choix) => {
     setActionLoading(true);
     setError("");
     try {
       const res = await fetch(`${API_BASE}/portal/me/inscriptions`, {
         method: "POST",
         headers: authHeaders(token),
-        body: JSON.stringify({ date, heure_debut }),
+        body: JSON.stringify({ date, heure_debut, cle }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -187,11 +191,11 @@ export default function CandidatPlanningPage() {
     }
   };
 
-  const handleInscrireClick = (date: string, heure_debut: string) => {
+  const handleInscrireClick = (choix: Choix) => {
     if (inscription) {
-      setPendingTriplet({ date, heure_debut });
+      setPendingTriplet(choix);
     } else {
-      doInscrire(date, heure_debut);
+      doInscrire(choix);
     }
   };
 
@@ -366,7 +370,7 @@ export default function CandidatPlanningPage() {
                           </span>
                         </div>
                         <button
-                          onClick={() => { setInscritKey(tripletKey); handleInscrireClick(triplet.date, triplet.heure_debut); }}
+                          onClick={() => { setInscritKey(tripletKey); handleInscrireClick({ date: triplet.date, heure_debut: triplet.heure_debut, cle: triplet.cle }); }}
                           disabled={actionLoading}
                           className="text-sm text-white px-4 py-1.5 rounded-lg font-semibold shadow-sm hover:opacity-90 transition disabled:opacity-50 flex items-center gap-1.5"
                           style={{ backgroundColor: RED }}
@@ -414,7 +418,7 @@ export default function CandidatPlanningPage() {
               Annuler
             </button>
             <button
-              onClick={() => doInscrire(pendingTriplet.date, pendingTriplet.heure_debut)}
+              onClick={() => doInscrire(pendingTriplet)}
               disabled={actionLoading}
               className="flex-1 py-2 rounded-lg text-white text-sm font-semibold hover:opacity-90 transition flex items-center justify-center gap-2"
               style={{ backgroundColor: RED }}

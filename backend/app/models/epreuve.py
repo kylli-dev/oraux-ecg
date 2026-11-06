@@ -25,6 +25,11 @@ class Epreuve(Base):
     # Durée de préparation (en minutes) avant le début de l'oral
     preparation_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
+    # Numéro du triplet (T1, T2…) tel qu'affiché dans la matrice de la journée type, fixé à
+    # la génération. Les épreuves d'un même numéro forment le triplet proposé aux candidats.
+    # NULL (journées générées avant, ou hors journée type) : triplets calculés par rotation.
+    triplet_num: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
     # Candidat assigné (nullable)
     candidat_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("candidat.id", ondelete="SET NULL"),

@@ -285,6 +285,9 @@ type TripletDisponible = {
   candidat_prenom?: string | null;
   motif?: string | null;
   details?: string[];
+  cle?: string | null;
+  // Numéro du triplet dans la matrice de la journée type (T5 → 5), absent en rotation
+  numero?: number | null;
 };
 
 type InscriptionGestion = {
@@ -2571,6 +2574,9 @@ function TripletsAdminView({ planningId, planningNom }: { planningId: number; pl
   useEffect(() => { load(); }, [load]);
 
   const tripletKey = (t: TripletDisponible) => `${t.date}|${t.heure_debut}|${t.epreuves.map((e) => e.id).join(",")}`;
+  // Ordre de la matrice de la journée type (T1, T2…), sinon par heure
+  const ordreTriplet = (a: TripletDisponible, b: TripletDisponible) =>
+    (a.numero ?? Infinity) - (b.numero ?? Infinity) || a.heure_debut.localeCompare(b.heure_debut);
 
   const toggle = async (t: TripletDisponible) => {
     const key = tripletKey(t);
@@ -2600,9 +2606,9 @@ function TripletsAdminView({ planningId, planningNom }: { planningId: number; pl
   // Export : une ligne par triplet, avec les filtres de l'affichage
   const exporter = () => {
     const lignes = [...filtered]
-      .sort((a, b) => a.date.localeCompare(b.date) || a.heure_debut.localeCompare(b.heure_debut))
+      .sort((a, b) => a.date.localeCompare(b.date) || ordreTriplet(a, b))
       .map((t) => [
-        formatDateCourte(t.date), t.heure_debut,
+        formatDateCourte(t.date), t.numero != null ? `T${t.numero}` : "", t.heure_debut,
         t.epreuves.map((e) => `${e.matiere} ${e.heure_debut}${e.statut === "MANQUANTE" ? " (manquante)" : ""}`).join(" · "),
         TRIPLET_ETAT[t.type_slot]?.label ?? t.type_slot,
         t.candidat_nom ? `${t.candidat_nom} ${t.candidat_prenom ?? ""}`.trim() : "",
@@ -2610,7 +2616,7 @@ function TripletsAdminView({ planningId, planningNom }: { planningId: number; pl
       ]);
     telechargerCsv(
       `planning_${slugFichier(planningNom)}_triplets${filterDate ? "_" + formatDateCourte(filterDate) : ""}.csv`,
-      ["Date", "Heure", "Épreuves", "État", "Candidat", "Motif"],
+      ["Date", "Triplet", "Heure", "Épreuves", "État", "Candidat", "Motif"],
       lignes,
     );
   };
@@ -2671,7 +2677,7 @@ function TripletsAdminView({ planningId, planningNom }: { planningId: number; pl
             </div>
             <div className="divide-y divide-black/5">
               {[...trips]
-                .sort((a, b) => a.heure_debut.localeCompare(b.heure_debut))
+                .sort(ordreTriplet)
                 .map((t) => {
                   const key = tripletKey(t);
                   const etat = TRIPLET_ETAT[t.type_slot] ?? TRIPLET_ETAT.INCOMPLET;
@@ -2680,6 +2686,11 @@ function TripletsAdminView({ planningId, planningNom }: { planningId: number; pl
                   return (
                     <div key={key} className="px-4 py-2.5">
                       <div className="flex items-center gap-4">
+                        {trips.some((x) => x.numero != null) && (
+                          <span className="text-xs font-semibold text-gray-900 w-9" title="Numéro du triplet dans la matrice de la journée type">
+                            {t.numero != null ? `T${t.numero}` : ""}
+                          </span>
+                        )}
                         <span className="font-mono text-sm text-gray-900 w-14">{t.heure_debut}</span>
                         <div className="flex-1 flex flex-wrap gap-2">
                           {t.epreuves.map((e) => (
@@ -4954,7 +4965,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
       </div>
       {editMode && (
         <p className="text-[11px] text-gray-700 -mt-2">
-          Glissez un triplet vers une autre cellule pour l'échanger. Les positions sont gardées à l'enregistrement de la journée type, mais ne changent pas les triplets proposés aux candidats.
+          Glissez un triplet vers une autre cellule pour l'échanger. Les positions sont gardées à l'enregistrement de la journée type, et les triplets proposés aux candidats les suivent pour les dates générées ensuite.
         </p>
       )}
 
@@ -6052,7 +6063,7 @@ function CandidatGestionDrawer({
   const doInscrire = async (t: TripletDisponible) => {
     setLoadingAction(true);
     try {
-      await post(`gestion-candidats/candidat/${candidatId}/inscrire`, { date: t.date, heure_debut: t.heure_debut });
+      await post(`gestion-candidats/candidat/${candidatId}/inscrire`, { date: t.date, heure_debut: t.heure_debut, epreuve_ids: t.epreuves.map((e) => e.id) });
       toast.success(fiche?.inscription ? "Réinscription effectuée" : "Candidat inscrit");
       refresh();
     } catch (e) { toast.error(e instanceof Error ? e.message : String(e)); }
@@ -7048,7 +7059,7 @@ function ListeAttenteTab({ planningId }: { planningId: number }) {
     if (!await confirm(`Inscrire ${c.nom} ${c.prenom} sur le créneau du ${fmt_date(t.date)} à ${t.heure_debut} ?`, { confirmLabel: "Inscrire" })) return;
     setLoadingAction(true);
     try {
-      await post(`gestion-candidats/candidat/${c.id}/inscrire`, { date: t.date, heure_debut: t.heure_debut });
+      await post(`gestion-candidats/candidat/${c.id}/inscrire`, { date: t.date, heure_debut: t.heure_debut, epreuve_ids: t.epreuves.map((e) => e.id) });
       toast.success(`${c.prenom} ${c.nom} inscrit(e) — sorti(e) de la liste d'attente`);
       setSelectedId(null);
       loadAll();
@@ -7311,7 +7322,7 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
     if (!selectedId) return;
     setLoadingAction(true);
     try {
-      await post(`gestion-candidats/candidat/${selectedId}/inscrire`, { date: t.date, heure_debut: t.heure_debut });
+      await post(`gestion-candidats/candidat/${selectedId}/inscrire`, { date: t.date, heure_debut: t.heure_debut, epreuve_ids: t.epreuves.map((e) => e.id) });
       toast.success("Candidat inscrit");
       refresh();
     } catch (e) { toast.error(e instanceof Error ? e.message : String(e)); }
