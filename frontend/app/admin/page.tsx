@@ -3029,6 +3029,7 @@ function ApplyForm({
   dateFin,
   journeeTypes,
   onSuccess,
+  precocherDate = true,
 }: {
   planningId: number;
   date: string;
@@ -3036,14 +3037,25 @@ function ApplyForm({
   dateFin: string;
   journeeTypes: JourneeType[];
   onSuccess: () => void;
+  // false quand `date` n'est qu'une valeur par défaut (début du planning) et pas un choix de
+  // l'utilisateur : elle ne doit pas être cochée d'office en mode « Plusieurs dates »
+  precocherDate?: boolean;
 }) {
   const [jtId, setJtId] = useState(journeeTypes[0]?.id ?? 0);
   const [mode, setMode] = useState<"single" | "multi">("single");
   const [singleDate, setSingleDate] = useState(date);
   const allDates = enumerateDates(dateDebut, dateFin);
-  const [selectedDates, setSelectedDates] = useState<Set<string>>(() => new Set([date]));
+  const [selectedDates, setSelectedDates] = useState<Set<string>>(() => new Set(precocherDate ? [date] : []));
   const [rangeFrom, setRangeFrom] = useState(date);
   const [rangeTo, setRangeTo] = useState(date);
+  // Modifier « Du » ou « Au » coche directement les dates de la plage (limitée à la période du planning)
+  const choisirPlage = (de: string, a: string) => {
+    setRangeFrom(de);
+    setRangeTo(a);
+    if (de && a && de <= a) {
+      setSelectedDates(new Set(enumerateDates(de < dateDebut ? dateDebut : de, a > dateFin ? dateFin : a)));
+    }
+  };
   const [loading, setLoading] = useState(false);
   type ApplyResult = { date: string; demi_journees_created: number; epreuves_created: number; warnings: string[] };
   const [results, setResults] = useState<ApplyResult[] | null>(null);
@@ -3119,6 +3131,15 @@ function ApplyForm({
           <p className={`text-sm mt-1 ${hasIssue ? "text-amber-600" : "text-green-600"}`}>
             {totalDj} demi-journée(s) créée(s) &bull; {totalEp} épreuve(s) générée(s)
           </p>
+          {results.length > 0 && (
+            <ul className="mt-2 space-y-0.5 text-xs text-gray-900">
+              {results.map((r) => (
+                <li key={r.date}>
+                  ✓ <span className="capitalize">{formatDate(r.date)}</span> — {r.epreuves_created} épreuve(s)
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         {withWarnings.length > 0 && (
@@ -3195,22 +3216,13 @@ function ApplyForm({
             <p className="text-xs font-medium text-gray-800 uppercase tracking-wide mb-2">Sélectionner une plage</p>
             <div className="flex items-end gap-2">
               <Field label="Du">
-                <Input type="date" value={rangeFrom} min={dateDebut} max={dateFin} onChange={(e) => setRangeFrom(e.target.value)} />
+                <Input type="date" value={rangeFrom} min={dateDebut} max={dateFin} onChange={(e) => choisirPlage(e.target.value, rangeTo < e.target.value ? e.target.value : rangeTo)} />
               </Field>
               <Field label="Au">
-                <Input type="date" value={rangeTo} min={dateDebut} max={dateFin} onChange={(e) => setRangeTo(e.target.value)} />
+                <Input type="date" value={rangeTo} min={dateDebut} max={dateFin} onChange={(e) => choisirPlage(rangeFrom, e.target.value)} />
               </Field>
-              <Btn
-                label="Appliquer la plage"
-                small
-                variant="ghost"
-                disabled={rangeFrom > rangeTo}
-                onClick={() => setSelectedDates(new Set(
-                  // limitée à la période du planning, même si une date hors bornes a été saisie
-                  enumerateDates(rangeFrom < dateDebut ? dateDebut : rangeFrom, rangeTo > dateFin ? dateFin : rangeTo)
-                ))}
-              />
             </div>
+            <p className="text-xs text-gray-700 mt-2">Les dates de la plage sont cochées ci-dessous ; ajustez-les ensuite une par une si besoin.</p>
           </div>
 
           <div className="flex items-center justify-between">
@@ -3745,6 +3757,7 @@ function ApplyJourneeTypeToPlanning({ jt, onClose }: { jt: JourneeType; onClose:
           dateFin={planning.date_fin}
           journeeTypes={[jt]}
           onSuccess={onClose}
+          precocherDate={false}
         />
       )}
     </div>
