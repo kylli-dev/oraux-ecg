@@ -4119,7 +4119,9 @@ function blocCapacity(bloc: BlocWizard, configs: MatiereConfig[]): number {
   return bloc.nb_slots !== null ? Math.min(bloc.nb_slots, capped) : capped;
 }
 
-function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, bloc_idx: number, oralOffset = 0, sallesParMatiere = 1): MatrixRow[] {
+// Horaires des lignes d'un bloc de l'assistant ; les numéros de triplet sont posés ensuite
+// par buildMatrix, comme la Matrice oraux.
+function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, bloc_idx: number): MatrixRow[] {
   configs = configs ?? bloc.matieres_config;
   const N = configs.length;
   if (!N) return [];
@@ -4130,22 +4132,11 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
   const [efh, efm] = bloc.heure_fin.split(":").map(Number);
   const end = efh * 60 + efm;
   const interval = maxDuree + bloc.pause_minutes;
-  const slotDuration = maxPrep + maxDuree;
   const pauseMinutes = bloc.pause_midi_minutes ?? 0;
   const Kregular = blocCapacity(bloc, configs);
   const Kbonus = bloc.bonus_slots ?? 0;
   const Ktotal = Kregular + Kbonus;
-  const step = rotationOffset(slotDuration, interval);
   const pauseAfter = bloc.pause_midi_after ?? Math.ceil(Kregular / 2);
-  // Dédoublement de jury SÉLECTIF : chaque matière peut avoir son propre nombre de salles
-  // en parallèle (configs[j].salles), sinon elle retombe sur le réglage global du gabarit
-  // (sallesParMatiere). Le candidat "principal" (lane 0) est inchangé — même formule
-  // qu'avant. sMax dimensionne l'espace de numérotation réservé par bloc (assez large pour
-  // la matière la plus dédoublée) ; chaque matière n'utilise que SES propres lanes
-  // (sallesPerMatiere[j] - 1), les lanes en trop pour les autres matières restent
-  // simplement inutilisées (aucun impact, juste des numéros non affichés).
-  const sallesPerMatiere = configs.map((c) => Math.max(1, c.salles ?? sallesParMatiere));
-  const sMax = Math.max(1, ...sallesPerMatiere);
 
   const rows: MatrixRow[] = [];
   let t = start;
@@ -4170,17 +4161,11 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
     // générer au-delà de heure_fin. Sans ça, un nb_slots (ou des bonus) trop ambitieux pour la
     // fenêtre produisait un aperçu qui dépassait silencieusement l'heure de fin annoncée.
     if (t + maxPrep + maxDuree > end) break;
-    // Modèle K-libre sur Ktotal : candidat k passe matière j au créneau (k + j*step) % Ktotal
-    // Inverse : à l'oral `oral`, matière j, lane r → candidat = (oral - j*step + Ktotal*N) % Ktotal + r*Ktotal
-    const laneCandidate = (j: number, r: number) => (oral - j * step + Ktotal * N) % Ktotal + r * Ktotal + oralOffset;
     rows.push({
       deb_prepa: minutesToHM(t),
       deb_exam: minutesToHM(t + maxPrep),
       fin_exam: minutesToHM(t + maxPrep + maxDuree),
-      candidates: Array.from({ length: N }, (_, j) => laneCandidate(j, 0)),
-      extraCandidates: sMax > 1
-        ? Array.from({ length: N }, (_, j) => Array.from({ length: sallesPerMatiere[j] - 1 }, (_, k) => laneCandidate(j, k + 1)))
-        : undefined,
+      candidates: [],
       bloc_idx,
       isPause: false,
       isBonus: oral >= Kregular,   // les derniers Kbonus créneaux sont marqués bonus
@@ -4191,21 +4176,45 @@ function buildBlocRows(bloc: BlocWizard, configs: MatiereConfig[] | undefined, b
   return rows;
 }
 
+// Numérotation des triplets IDENTIQUE à la Matrice oraux (InterfaceAdminENSAEPlanning.jsx,
+// buildMatrix) et à la génération des épreuves (generation.py) : chaque bloc ENREGISTRÉ a sa
+// propre rotation — en journée complète, le matin et l'après-midi séparément, de part et
+// d'autre de la pause, puisque saveBlocsToJt les enregistre comme deux blocs. Ligne i,
+// matière j : premier numéro du bloc + (i − j × écart) mod nombre de lignes. Les blocs se
+// suivent en réservant chacun nb_slots (ou N²) numéros. Une ligne au-delà de nb_slots
+// (créneau bonus) ne porte pas de triplet : -1.
 function buildMatrix(p: WizardParams): MatrixRow[] {
-  let oralOffset = 0;
+  let premier = 0;
   const sDefault = Math.max(1, p.salles_par_matiere ?? 1);
   return p.blocs.flatMap((bloc, idx) => {
     const configs = bloc.matieres_config ?? [];
-    const Kregular = blocCapacity(bloc, configs);
-    const Kbonus = bloc.bonus_slots ?? 0;
-    const rows = buildBlocRows(bloc, configs, idx, oralOffset, sDefault);
-    // La numérotation du bloc suivant doit sauter par-dessus TOUTES les lanes de celui-ci
-    // (la matière la plus dédoublée du bloc), sinon les candidats des salles parallèles
-    // chevauchent ceux du bloc suivant.
-    const sMax = configs.length
-      ? Math.max(1, ...configs.map((c) => Math.max(1, c.salles ?? sDefault)))
-      : sDefault;
-    oralOffset += (Kregular + Kbonus) * sMax;
+    const rows = buildBlocRows(bloc, configs, idx);
+    const N = configs.length;
+    if (!N || !rows.length) return rows;
+    const maxDuree = Math.max(...configs.map(c => c.duree_minutes));
+    const maxPrep = Math.max(...configs.map(c => c.preparation_minutes));
+    const step = rotationOffset(maxPrep + maxDuree, maxDuree + bloc.pause_minutes);
+    const salles = configs.map((c) => Math.max(1, c.salles ?? sDefault));
+    const sMax = Math.max(1, ...salles);
+    // Mêmes découpes que saveBlocsToJt
+    const decoupe = p.mode === "journee-complete" && (bloc.pause_midi_minutes ?? 0) > 0;
+    const pauseIdx = rows.findIndex(r => r.isPause);
+    const segments = decoupe && pauseIdx !== -1
+      ? [rows.slice(0, pauseIdx), rows.slice(pauseIdx + 1).filter(r => !r.isPause)]
+      : [rows.filter(r => !r.isPause)];
+    for (const seg of segments) {
+      if (!seg.length) continue;
+      const reserve = decoupe ? seg.length : (bloc.nb_slots ?? N * N);
+      const G = Math.min(reserve, seg.length);
+      seg.forEach((row, i) => {
+        const lane = (j: number, r: number) => i < G ? premier + r * G + (((i - j * step) % G) + G) % G : -1;
+        row.candidates = Array.from({ length: N }, (_, j) => lane(j, 0));
+        row.extraCandidates = sMax > 1 && i < G
+          ? Array.from({ length: N }, (_, j) => Array.from({ length: salles[j] - 1 }, (_, k) => lane(j, k + 1)))
+          : undefined;
+      });
+      premier += reserve;
+    }
     return rows;
   });
 }
@@ -4250,7 +4259,7 @@ function appliquerDisposition(base: MatrixRow[], p: WizardParams, blocs: Bloc[])
     const deb = b.heure_debut.slice(0, 5);
     const fin = b.heure_fin.slice(0, 5);
     const cibles = rows.filter(r =>
-      !r.isPause && r.deb_prepa >= deb && r.deb_prepa < fin
+      !r.isPause && r.candidates[0] >= 0 && r.deb_prepa >= deb && r.deb_prepa < fin
       && cle(p.blocs[r.bloc_idx].matieres_config.map(c => c.nom)) === cle(b.matieres)
     );
     if (cibles.length !== custom.length || cibles.some((r, i) => r.candidates.length !== custom[i].length)) {
@@ -4419,7 +4428,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
   // Positions à enregistrer pour un bloc : null tant qu'aucun triplet n'a été déplacé, le bloc
   // suit alors la formule automatique
   const dispositionDe = (rows: MatrixRow[]) => {
-    const orales = rows.filter(r => !r.isPause);
+    const orales = rows.filter(r => !r.isPause && r.candidates[0] >= 0);
     const deplace = orales.some(r => JSON.stringify(r.candidates) !== JSON.stringify(base[matrix.indexOf(r)].candidates));
     return deplace ? orales.map(r => r.candidates) : null;
   };
@@ -4891,6 +4900,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
 
   const swapCells = (a: { rowIdx: number; matIdx: number }, b: { rowIdx: number; matIdx: number }) => {
     if (a.rowIdx === b.rowIdx && a.matIdx === b.matIdx) return;
+    if (matrix[a.rowIdx].candidates[a.matIdx] < 0 || matrix[b.rowIdx].candidates[b.matIdx] < 0) return;
     setMatrix(prev => {
       const next = prev.map(r => ({ ...r, candidates: [...r.candidates] }));
       const va = next[a.rowIdx].candidates[a.matIdx];
@@ -5020,6 +5030,13 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                         return <td key={globalJ} className="px-3 py-1 text-center text-gray-700">—</td>;
                       }
                       const k = row.candidates[localJ];
+                      if (k < 0) {
+                        return (
+                          <td key={globalJ} className="px-3 py-1 text-center text-[11px] font-medium text-amber-700" title="Créneau bonus : pas de triplet, ouvert aux urgences">
+                            Bonus
+                          </td>
+                        );
+                      }
                       const isOver = dragOver?.rowIdx === i && dragOver?.matIdx === localJ;
                       const isDragging = dragSrc?.rowIdx === i && dragSrc?.matIdx === localJ;
                       return (
