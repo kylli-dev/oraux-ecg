@@ -4619,14 +4619,10 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
           ))}
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Nom">
-            <Input value={p.nom} onChange={(e) => set("nom", e.target.value)} placeholder="Journée standard ECG" />
-          </Field>
-          <Field label="Salles par matière">
-            <Input type="number" value={p.salles_par_matiere} onChange={(e) => set("salles_par_matiere", Number(e.target.value))} min={1} max={50} />
-          </Field>
-        </div>
+        {/* Le nombre de salles se règle matière par matière (colonne « Salles » de chaque bloc) */}
+        <Field label="Nom">
+          <Input value={p.nom} onChange={(e) => set("nom", e.target.value)} placeholder="Journée standard ECG" />
+        </Field>
 
         {/* ── Blocs horaires ── */}
         <div className="space-y-3">
@@ -4737,7 +4733,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                             <td className="px-2 py-1 text-center">
                               <input type="number" value={mc.salles ?? p.salles_par_matiere}
                                 onChange={(e) => setBlocMatiereConfig(idx, mc.nom, "salles", Math.max(1, Number(e.target.value)))}
-                                title="Nombre de salles en parallèle pour cette matière — par défaut, suit le réglage global Salles par matière"
+                                title="Nombre de salles en parallèle pour cette matière (dédoublement de jury)"
                                 min={1} max={50}
                                 className="w-14 text-center border border-black/10 rounded-lg px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-black/20"
                               />
