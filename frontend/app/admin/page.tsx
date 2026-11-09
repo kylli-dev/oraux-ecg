@@ -265,6 +265,7 @@ type CandidatListeItem = {
   is_liste_attente: boolean;
   statut: string;
   profil: string | null;
+  commentaire?: string | null;
 };
 
 type TripletEpreuveGestion = {
@@ -6028,7 +6029,7 @@ function CreateCandidatForm({
 }
 
 // Commentaire libre des admins sur la fiche (absence, changement de créneau, échange avec la famille…)
-function CommentaireCandidat({ candidatId, initial }: { candidatId: number; initial: string | null }) {
+function CommentaireCandidat({ candidatId, initial, onSaved }: { candidatId: number; initial: string | null; onSaved?: () => void }) {
   const toast = useToast();
   const [texte, setTexte] = useState(initial ?? "");
   const [enregistre, setEnregistre] = useState(initial ?? "");
@@ -6042,6 +6043,7 @@ function CommentaireCandidat({ candidatId, initial }: { candidatId: number; init
       setEnregistre(r.commentaire ?? "");
       setTexte(r.commentaire ?? "");
       toast.success("Commentaire enregistré");
+      onSaved?.();
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -7425,7 +7427,7 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
     if (filterStatut === "attente" && !c.is_liste_attente) return false;
     if (filterProfil && c.profil !== filterProfil) return false;
     const q = search.toLowerCase();
-    return !q || `${c.nom} ${c.prenom} ${c.email} ${c.code_candidat ?? ""}`.toLowerCase().includes(q);
+    return !q || `${c.nom} ${c.prenom} ${c.email} ${c.code_candidat ?? ""} ${c.commentaire ?? ""}`.toLowerCase().includes(q);
   });
 
   // Filtre par profil candidat (ESH n'inscrit pas en HGG et vice-versa)
@@ -7512,6 +7514,7 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
                 {c.code_candidat && <span className="font-mono text-gray-700">{c.code_candidat}</span>}
                 {c.is_inscrit && <span className="bg-green-100 text-green-700 px-1 py-0 rounded text-[10px]">Inscrit</span>}
                 {c.is_liste_attente && <span className="bg-amber-100 text-amber-700 px-1 py-0 rounded text-[10px]">L.A.</span>}
+                {c.commentaire && <span title={c.commentaire} className="bg-sky-100 text-sky-800 px-1 py-0 rounded text-[10px]">Commentaire</span>}
               </div>
             </button>
           ))}
@@ -7569,6 +7572,10 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
                   <div className="flex gap-1"><dt className="text-gray-700 shrink-0">INE</dt><dd className="font-mono">{fiche.numero_ine}</dd></div>
                 )}
               </dl>
+            </div>
+
+            <div className="rounded-xl border bg-white shadow-sm p-4">
+              <CommentaireCandidat key={fiche.id} candidatId={fiche.id} initial={fiche.commentaire ?? null} onSaved={loadListe} />
             </div>
 
             {/* Liste d'attente */}

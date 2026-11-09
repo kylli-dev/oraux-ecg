@@ -43,6 +43,7 @@ class CandidatListeItem(BaseModel):
     is_liste_attente: bool
     statut: str
     profil: Optional[str] = None
+    commentaire: Optional[str] = None
 
 
 class TripletEpreuveOut(BaseModel):
@@ -245,6 +246,7 @@ def list_candidats_gestion(planning_id: int, db: Session = Depends(get_db)):
             is_liste_attente=c.id in listes_attente and c.id not in inscriptions,
             statut=c.statut,
             profil=_profil_effectif(c) or None,
+            commentaire=c.commentaire,
         )
         for c in candidats
     ]
