@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutGrid, Wand2, RefreshCw,
   Sun, Sunset, CheckCircle2, Lock, EyeOff,
-  Plus, Trash2, ChevronUp, ChevronDown, Pencil, Check, X,
+  Trash2, ChevronUp, ChevronDown, Pencil, Check, X,
   GripVertical, Settings2, AlertTriangle,
 } from "lucide-react";
 import {
@@ -656,15 +656,6 @@ function BlocsEditor({ jtId, blocs, onReload }) {
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
-  const [showAdd, setShowAdd] = useState(false);
-  const [addForm, setAddForm] = useState({
-    type_bloc: "GENERATION",
-    heure_debut: "08:00",
-    heure_fin: "12:00",
-    matieres: [],
-  });
-  const [adding, setAdding] = useState(false);
-  const [addErr, setAddErr] = useState("");
   const [allMatieres, setAllMatieres] = useState([]);
 
   useEffect(() => {
@@ -731,68 +722,16 @@ function BlocsEditor({ jtId, blocs, onReload }) {
     onReload();
   }
 
-  async function addBloc() {
-    setAdding(true); setAddErr("");
-    const matieres = addForm.type_bloc === "GENERATION" ? addForm.matieres : [];
-    const maxOrdre = blocs.length > 0 ? Math.max(...blocs.map((b) => b.ordre)) : 0;
-    try {
-      await apiFetch("POST", `journee-types/${jtId}/blocs`, {
-        type_bloc: addForm.type_bloc,
-        ordre: maxOrdre + 1,
-        heure_debut: addForm.heure_debut,
-        heure_fin: addForm.heure_fin,
-        matieres,
-        salles_par_matiere: 1,
-      });
-      setShowAdd(false);
-      setAddForm({ type_bloc: "GENERATION", heure_debut: "08:00", heure_fin: "12:00", matieres: [] });
-      onReload();
-    } catch (e) { setAddErr(e.message); }
-    finally { setAdding(false); }
-  }
-
-  // Crée d'un coup un bloc matin + un bloc après-midi séparés par une vraie pause,
-  // pour que la distinction Matin/Après-midi de la vue matricielle reste valide
-  // (au lieu d'un unique bloc étiré sur toute la journée).
-  async function addMatinApresMidi() {
-    if (!addForm.matieres.length) { setAddErr("Sélectionnez au moins une matière"); return; }
-    setAdding(true); setAddErr("");
-    const maxOrdre = blocs.length > 0 ? Math.max(...blocs.map((b) => b.ordre)) : 0;
-    try {
-      await apiFetch("POST", `journee-types/${jtId}/blocs`, {
-        type_bloc: "GENERATION", ordre: maxOrdre + 1,
-        heure_debut: "08:00", heure_fin: "13:00",
-        matieres: addForm.matieres, salles_par_matiere: 1,
-      });
-      await apiFetch("POST", `journee-types/${jtId}/blocs`, {
-        type_bloc: "GENERATION", ordre: maxOrdre + 2,
-        heure_debut: "14:00", heure_fin: "18:00",
-        matieres: addForm.matieres, salles_par_matiere: 1,
-      });
-      setShowAdd(false);
-      setAddForm({ type_bloc: "GENERATION", heure_debut: "08:00", heure_fin: "12:00", matieres: [] });
-      onReload();
-    } catch (e) { setAddErr(e.message); }
-    finally { setAdding(false); }
-  }
-
   return (
     <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-5 space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold text-black/40 uppercase tracking-wide">Blocs du gabarit</p>
-        <button
-          onClick={() => { setShowAdd(true); setAddErr(""); }}
-          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition hover:bg-black/[0.03]"
-          style={{ borderColor: ENSAE_RED + "40", color: ENSAE_RED }}
-        >
-          <Plus className="h-3.5 w-3.5" /> Ajouter un bloc
-        </button>
       </div>
 
       {/* Liste des blocs — un bloc PAUSE n'est jamais un créneau d'examen, ne pas le nommer ainsi */}
       <div className="divide-y divide-black/5 rounded-xl border border-black/8 overflow-hidden">
         {sorted.length === 0 && (
-          <p className="text-sm text-black/30 text-center py-6">Aucun bloc. Cliquez sur "Ajouter un bloc".</p>
+          <p className="text-sm text-gray-700 text-center py-6">Aucun bloc. Les blocs se créent avec l&apos;assistant (Gabarits → Modifier).</p>
         )}
         {sorted.map((bloc, idx) => {
           const isEditing = editingId === bloc.id;
@@ -994,127 +933,6 @@ function BlocsEditor({ jtId, blocs, onReload }) {
         })}
       </div>
 
-      {/* Formulaire d'ajout */}
-      <AnimatePresence>
-        {showAdd && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden"
-          >
-            <div className="rounded-xl border border-dashed border-black/15 bg-black/[0.015] p-4 space-y-3">
-              <p className="text-xs font-semibold text-black/50">Nouveau bloc</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11px] text-black/40 mb-1 block">Type</label>
-                  <select
-                    value={addForm.type_bloc}
-                    onChange={(e) => setAddForm((f) => ({ ...f, type_bloc: e.target.value }))}
-                    className="w-full border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-black/10"
-                  >
-                    <option value="GENERATION">Génération</option>
-                    <option value="PAUSE">Pause</option>
-                  </select>
-                </div>
-                <div className="flex gap-2 items-end">
-                  <div className="flex-1">
-                    <label className="text-[11px] text-black/40 mb-1 block">Début</label>
-                    <input
-                      type="time"
-                      value={addForm.heure_debut}
-                      onChange={(e) => setAddForm((f) => ({ ...f, heure_debut: e.target.value }))}
-                      className="w-full border rounded-lg px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-black/10"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <label className="text-[11px] text-black/40 mb-1 block">Fin</label>
-                    <input
-                      type="time"
-                      value={addForm.heure_fin}
-                      onChange={(e) => setAddForm((f) => ({ ...f, heure_fin: e.target.value }))}
-                      className="w-full border rounded-lg px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-black/10"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {addForm.type_bloc === "GENERATION" && (
-                <div>
-                  <label className="text-[11px] text-black/40 mb-1 block">
-                    Matières sélectionnées ({addForm.matieres.length})
-                  </label>
-                  {allMatieres.length === 0 ? (
-                    <p className="text-xs text-black/30 italic">Aucune matière configurée (voir Paramètres → Matières)</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-1.5">
-                      {allMatieres.map((m) => {
-                        const sel = addForm.matieres.includes(m.intitule);
-                        return (
-                          <button
-                            key={m.id}
-                            type="button"
-                            onClick={() => setAddForm((f) => ({
-                              ...f,
-                              matieres: sel
-                                ? f.matieres.filter((x) => x !== m.intitule)
-                                : [...f.matieres, m.intitule],
-                            }))}
-                            className="px-2.5 py-1 rounded-lg text-xs font-medium border-2 transition"
-                            style={{
-                              borderColor: sel ? ENSAE_RED : "transparent",
-                              backgroundColor: sel ? ENSAE_RED + "12" : "#F3F4F6",
-                              color: sel ? ENSAE_RED : "#666",
-                            }}
-                          >
-                            {m.intitule}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {addErr && <p className="text-xs text-red-500">{addErr}</p>}
-
-              {blocs.length === 0 && addForm.type_bloc === "GENERATION" && (
-                <div className="rounded-lg border border-dashed p-2.5" style={{ borderColor: ENSAE_RED + "30", backgroundColor: ENSAE_RED + "08" }}>
-                  <button
-                    onClick={addMatinApresMidi}
-                    disabled={adding || addForm.matieres.length === 0}
-                    className="flex items-center gap-1.5 text-xs font-medium transition disabled:opacity-40"
-                    style={{ color: ENSAE_RED }}
-                  >
-                    <Plus className="h-3.5 w-3.5" /> Créer matin (08:00-13:00) + après-midi (14:00-18:00) avec pause déjeuner
-                  </button>
-                  <p className="text-[11px] text-black/35 mt-1">
-                    Recommandé : garde la distinction Matin/Après-midi valide, avec ces matières.
-                  </p>
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <button
-                  onClick={addBloc}
-                  disabled={adding || (addForm.type_bloc === "GENERATION" && addForm.matieres.length === 0)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-white transition disabled:opacity-40"
-                  style={{ backgroundColor: ENSAE_RED }}
-                >
-                  {adding ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-                  Ajouter un seul bloc
-                </button>
-                <button
-                  onClick={() => { setShowAdd(false); setAddErr(""); }}
-                  className="px-3 py-1.5 rounded-lg text-sm text-black/50 hover:bg-black/5 transition"
-                >
-                  Annuler
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

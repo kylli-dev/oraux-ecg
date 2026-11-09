@@ -3468,7 +3468,7 @@ function BlocTimeline({
 
         {blocs.length === 0 && (
           <div className="flex items-center justify-center h-full text-xs text-gray-700">
-            Aucun bloc — ajoutez-en un pour commencer
+            Aucun bloc — créez-les avec l'assistant (bouton Modifier)
           </div>
         )}
       </div>
@@ -3482,7 +3482,6 @@ function JourneeTypeEditor({ jt, onRename }: { jt: JourneeType; onRename?: (newN
   const confirm = useConfirm();
   const [blocs, setBlocs] = useState<Bloc[]>([]);
   const [selectedBlocId, setSelectedBlocId] = useState<number | null>(null);
-  const [showAdd, setShowAdd] = useState(false);
 
   // Renommage
   const [editingNom, setEditingNom] = useState(false);
@@ -3583,42 +3582,16 @@ function JourneeTypeEditor({ jt, onRename }: { jt: JourneeType; onRename?: (newN
           <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
             Blocs ({blocs.length})
           </span>
-          <Btn
-            label={showAdd ? "Annuler" : "Ajouter un bloc"}
-            icon={showAdd ? X : Plus}
-            onClick={() => { setShowAdd((s) => !s); setSelectedBlocId(null); }}
-            small
-            variant="ghost"
-          />
         </div>
 
         <BlocTimeline
           blocs={blocs}
           selectedBlocId={selectedBlocId}
-          onSelect={(id) => { setSelectedBlocId(id); if (id) setShowAdd(false); }}
+          onSelect={(id) => setSelectedBlocId(id)}
         />
 
         <AnimatePresence>
-          {showAdd && (
-            <motion.div
-              key="add"
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              className="mt-4 rounded-xl border border-black/10 bg-gray-50 p-4"
-            >
-              <AddBlocForm
-                jtId={jt.id}
-                dureeDefaut={jt.duree_defaut_minutes}
-                pauseDefaut={jt.pause_defaut_minutes}
-                preparationDefaut={jt.preparation_defaut_minutes}
-                isFirstBloc={blocs.length === 0}
-                onSuccess={() => { setShowAdd(false); load(); }}
-              />
-            </motion.div>
-          )}
-
-          {selectedBloc && !showAdd && (
+          {selectedBloc && (
             <motion.div
               key={`edit-${selectedBloc.id}`}
               initial={{ opacity: 0, y: -8 }}
@@ -3650,7 +3623,7 @@ function JourneeTypeEditor({ jt, onRename }: { jt: JourneeType; onRename?: (newN
           )}
         </AnimatePresence>
 
-        {blocs.length > 0 && !selectedBloc && !showAdd && (
+        {blocs.length > 0 && !selectedBloc && (
           <p className="mt-3 text-xs text-gray-700 text-center">
             Cliquez sur un bloc pour le modifier
           </p>
@@ -5228,204 +5201,6 @@ function MatieresSelector({
           </button>
         );
       })}
-    </div>
-  );
-}
-
-function AddBlocForm({
-  jtId,
-  dureeDefaut,
-  pauseDefaut,
-  preparationDefaut,
-  isFirstBloc,
-  onSuccess,
-}: {
-  jtId: number;
-  dureeDefaut: number;
-  pauseDefaut: number;
-  preparationDefaut: number;
-  isFirstBloc?: boolean;
-  onSuccess: () => void;
-}) {
-  const [form, setForm] = useState({
-    ordre: 1,
-    type_bloc: "GENERATION",
-    heure_debut: "08:30",
-    heure_fin: "12:00",
-    matieres: [] as string[],
-    duree_minutes: dureeDefaut,
-    pause_minutes: pauseDefaut,
-    preparation_minutes: preparationDefaut,
-    salles_par_matiere: 1,
-  });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
-
-  const submit = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const body: any = {
-        ordre: form.ordre,
-        type_bloc: form.type_bloc,
-        heure_debut: form.heure_debut + ":00",
-        heure_fin: form.heure_fin + ":00",
-      };
-      if (form.type_bloc === "GENERATION") {
-        if (!form.matieres.length) throw new Error("Au moins une matière requise");
-        body.matieres = form.matieres;
-        body.duree_minutes = form.duree_minutes;
-        body.pause_minutes = form.pause_minutes;
-        body.preparation_minutes = form.preparation_minutes;
-        body.salles_par_matiere = form.salles_par_matiere;
-      }
-      await post(`journee-types/${jtId}/blocs`, body);
-      onSuccess();
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Crée d'un coup un bloc matin + un bloc après-midi séparés par une vraie pause,
-  // pour que la distinction Matin/Après-midi de la vue matricielle reste valide
-  // (au lieu d'un unique bloc étiré sur toute la journée).
-  const submitMatinApresMidi = async () => {
-    if (!form.matieres.length) { setError("Sélectionnez au moins une matière"); return; }
-    setLoading(true);
-    setError("");
-    try {
-      const commun = {
-        type_bloc: "GENERATION",
-        matieres: form.matieres,
-        duree_minutes: form.duree_minutes,
-        pause_minutes: form.pause_minutes,
-        preparation_minutes: form.preparation_minutes,
-        salles_par_matiere: form.salles_par_matiere,
-      };
-      await post(`journee-types/${jtId}/blocs`, { ...commun, ordre: 1, heure_debut: "08:00:00", heure_fin: "13:00:00" });
-      await post(`journee-types/${jtId}/blocs`, { ...commun, ordre: 2, heure_debut: "14:00:00", heure_fin: "18:00:00" });
-      onSuccess();
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="space-y-3">
-      <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
-        Nouveau bloc
-      </p>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Ordre">
-          <Input
-            type="number"
-            value={form.ordre}
-            onChange={(e) => set("ordre", Number(e.target.value))}
-            min={1}
-          />
-        </Field>
-        <Field label="Type">
-          <Select
-            value={form.type_bloc}
-            onChange={(e) => set("type_bloc", e.target.value)}
-          >
-            <option value="GENERATION">GENERATION</option>
-            <option value="PAUSE">PAUSE</option>
-          </Select>
-        </Field>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Heure début">
-          <Input
-            type="time"
-            value={form.heure_debut}
-            onChange={(e) => set("heure_debut", e.target.value)}
-          />
-        </Field>
-        <Field label="Heure fin">
-          <Input
-            type="time"
-            value={form.heure_fin}
-            onChange={(e) => set("heure_fin", e.target.value)}
-          />
-        </Field>
-      </div>
-      {form.type_bloc === "GENERATION" && (
-        <>
-          <Field label="Matières">
-            <MatieresSelector
-              selected={form.matieres}
-              onChange={(v) => set("matieres", v)}
-            />
-          </Field>
-          <div className="grid grid-cols-3 gap-3">
-            <Field label="Durée oral (min)">
-              <Input
-                type="number"
-                value={form.duree_minutes}
-                onChange={(e) => set("duree_minutes", Number(e.target.value))}
-                min={5}
-                max={240}
-              />
-            </Field>
-            <Field label="Pause (min)">
-              <Input
-                type="number"
-                value={form.pause_minutes}
-                onChange={(e) => set("pause_minutes", Number(e.target.value))}
-                min={0}
-                max={120}
-              />
-            </Field>
-            <Field label="Préparation (min)">
-              <Input
-                type="number"
-                value={form.preparation_minutes}
-                onChange={(e) => set("preparation_minutes", Number(e.target.value))}
-                min={0}
-                max={120}
-              />
-            </Field>
-          </div>
-          <Field label="Salles / matière">
-            <Input
-              type="number"
-              value={form.salles_par_matiere}
-              onChange={(e) => set("salles_par_matiere", Number(e.target.value))}
-              min={1}
-              max={50}
-            />
-          </Field>
-        </>
-      )}
-      {isFirstBloc && form.type_bloc === "GENERATION" && (
-        <div className="rounded-lg border border-dashed border-black/15 bg-black/[0.02] p-2.5 space-y-1">
-          <Btn
-            label="Créer matin (08:00-13:00) + après-midi (14:00-18:00) avec pause déjeuner"
-            icon={Plus}
-            onClick={submitMatinApresMidi}
-            disabled={loading || form.matieres.length === 0}
-            small
-            variant="ghost"
-          />
-          <p className="text-[11px] text-gray-700">
-            Recommandé : garde la distinction Matin/Après-midi valide, avec ces matières.
-          </p>
-        </div>
-      )}
-      <ErrorMsg msg={error} />
-      <Btn
-        label={loading ? "Ajout…" : "Ajouter un seul bloc"}
-        onClick={submit}
-        disabled={loading}
-        small
-      />
     </div>
   );
 }
