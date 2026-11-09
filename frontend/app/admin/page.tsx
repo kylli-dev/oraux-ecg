@@ -6,6 +6,7 @@ import InterfaceAdminENSAEPlanning from "../InterfaceAdminENSAEPlanning";
 import { useRouter } from "next/navigation";
 import { ToastProvider, useToast, useConfirm } from "./Toast";
 import { type CaseTriplet, MARGE_ENTRE_EPREUVES, exceptionsMatrice, minutes, verifierEchange } from "./echangeTriplets";
+import { corpsBlocModifie } from "./blocsGabarit";
 import {
   CalendarDays,
   Settings2,
@@ -3458,6 +3459,7 @@ function BlocTimeline({
                 </div>
                 <div className="text-[10px] text-white/70">
                   {hm(bloc.heure_debut)} – {hm(bloc.heure_fin)}
+                  {isGen && ` · ${bloc.nb_slots ?? bloc.matieres.length ** 2} créneaux`}
                 </div>
               </div>
             </div>
@@ -5453,6 +5455,7 @@ function EditBlocForm({
     pause_minutes: bloc.pause_minutes ?? pauseDefaut,
     preparation_minutes: bloc.preparation_minutes ?? preparationDefaut,
     salles_par_matiere: bloc.salles_par_matiere ?? 1,
+    nb_slots: bloc.nb_slots != null ? String(bloc.nb_slots) : "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -5463,21 +5466,21 @@ function EditBlocForm({
     setLoading(true);
     setError("");
     try {
-      const body: any = {
-        ordre: form.ordre,
-        heure_debut: form.heure_debut + ":00",
-        heure_fin: form.heure_fin + ":00",
-      };
-      if (bloc.type_bloc === "GENERATION") {
-        if (!form.matieres.length) throw new Error("Au moins une matière requise");
-        body.matieres = form.matieres;
-        body.duree_minutes = form.duree_minutes;
-        body.pause_minutes = form.pause_minutes;
-        body.preparation_minutes = form.preparation_minutes;
-        body.salles_par_matiere = form.salles_par_matiere;
-      } else {
-        body.matieres = [];
-      }
+      const commun = { ordre: form.ordre, heure_debut: form.heure_debut, heure_fin: form.heure_fin };
+      if (bloc.type_bloc === "GENERATION" && !form.matieres.length) throw new Error("Au moins une matière requise");
+      // Un champ resté à sa valeur par défaut (bloc sans valeur propre) n'est pas envoyé
+      const siModifie = <T,>(valeur: T, initiale: T, serveur: T | null) => (valeur === initiale ? serveur : valeur);
+      const body = corpsBlocModifie(bloc, bloc.type_bloc === "GENERATION"
+        ? {
+            ...commun,
+            matieres: form.matieres,
+            duree_minutes: siModifie(form.duree_minutes, bloc.duree_minutes ?? dureeDefaut, bloc.duree_minutes),
+            pause_minutes: siModifie(form.pause_minutes, bloc.pause_minutes ?? pauseDefaut, bloc.pause_minutes),
+            preparation_minutes: siModifie(form.preparation_minutes, bloc.preparation_minutes ?? preparationDefaut, bloc.preparation_minutes),
+            salles_par_matiere: form.salles_par_matiere,
+            nb_slots: form.nb_slots.trim() === "" ? null : Number(form.nb_slots),
+          }
+        : commun);
       const updated = await put<Bloc>(`journee-types/blocs/${bloc.id}`, body);
       onSuccess(updated);
     } catch (e: any) {
@@ -5533,9 +5536,21 @@ function EditBlocForm({
               <Input type="number" value={form.preparation_minutes} onChange={(e) => set("preparation_minutes", Number(e.target.value))} min={0} max={120} />
             </Field>
           </div>
-          <Field label="Salles / matière">
-            <Input type="number" value={form.salles_par_matiere} onChange={(e) => set("salles_par_matiere", Number(e.target.value))} min={1} max={50} />
-          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Salles / matière">
+              <Input type="number" value={form.salles_par_matiere} onChange={(e) => set("salles_par_matiere", Number(e.target.value))} min={1} max={50} />
+            </Field>
+            <Field label="Nb de créneaux" hint="vide = N²">
+              <Input
+                type="number"
+                value={form.nb_slots}
+                onChange={(e) => set("nb_slots", e.target.value)}
+                placeholder={`N² = ${form.matieres.length ** 2}`}
+                min={1}
+                max={10000}
+              />
+            </Field>
+          </div>
         </>
       )}
       <ErrorMsg msg={error} />

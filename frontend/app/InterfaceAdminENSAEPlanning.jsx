@@ -16,6 +16,7 @@ import { arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useConfirm } from "./admin/Toast";
 import { MARGE_ENTRE_EPREUVES, exceptionsMatrice, minutes, verifierEchange } from "./admin/echangeTriplets";
+import { corpsBlocModifie } from "./admin/blocsGabarit";
 
 const ENSAE_RED = "#C62828";
 
@@ -682,6 +683,7 @@ function BlocsEditor({ jtId, blocs, onReload }) {
       duree_minutes: bloc.duree_minutes ?? "",
       preparation_minutes: bloc.preparation_minutes ?? "",
       pause_minutes: bloc.pause_minutes ?? "",
+      nb_slots: bloc.nb_slots ?? "",
       matieres: bloc.matieres ?? [],
     });
     setErr("");
@@ -695,16 +697,16 @@ function BlocsEditor({ jtId, blocs, onReload }) {
   async function saveEdit(bloc) {
     setSaving(true); setErr("");
     try {
-      await apiFetch("PUT", `journee-types/blocs/${bloc.id}`, {
-        ordre: bloc.ordre,
+      const nombre = (x) => (x !== "" && x != null ? Number(x) : null);
+      await apiFetch("PUT", `journee-types/blocs/${bloc.id}`, corpsBlocModifie(bloc, {
         heure_debut: editForm.heure_debut,
         heure_fin: editForm.heure_fin,
         matieres: editForm.matieres ?? bloc.matieres,
-        duree_minutes: editForm.duree_minutes !== "" ? Number(editForm.duree_minutes) : null,
-        pause_minutes: editForm.pause_minutes !== "" ? Number(editForm.pause_minutes) : null,
-        preparation_minutes: editForm.preparation_minutes !== "" ? Number(editForm.preparation_minutes) : null,
-        salles_par_matiere: bloc.salles_par_matiere ?? 1,
-      });
+        duree_minutes: nombre(editForm.duree_minutes),
+        pause_minutes: nombre(editForm.pause_minutes),
+        preparation_minutes: nombre(editForm.preparation_minutes),
+        nb_slots: nombre(editForm.nb_slots),
+      }));
       setEditingId(null);
       onReload();
     } catch (e) { setErr(e.message); }
@@ -717,26 +719,8 @@ function BlocsEditor({ jtId, blocs, onReload }) {
     if (!target) return;
     // Swap les ordres
     await Promise.all([
-      apiFetch("PUT", `journee-types/blocs/${bloc.id}`, {
-        ordre: target.ordre,
-        heure_debut: bloc.heure_debut?.slice(0, 5),
-        heure_fin: bloc.heure_fin?.slice(0, 5),
-        matieres: bloc.matieres,
-        duree_minutes: bloc.duree_minutes,
-        pause_minutes: bloc.pause_minutes,
-        preparation_minutes: bloc.preparation_minutes,
-        salles_par_matiere: bloc.salles_par_matiere ?? 1,
-      }),
-      apiFetch("PUT", `journee-types/blocs/${target.id}`, {
-        ordre: bloc.ordre,
-        heure_debut: target.heure_debut?.slice(0, 5),
-        heure_fin: target.heure_fin?.slice(0, 5),
-        matieres: target.matieres,
-        duree_minutes: target.duree_minutes,
-        pause_minutes: target.pause_minutes,
-        preparation_minutes: target.preparation_minutes,
-        salles_par_matiere: target.salles_par_matiere ?? 1,
-      }),
+      apiFetch("PUT", `journee-types/blocs/${bloc.id}`, corpsBlocModifie(bloc, { ordre: target.ordre })),
+      apiFetch("PUT", `journee-types/blocs/${target.id}`, corpsBlocModifie(target, { ordre: bloc.ordre })),
     ]);
     onReload();
   }
@@ -881,6 +865,16 @@ function BlocsEditor({ jtId, blocs, onReload }) {
                         />
                         min
                       </label>
+                      <label className="flex items-center gap-1.5 text-xs text-gray-900" title="Nombre de créneaux (candidats) du bloc. Vide = N² (nombre de matières au carré).">
+                        Nb de créneaux
+                        <input
+                          type="number" min="1" max="10000"
+                          value={editForm.nb_slots}
+                          onChange={(e) => setEditForm((f) => ({ ...f, nb_slots: e.target.value }))}
+                          placeholder={`N² = ${(editForm.matieres ?? []).length ** 2}`}
+                          className="border rounded px-2 py-0.5 text-sm w-24 font-mono focus:outline-none focus:ring-1 focus:ring-amber-400"
+                        />
+                      </label>
                     </div>
                   )}
                   {!isPause && allMatieres.length > 0 && (
@@ -928,6 +922,10 @@ function BlocsEditor({ jtId, blocs, onReload }) {
                         {bloc.duree_minutes != null && <span>exam {bloc.duree_minutes}min</span>}
                         {bloc.preparation_minutes != null && <span>· prépa {bloc.preparation_minutes}min</span>}
                         {bloc.pause_minutes != null && <span>· transition {bloc.pause_minutes}min</span>}
+                        <span className="text-gray-900 font-medium">
+                          · {bloc.nb_slots ?? bloc.matieres.length ** 2} créneaux{bloc.nb_slots == null ? " (N²)" : ""}
+                          {(bloc.bonus_slots ?? 0) > 0 ? ` + ${bloc.bonus_slots} bonus` : ""}
+                        </span>
                       </span>
                     )}
                   </div>
