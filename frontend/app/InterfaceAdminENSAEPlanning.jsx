@@ -14,6 +14,8 @@ import {
 } from "@dnd-kit/core";
 import { arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useConfirm } from "./admin/Toast";
+import { MARGE_ENTRE_EPREUVES, exceptionsMatrice, minutes, verifierEchange } from "./admin/echangeTriplets";
 
 const ENSAE_RED = "#C62828";
 
@@ -389,10 +391,29 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
     }
   }
 
+  // Cases numérotées du bloc avec les horaires réels de chaque matière (contrôle des échanges)
+  function cases() {
+    const duree = bloc.duree_minutes ?? jt.duree_defaut_minutes ?? 20;
+    const prep = bloc.preparation_minutes ?? jt.preparation_defaut_minutes ?? 0;
+    return matrix.flatMap((row) => (cellMatrix[row.index] ?? []).flatMap((k, j) => {
+      if (k == null || k < 0) return [];
+      const cfg = bloc.matieres_config?.find((c) => c.nom === bloc.matieres[j]);
+      const debExam = minutes(row.deb_exam);
+      return [{
+        id: `${bloc.id}-${row.index}-${j}`,
+        k,
+        matiere: bloc.matieres[j],
+        debExam,
+        debut: debExam - (cfg?.preparation_minutes ?? prep),
+        fin: debExam + (cfg?.duree_minutes ?? duree),
+      }];
+    }));
+  }
+
   // Actions appelées au niveau du gabarit (glisser-déposer, sauvegarde commune)
   useEffect(() => {
     const blocs = registre.current;
-    blocs.set(bloc.id, { setCell, moveRow, resetAll, saveMatrix, resetMatrix, isDirty, hasServerCustom });
+    blocs.set(bloc.id, { setCell, moveRow, resetAll, saveMatrix, resetMatrix, cases, isDirty, hasServerCustom });
     return () => { blocs.delete(bloc.id); };
   });
 
@@ -1140,6 +1161,7 @@ export default function InterfaceAdminENSAEPlanning() {
 
   const handleSelectJT = (jt) => {
     setSelectedJT(jt);
+    setAlerteEchange(null);
     setApplyResult(null);
     setApplyError("");
     loadBlocs(jt);
@@ -1175,7 +1197,18 @@ export default function InterfaceAdminENSAEPlanning() {
     });
   }, []);
 
-  const handleDragEnd = ({ active, over }) => {
+  const confirmer = useConfirm();
+  // Dernier échange refusé ou accepté malgré une exception
+  const [alerteEchange, setAlerteEchange] = useState(null);
+  // Exceptions de la matrice affichée, relues après chaque rendu : les blocs enregistrent
+  // leurs cases dans le registre pendant leurs propres effets, exécutés avant celui-ci.
+  const [exceptionsActuelles, setExceptionsActuelles] = useState([]);
+  useEffect(() => {
+    const liste = exceptionsMatrice([...registreBlocs.current.values()].flatMap((b) => b.cases()));
+    setExceptionsActuelles((prev) => (prev.join("|") === liste.join("|") ? prev : liste));
+  });
+
+  const handleDragEnd = async ({ active, over }) => {
     setActiveDrag(null);
     const ad = active.data.current;
     const od = over?.data.current;
@@ -1187,6 +1220,22 @@ export default function InterfaceAdminENSAEPlanning() {
     }
     if (ad.type === "cell" && od.type === "cell-target") {
       if (ad.blocId === od.blocId && ad.rowIdx === od.rowIdx && ad.matIdx === od.matIdx) return;
+      const toutes = [...blocs.values()].flatMap((b) => b.cases());
+      const ca = toutes.find((c) => c.id === `${ad.blocId}-${ad.rowIdx}-${ad.matIdx}`);
+      const cb = toutes.find((c) => c.id === `${od.blocId}-${od.rowIdx}-${od.matIdx}`);
+      if (!ca || !cb) return;
+      const { refus, exceptions } = verifierEchange(toutes, ca, cb);
+      if (refus) { setAlerteEchange({ refus: true, texte: refus }); return; }
+      if (exceptions.length) {
+        const ok = await confirmer(
+          `Cet échange ne respecte pas les ${MARGE_ENTRE_EPREUVES} min entre deux épreuves d'un même candidat :\n${exceptions.join("\n")}\n\nÉchanger quand même ?`,
+          { confirmLabel: "Échanger quand même", danger: true }
+        );
+        if (!ok) return;
+        setAlerteEchange({ refus: false, texte: `Échange fait malgré l'exception :\n${exceptions.join("\n")}` });
+      } else {
+        setAlerteEchange(null);
+      }
       blocs.get(ad.blocId)?.setCell(ad.rowIdx, ad.matIdx, od.k);
       blocs.get(od.blocId)?.setCell(od.rowIdx, od.matIdx, ad.k);
     }
@@ -1340,10 +1389,27 @@ export default function InterfaceAdminENSAEPlanning() {
                     ) : (
                       <>
                         <p className="text-xs text-gray-700">
-                          Glissez un triplet vers n'importe quelle case pour l'échanger, y compris entre le matin et l'après-midi.
+                          Glissez un triplet vers une case de la même matière pour l'échanger, y compris entre le matin et l'après-midi.
+                          Les échanges horizontaux sont refusés, et une alerte s&apos;affiche si un candidat n&apos;a plus {MARGE_ENTRE_EPREUVES} min entre deux épreuves.
                           Les positions sont gardées avec la journée type : les triplets proposés aux candidats (et la Vue triplets du planning) suivent
                           cette matrice pour les dates générées après l'enregistrement. Pour une date déjà générée, réappliquez la journée type.
                         </p>
+                        {exceptionsActuelles.length > 0 && (
+                          <details className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-900">
+                            <summary className="cursor-pointer font-semibold">
+                              ⚠ {exceptionsActuelles.length} exception{exceptionsActuelles.length > 1 ? "s" : ""} dans cette matrice (moins de {MARGE_ENTRE_EPREUVES} min entre deux épreuves d&apos;un candidat, ou chevauchement)
+                            </summary>
+                            <ul className="mt-1.5 space-y-0.5 list-disc pl-4">
+                              {exceptionsActuelles.map((m) => <li key={m}>{m}</li>)}
+                            </ul>
+                          </details>
+                        )}
+                        {alerteEchange && (
+                          <div className={`flex items-start gap-2 rounded-lg border px-4 py-2.5 text-xs whitespace-pre-line ${alerteEchange.refus ? "border-red-200 bg-red-50 text-red-800" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
+                            <span className="flex-1">{alerteEchange.texte}</span>
+                            <button onClick={() => setAlerteEchange(null)} className="shrink-0 font-semibold" title="Fermer">✕</button>
+                          </div>
+                        )}
                         <DndContext
                           sensors={sensors}
                           collisionDetection={collisionMatrice}

@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import InterfaceAdminENSAEPlanning from "../InterfaceAdminENSAEPlanning";
 import { useRouter } from "next/navigation";
 import { ToastProvider, useToast, useConfirm } from "./Toast";
+import { type CaseTriplet, MARGE_ENTRE_EPREUVES, exceptionsMatrice, minutes, verifierEchange } from "./echangeTriplets";
 import {
   CalendarDays,
   Settings2,
@@ -4371,6 +4372,9 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
   const [editMode, setEditMode] = useState(false);
   const [dragSrc, setDragSrc] = useState<{ rowIdx: number; matIdx: number } | null>(null);
   const [dragOver, setDragOver] = useState<{ rowIdx: number; matIdx: number } | null>(null);
+  // Dernier échange refusé ou accepté malgré une exception
+  const [alerteEchange, setAlerteEchange] = useState<{ refus: boolean; texte: string } | null>(null);
+  const confirmer = useConfirm();
 
   const toggleBlocMatiere = (blocIdx: number, intitule: string) => {
     setP(prev => ({
@@ -4900,9 +4904,38 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
   const totalCandidats = p.blocs.reduce((s, b) => s + blocCapacity(b, b.matieres_config ?? []) + (b.bonus_slots ?? 0), 0);
   const capacite = totalCandidats * p.salles_par_matiere;
 
-  const swapCells = (a: { rowIdx: number; matIdx: number }, b: { rowIdx: number; matIdx: number }) => {
+  // Toutes les cases numérotées de la matrice, avec les horaires réels de chaque matière
+  // (l'examen commence à deb_exam ; préparation et durée propres à la matière)
+  const casesMatrice = (): CaseTriplet[] => matrix.flatMap((row, i) =>
+    row.isPause ? [] : row.candidates.flatMap((k, j) => {
+      const mc = p.blocs[row.bloc_idx]?.matieres_config[j];
+      if (k < 0 || !mc) return [];
+      const debExam = minutes(row.deb_exam);
+      return [{ id: `${i}-${j}`, k, matiere: mc.nom, debExam, debut: debExam - mc.preparation_minutes, fin: debExam + mc.duree_minutes }];
+    })
+  );
+
+  const exceptionsActuelles = exceptionsMatrice(casesMatrice());
+
+  const swapCells = async (a: { rowIdx: number; matIdx: number }, b: { rowIdx: number; matIdx: number }) => {
     if (a.rowIdx === b.rowIdx && a.matIdx === b.matIdx) return;
     if (matrix[a.rowIdx].candidates[a.matIdx] < 0 || matrix[b.rowIdx].candidates[b.matIdx] < 0) return;
+    const cases = casesMatrice();
+    const ca = cases.find(c => c.id === `${a.rowIdx}-${a.matIdx}`);
+    const cb = cases.find(c => c.id === `${b.rowIdx}-${b.matIdx}`);
+    if (!ca || !cb) return;
+    const { refus, exceptions } = verifierEchange(cases, ca, cb);
+    if (refus) { setAlerteEchange({ refus: true, texte: refus }); return; }
+    if (exceptions.length) {
+      const ok = await confirmer(
+        `Cet échange ne respecte pas les ${MARGE_ENTRE_EPREUVES} min entre deux épreuves d'un même candidat :\n${exceptions.join("\n")}\n\nÉchanger quand même ?`,
+        { confirmLabel: "Échanger quand même", danger: true }
+      );
+      if (!ok) return;
+      setAlerteEchange({ refus: false, texte: `Échange fait malgré l'exception :\n${exceptions.join("\n")}` });
+    } else {
+      setAlerteEchange(null);
+    }
     setMatrix(prev => {
       const next = prev.map(r => ({ ...r, candidates: [...r.candidates] }));
       const va = next[a.rowIdx].candidates[a.matIdx];
@@ -4977,8 +5010,24 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
       </div>
       {editMode && (
         <p className="text-[11px] text-gray-700 -mt-2">
-          Glissez un triplet vers une autre cellule pour l'échanger. Les positions sont gardées à l'enregistrement de la journée type, et les triplets proposés aux candidats les suivent pour les dates générées ensuite.
+          Glissez un triplet vers une autre cellule de la même matière pour l'échanger (les échanges horizontaux sont refusés). Une alerte s&apos;affiche si un candidat n&apos;a plus {MARGE_ENTRE_EPREUVES} min entre deux épreuves. Les positions sont gardées à l'enregistrement de la journée type, et les triplets proposés aux candidats les suivent pour les dates générées ensuite.
         </p>
+      )}
+      {exceptionsActuelles.length > 0 && (
+        <details className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-900">
+          <summary className="cursor-pointer font-semibold">
+            ⚠ {exceptionsActuelles.length} exception{exceptionsActuelles.length > 1 ? "s" : ""} dans cette matrice (moins de {MARGE_ENTRE_EPREUVES} min entre deux épreuves d&apos;un candidat, ou chevauchement)
+          </summary>
+          <ul className="mt-1.5 space-y-0.5 list-disc pl-4">
+            {exceptionsActuelles.map((m) => <li key={m}>{m}</li>)}
+          </ul>
+        </details>
+      )}
+      {alerteEchange && (
+        <div className={`flex items-start gap-2 rounded-lg border px-4 py-2.5 text-xs whitespace-pre-line ${alerteEchange.refus ? "border-red-200 bg-red-50 text-red-800" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
+          <span className="flex-1">{alerteEchange.texte}</span>
+          <button onClick={() => setAlerteEchange(null)} className="shrink-0 font-semibold" title="Fermer">✕</button>
+        </div>
       )}
 
       {/* Matrice */}
