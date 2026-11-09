@@ -4439,13 +4439,37 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
     return deplace ? orales.map(r => r.candidates) : null;
   };
 
+  // Mode demi-journée : l'écart entre la fin d'un bloc et le début du bloc suivant devient un
+  // bloc PAUSE, comme la pause déjeuner du mode journée complète. Clé : indice du bloc qui
+  // suit la pause. Des blocs qui se chevauchent (jurys en parallèle) n'ont pas de pause.
+  const pausesEntreBlocs = (): Map<number, { debut: string; fin: string }> => {
+    const out = new Map<number, { debut: string; fin: string }>();
+    if (p.mode !== "demi-journee") return out;
+    let finPrecedente: string | null = null;
+    for (let idx = 0; idx < p.blocs.length; idx++) {
+      const bloc = p.blocs[idx];
+      const oraux = matrix.filter(r => r.bloc_idx === idx && !r.isPause);
+      if (!bloc.matieres_config.length || !oraux.length) continue;
+      const debut = oraux[0].deb_prepa;
+      if (finPrecedente && finPrecedente < debut) out.set(idx, { debut: finPrecedente, fin: debut });
+      const fin = oraux[oraux.length - 1].fin_exam;
+      if (!finPrecedente || fin > finPrecedente) finPrecedente = fin;
+    }
+    return out;
+  };
+
   const saveBlocsToJt = async (jtId: number) => {
     let ordre = 1;
+    const pauses = pausesEntreBlocs();
     for (let idx = 0; idx < p.blocs.length; idx++) {
       const bloc = p.blocs[idx];
       if (!bloc.matieres_config.length) continue;
       const blocRows = matrix.filter(r => r.bloc_idx === idx);
       if (!blocRows.length) continue;
+      const pause = pauses.get(idx);
+      if (pause) {
+        await post(`journee-types/${jtId}/blocs`, { type_bloc: "PAUSE", ordre: ordre++, heure_debut: pause.debut + ":00", heure_fin: pause.fin + ":00" });
+      }
       const bMaxDuree = Math.max(...bloc.matieres_config.map(c => c.duree_minutes));
       const bMaxPrep = Math.max(...bloc.matieres_config.map(c => c.preparation_minutes));
       const blocPayload = {
@@ -4917,6 +4941,8 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
 
   const exceptionsActuelles = exceptionsMatrice(casesMatrice());
 
+  const pausesEtape2 = pausesEntreBlocs();
+
   const swapCells = async (a: { rowIdx: number; matIdx: number }, b: { rowIdx: number; matIdx: number }) => {
     if (a.rowIdx === b.rowIdx && a.matIdx === b.matIdx) return;
     if (matrix[a.rowIdx].candidates[a.matIdx] < 0 || matrix[b.rowIdx].candidates[b.matIdx] < 0) return;
@@ -5056,6 +5082,14 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
               const blocMatieres = p.blocs[row.bloc_idx].matieres_config;
               return (
                 <React.Fragment key={i}>
+                  {isNewBloc && pausesEtape2.get(row.bloc_idx) && (
+                    <tr className="border-b border-orange-100 bg-orange-50/40">
+                      <td className="px-3 py-1.5 font-mono text-orange-700">{pausesEtape2.get(row.bloc_idx)!.debut}</td>
+                      <td colSpan={totalCols - 1} className="px-3 py-1.5 text-[11px] font-semibold text-orange-700 tracking-wide">
+                        — Pause {pausesEtape2.get(row.bloc_idx)!.debut} → {pausesEtape2.get(row.bloc_idx)!.fin} (enregistrée comme bloc pause) —
+                      </td>
+                    </tr>
+                  )}
                   {isNewBloc && (
                     <tr>
                       <td colSpan={totalCols} className="px-3 py-1.5 bg-black/[0.04] text-[11px] font-semibold text-gray-800 uppercase tracking-wide">
