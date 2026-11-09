@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ChevronLeft, ChevronRight, LayoutGrid, Wand2, RefreshCw,
+  LayoutGrid, Wand2, RefreshCw,
   Sun, Sunset, CheckCircle2, Lock, EyeOff,
   Plus, Trash2, ChevronUp, ChevronDown, Pencil, Check, X,
   GripVertical, Settings2, AlertTriangle,
@@ -48,6 +48,18 @@ function hmToMinutes(t) {
 // même candidat (le temps de changer de salle) — DOIT rester synchronisée avec
 // MARGIN_TRANSITION_MINUTES côté backend (portal.py) et admin/page.tsx.
 const MARGIN_TRANSITION_MINUTES = 30;
+
+// Toutes les dates (AAAA-MM-JJ) de `de` à `a` inclus
+function enumererDates(de, a) {
+  const out = [];
+  if (!de || !a || de > a) return out;
+  const d = new Date(de + "T12:00:00");
+  for (let s = de; s <= a; d.setDate(d.getDate() + 1), s = d.toISOString().slice(0, 10)) out.push(s);
+  return out;
+}
+
+const dateCourte = (s) =>
+  new Date(s + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" });
 
 // Écart minimal viable (en nombre de lignes) entre deux passages d'un même candidat :
 // doit rester cohérent avec _rotation_offset côté backend (portal.py) et rotationOffset
@@ -1098,7 +1110,9 @@ export default function InterfaceAdminENSAEPlanning() {
 
   const [tripletStatuts, setTripletStatuts] = useState({});
   const [selPlanningId, setSelPlanningId] = useState("");
-  const [applyDate, setApplyDate] = useState("");
+  const [applyDates, setApplyDates] = useState(() => new Set());
+  const [plageDu, setPlageDu] = useState("");
+  const [plageAu, setPlageAu] = useState("");
   const [applying, setApplying] = useState(false);
   const [applyResult, setApplyResult] = useState(null);
   const [applyError, setApplyError] = useState("");
@@ -1187,22 +1201,48 @@ export default function InterfaceAdminENSAEPlanning() {
     for (const b of blocsMatrice().filter((m) => m.hasServerCustom)) await b.resetMatrix();
   };
 
-  const handleApply = async () => {
-    if (!selectedJT || !selPlanningId || !applyDate) return;
-    setApplying(true);
-    setApplyResult(null);
-    setApplyError("");
-    try {
-      const res = await apiFetch("POST", `plannings/${selPlanningId}/apply-journee-type`, {
-        journee_type_id: selectedJT.id,
-        date: applyDate,
-      });
-      setApplyResult(res);
-    } catch (e) {
-      setApplyError(e.message);
-    } finally {
-      setApplying(false);
+  const reinitialiserResultat = () => { setApplyResult(null); setApplyError(""); };
+  const basculerDate = (d) => {
+    reinitialiserResultat();
+    setApplyDates((prev) => {
+      const next = new Set(prev);
+      if (next.has(d)) next.delete(d); else next.add(d);
+      return next;
+    });
+  };
+  // Modifier « Du » ou « Au » coche directement les dates de la plage (limitée à la période du planning)
+  const choisirPlage = (de, a) => {
+    setPlageDu(de);
+    setPlageAu(a);
+    reinitialiserResultat();
+    const p = plannings.find((x) => x.id === Number(selPlanningId));
+    if (p && de && a && de <= a) {
+      setApplyDates(new Set(enumererDates(de < p.date_debut ? p.date_debut : de, a > p.date_fin ? p.date_fin : a)));
     }
+  };
+
+  // Une requête par date, dans l'ordre : une date en échec n'empêche pas les suivantes
+  const handleApply = async () => {
+    const dates = [...applyDates].sort();
+    if (!selectedJT || !selPlanningId || dates.length === 0) return;
+    setApplying(true);
+    reinitialiserResultat();
+    const ok = [];
+    const echecs = [];
+    for (const d of dates) {
+      try {
+        const res = await apiFetch("POST", `plannings/${selPlanningId}/apply-journee-type`, {
+          journee_type_id: selectedJT.id,
+          date: d,
+        });
+        ok.push({ date: d, ...res });
+      } catch (e) {
+        echecs.push(`${dateCourte(d)} : ${e.message}`);
+      }
+    }
+    setApplyResult(ok.length ? ok : null);
+    if (echecs.length) setApplyError(echecs.join("\n"));
+    setApplying(false);
   };
 
   const blocGeneration = blocs.filter((b) => b.type_bloc === "GENERATION");
@@ -1386,7 +1426,7 @@ export default function InterfaceAdminENSAEPlanning() {
                     <label className="text-xs text-black/50 mb-1 block">Planning</label>
                     <select
                       value={selPlanningId}
-                      onChange={(e) => { setSelPlanningId(e.target.value); setApplyResult(null); setApplyError(""); }}
+                      onChange={(e) => { setSelPlanningId(e.target.value); setApplyDates(new Set()); setPlageDu(""); setPlageAu(""); reinitialiserResultat(); }}
                       className="w-full rounded-lg border border-black/15 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black/10 bg-white"
                     >
                       <option value="">— Choisir —</option>
@@ -1397,43 +1437,89 @@ export default function InterfaceAdminENSAEPlanning() {
                   </div>
 
                   {selPlanning && (
-                    <div>
-                      <label className="text-xs text-black/50 mb-1 block">Date</label>
-                      <input
-                        type="date"
-                        value={applyDate}
-                        min={selPlanning.date_debut}
-                        max={selPlanning.date_fin}
-                        onChange={(e) => { setApplyDate(e.target.value); setApplyResult(null); setApplyError(""); }}
-                        className="w-full rounded-lg border border-black/15 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
-                      />
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs text-gray-900 font-medium">
+                          Dates ({applyDates.size} sélectionnée{applyDates.size > 1 ? "s" : ""})
+                        </label>
+                        {applyDates.size > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => { setApplyDates(new Set()); setPlageDu(""); setPlageAu(""); reinitialiserResultat(); }}
+                            className="text-[11px] text-gray-900 underline hover:no-underline"
+                          >
+                            Tout décocher
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <div>
+                          <span className="text-[11px] text-gray-700">Du</span>
+                          <input
+                            type="date"
+                            value={plageDu}
+                            min={selPlanning.date_debut}
+                            max={selPlanning.date_fin}
+                            onChange={(e) => choisirPlage(e.target.value, plageAu || e.target.value)}
+                            className="w-full rounded-lg border border-black/15 px-1.5 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[11px] text-gray-700">Au</span>
+                          <input
+                            type="date"
+                            value={plageAu}
+                            min={selPlanning.date_debut}
+                            max={selPlanning.date_fin}
+                            onChange={(e) => choisirPlage(plageDu || e.target.value, e.target.value)}
+                            className="w-full rounded-lg border border-black/15 px-1.5 py-1.5 text-xs text-gray-900 focus:outline-none focus:ring-2 focus:ring-black/10"
+                          />
+                        </div>
+                      </div>
+                      <div className="max-h-56 overflow-y-auto rounded-lg border border-black/10 divide-y divide-black/5">
+                        {enumererDates(selPlanning.date_debut, selPlanning.date_fin).map((d) => (
+                          <label key={d} className="flex items-center gap-2 px-2.5 py-1.5 text-xs text-gray-900 cursor-pointer hover:bg-black/[0.03]">
+                            <input type="checkbox" checked={applyDates.has(d)} onChange={() => basculerDate(d)} />
+                            <span className="capitalize">{dateCourte(d)}</span>
+                          </label>
+                        ))}
+                      </div>
                     </div>
                   )}
 
                   <button
                     onClick={handleApply}
-                    disabled={applying || !selPlanningId || !applyDate || !selectedJT}
+                    disabled={applying || !selPlanningId || applyDates.size === 0 || !selectedJT}
                     className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white transition disabled:opacity-40"
                     style={{ backgroundColor: ENSAE_RED }}
                   >
                     {applying ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                    {applying ? "Application…" : "Appliquer ce gabarit"}
+                    {applying
+                      ? "Application…"
+                      : `Appliquer ce gabarit${applyDates.size > 1 ? ` (${applyDates.size} dates)` : ""}`}
                   </button>
 
                   {applyResult && (
                     <div className="flex flex-col gap-1">
-                      <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-700">
-                        ✓ {applyResult.demi_journees_created} demi-journée(s) — {applyResult.epreuves_created} épreuve(s) créée(s)
+                      <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-800 space-y-0.5">
+                        <p className="font-semibold">
+                          ✓ {applyResult.length} date{applyResult.length > 1 ? "s" : ""} traitée{applyResult.length > 1 ? "s" : ""}
+                        </p>
+                        {applyResult.map((r) => (
+                          <p key={r.date}>
+                            <span className="capitalize">{dateCourte(r.date)}</span> — {r.epreuves_created} épreuve(s)
+                          </p>
+                        ))}
                       </div>
-                      {applyResult.warnings?.map((w, i) => (
-                        <div key={i} className="rounded-lg bg-amber-50 border border-amber-300 px-3 py-2 text-xs text-amber-800">
-                          ⚠ {w}
+                      {applyResult.flatMap((r) => (r.warnings ?? []).map((w, i) => (
+                        <div key={`${r.date}-${i}`} className="rounded-lg bg-amber-50 border border-amber-300 px-3 py-2 text-xs text-amber-800">
+                          ⚠ <span className="capitalize">{dateCourte(r.date)}</span> : {w}
                         </div>
-                      ))}
+                      )))}
                     </div>
                   )}
                   {applyError && (
-                    <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-600">
+                    <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700 whitespace-pre-line">
                       {applyError}
                     </div>
                   )}
@@ -1497,39 +1583,6 @@ export default function InterfaceAdminENSAEPlanning() {
                   </div>
                 )}
 
-                {/* Nav journée */}
-                {selPlanning && applyDate && (
-                  <div className="pt-3 border-t border-black/5">
-                    <p className="text-[10px] text-black/30 font-semibold uppercase tracking-wide mb-2">Navigation</p>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => {
-                          const d = new Date(applyDate + "T12:00:00");
-                          d.setDate(d.getDate() - 1);
-                          const s = d.toISOString().slice(0, 10);
-                          if (s >= selPlanning.date_debut) setApplyDate(s);
-                        }}
-                        disabled={applyDate <= selPlanning.date_debut}
-                        className="h-7 w-7 rounded border grid place-items-center disabled:opacity-30 hover:bg-black/[0.03] transition"
-                      >
-                        <ChevronLeft className="h-3.5 w-3.5" />
-                      </button>
-                      <span className="flex-1 text-center text-xs text-black/60 font-medium">{applyDate}</span>
-                      <button
-                        onClick={() => {
-                          const d = new Date(applyDate + "T12:00:00");
-                          d.setDate(d.getDate() + 1);
-                          const s = d.toISOString().slice(0, 10);
-                          if (s <= selPlanning.date_fin) setApplyDate(s);
-                        }}
-                        disabled={applyDate >= selPlanning.date_fin}
-                        className="h-7 w-7 rounded border grid place-items-center disabled:opacity-30 hover:bg-black/[0.03] transition"
-                      >
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
             </motion.div>
           )}
