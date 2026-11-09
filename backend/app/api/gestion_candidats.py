@@ -8,7 +8,7 @@ from datetime import date as Date, datetime, timezone, time
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.admin_guard import require_admin
@@ -92,8 +92,13 @@ class FicheOut(BaseModel):
     etablissement: Optional[str] = None
     ville_etablissement: Optional[str] = None
     qualite: Optional[str] = None
+    commentaire: Optional[str] = None
     inscription: Optional[InscriptionOut] = None
     liste_attente: List[ListeAttenteDate] = []
+
+
+class CommentaireIn(BaseModel):
+    commentaire: Optional[str] = Field(default=None, max_length=2000)
 
 
 class InscrireIn(BaseModel):
@@ -274,9 +279,21 @@ def get_fiche(candidat_id: int, db: Session = Depends(get_db)):
         etablissement=c.etablissement,
         ville_etablissement=c.ville_etablissement,
         qualite=c.qualite,
+        commentaire=c.commentaire,
         inscription=_build_inscription_out(insc, db) if insc else None,
         liste_attente=la_dates,
     )
+
+
+@router.put("/candidat/{candidat_id}/commentaire")
+def set_commentaire(candidat_id: int, body: CommentaireIn, db: Session = Depends(get_db)):
+    """Enregistre le commentaire libre des admins sur la fiche (vide = supprimé)."""
+    c = db.get(Candidat, candidat_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Candidat not found")
+    c.commentaire = (body.commentaire or "").strip() or None
+    db.commit()
+    return {"candidat_id": candidat_id, "commentaire": c.commentaire}
 
 
 _PROFIL_EXCLUSION_ADMIN: dict = {"HGG": "ESH", "ESH": "HGG"}

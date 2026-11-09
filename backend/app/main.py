@@ -215,6 +215,8 @@ def _run_migrations():
         "ALTER TABLE planche ADD COLUMN couleur VARCHAR(7)",
         # Numéro de triplet issu de la matrice de la journée type
         "ALTER TABLE epreuve ADD COLUMN triplet_num INTEGER",
+        # Commentaire libre des admins sur la fiche candidat
+        "ALTER TABLE candidat ADD COLUMN commentaire VARCHAR(2000)",
     ]
     with engine.connect() as conn:
         for sql in migrations:

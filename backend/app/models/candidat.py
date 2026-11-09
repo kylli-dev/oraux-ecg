@@ -40,6 +40,8 @@ class Candidat(Base):
 
     # Qualité / statut concours
     qualite: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # Note libre des admins (absence, changement de créneau, échange avec la famille…)
+    commentaire: Mapped[Optional[str]] = mapped_column(String(2000), nullable=True)
     handicape: Mapped[Optional[bool]] = mapped_column(nullable=True)
 
     # Adresse

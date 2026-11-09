@@ -311,6 +311,7 @@ type FicheCandidat = {
   etablissement: string | null;
   ville_etablissement: string | null;
   qualite: string | null;
+  commentaire?: string | null;
   inscription: InscriptionGestion | null;
   liste_attente: { date: string }[];
 };
@@ -6026,6 +6027,61 @@ function CreateCandidatForm({
   );
 }
 
+// Commentaire libre des admins sur la fiche (absence, changement de créneau, échange avec la famille…)
+function CommentaireCandidat({ candidatId, initial }: { candidatId: number; initial: string | null }) {
+  const toast = useToast();
+  const [texte, setTexte] = useState(initial ?? "");
+  const [enregistre, setEnregistre] = useState(initial ?? "");
+  const [saving, setSaving] = useState(false);
+  const modifie = texte.trim() !== enregistre.trim();
+
+  const enregistrer = async () => {
+    setSaving(true);
+    try {
+      const r = await put<{ commentaire: string | null }>(`gestion-candidats/candidat/${candidatId}/commentaire`, { commentaire: texte });
+      setEnregistre(r.commentaire ?? "");
+      setTexte(r.commentaire ?? "");
+      toast.success("Commentaire enregistré");
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <p className="text-[10px] font-semibold text-gray-700 uppercase tracking-wide mb-2">Commentaire</p>
+      <textarea
+        value={texte}
+        onChange={(e) => setTexte(e.target.value)}
+        maxLength={2000}
+        rows={4}
+        placeholder="Absence, changement de créneau, échange avec la famille…"
+        className="w-full rounded-lg border border-black/15 bg-white px-2 py-1.5 text-xs text-gray-900 placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-black/10 resize-y"
+      />
+      {modifie && (
+        <div className="flex gap-2 mt-1.5">
+          <button
+            onClick={enregistrer}
+            disabled={saving}
+            className="text-xs px-2.5 py-1 rounded-lg bg-black text-white hover:bg-black/80 transition disabled:opacity-50"
+          >
+            {saving ? "Enregistrement…" : "Enregistrer"}
+          </button>
+          <button
+            onClick={() => setTexte(enregistre)}
+            disabled={saving}
+            className="text-xs px-2.5 py-1 rounded-lg border border-black/15 text-gray-800 hover:bg-black/5 transition disabled:opacity-50"
+          >
+            Annuler
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── CandidatGestionDrawer ─────────────────────────────────────────────────────
 function CandidatGestionDrawer({
   candidatId,
@@ -6258,6 +6314,8 @@ function CandidatGestionDrawer({
                     )}
                   </dl>
                 </div>
+
+                <CommentaireCandidat key={fiche.id} candidatId={fiche.id} initial={fiche.commentaire ?? null} />
 
                 {/* Liste d'attente */}
                 {fiche.liste_attente.length > 0 && (
