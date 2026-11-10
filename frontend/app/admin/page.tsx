@@ -273,15 +273,7 @@ type CandidatListeItem = {
   statut: string;
   profil: string | null;
   commentaire?: string | null;
-  // Passage (candidat inscrit) : début de la 1re préparation, fin du dernier oral
-  date_passage?: string | null;
-  heure_debut?: string | null;
-  heure_fin?: string | null;
 };
-
-// « ven. 24/04 » à partir d'une date ISO
-const datePassageCourte = (d: string) =>
-  new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "2-digit" });
 
 type TripletEpreuveGestion = {
   id: number;
@@ -5375,7 +5367,6 @@ function CandidatsSection() {
   const [filterProfil, setFilterProfil] = useState<"" | "HGG" | "ESH">("");
   const [selectedCandId, setSelectedCandId] = useState<number | null>(null);
   const [editCandId, setEditCandId] = useState<number | null>(null);
-  const [horairesCand, setHorairesCand] = useState<Record<number, CandidatListeItem>>({});
 
   useEffect(() => {
     get<Planning[]>("plannings/")
@@ -5389,10 +5380,6 @@ function CandidatsSection() {
     setError("");
     try {
       setCandidats(await get<Candidat[]>(`candidats/?planning_id=${planningId}`));
-      // Horaires de passage (non bloquant : la liste s'affiche même sans)
-      get<CandidatListeItem[]>(`gestion-candidats/${planningId}/candidats`)
-        .then((l) => setHorairesCand(Object.fromEntries(l.map((c) => [c.id, c]))))
-        .catch(() => setHorairesCand({}));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -5536,8 +5523,8 @@ function CandidatsSection() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-[#F5F5F5] text-left">
-                        {["Nom", "Prénom", "Email", "Profil", "Statut", "Date", "Début", "Fin", ""].map((h) => (
-                          <th key={h} title={h === "Début" ? "Début de la 1re préparation" : h === "Fin" ? "Fin du dernier oral" : undefined} className="px-5 py-3.5 text-xs font-semibold text-gray-800 tracking-wide">{h}</th>
+                        {["Nom", "Prénom", "Email", "Profil", "Statut", ""].map((h) => (
+                          <th key={h} className="px-5 py-3.5 text-xs font-semibold text-gray-800 tracking-wide">{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -5574,16 +5561,6 @@ function CandidatsSection() {
                             })()}
                           </td>
                           <td className="px-5 py-3.5"><StatutBadge statut={c.statut} /></td>
-                          {(() => {
-                            const h = horairesCand[c.id];
-                            return (
-                              <>
-                                <td className="px-5 py-3.5 whitespace-nowrap capitalize">{h?.date_passage ? datePassageCourte(h.date_passage) : "—"}</td>
-                                <td className="px-5 py-3.5 whitespace-nowrap tabular-nums">{h?.heure_debut ?? "—"}</td>
-                                <td className="px-5 py-3.5 whitespace-nowrap tabular-nums">{h?.heure_fin ?? "—"}</td>
-                              </>
-                            );
-                          })()}
                           <td className="px-5 py-3.5 text-right">
                             <div className="flex items-center justify-end gap-2">
                               <button
@@ -7425,11 +7402,6 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
                 {c.is_liste_attente && <span className="bg-amber-100 text-amber-700 px-1 py-0 rounded text-[10px]">L.A.</span>}
                 {c.commentaire && <span title={c.commentaire} className="bg-sky-100 text-sky-800 px-1 py-0 rounded text-[10px]">Commentaire</span>}
               </div>
-              {c.date_passage && (
-                <div className="mt-0.5 text-[11px] text-gray-800" title="Début de la 1re préparation – fin du dernier oral">
-                  <span className="capitalize">{datePassageCourte(c.date_passage)}</span> · {c.heure_debut}–{c.heure_fin}
-                </div>
-              )}
             </button>
           ))}
           {filtered.length === 0 && (

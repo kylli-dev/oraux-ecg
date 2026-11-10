@@ -4,7 +4,7 @@ Permet de visualiser la fiche, l'inscription et la liste d'attente d'un candidat
 et d'assigner / désinscrire / préréserver des triplets de créneaux.
 """
 from collections import defaultdict
-from datetime import date as Date, datetime, timedelta, timezone, time
+from datetime import date as Date, datetime, timezone, time
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -44,11 +44,6 @@ class CandidatListeItem(BaseModel):
     statut: str
     profil: Optional[str] = None
     commentaire: Optional[str] = None
-    # Passage du candidat inscrit : date, début de la 1re préparation (ou du 1er oral sans
-    # préparation) et fin du dernier oral, en HH:MM
-    date_passage: Optional[Date] = None
-    heure_debut: Optional[str] = None
-    heure_fin: Optional[str] = None
 
 
 class TripletEpreuveOut(BaseModel):
@@ -237,30 +232,6 @@ def list_candidats_gestion(planning_id: int, db: Session = Depends(get_db)):
         .all()
     }
 
-    # Batch : horaires de passage de toutes les inscriptions actives
-    horaires: dict = {}
-    if inscriptions:
-        lignes = (
-            db.query(InscriptionEpreuve.inscription_id, DemiJournee.date, Epreuve.heure_debut,
-                     Epreuve.heure_fin, Epreuve.preparation_minutes)
-            .join(Epreuve, Epreuve.id == InscriptionEpreuve.epreuve_id)
-            .join(DemiJournee, DemiJournee.id == Epreuve.demi_journee_id)
-            .filter(InscriptionEpreuve.inscription_id.in_([i.id for i in inscriptions.values()]))
-            .all()
-        )
-        for iid, d, hd, hf, prep in lignes:
-            debut = datetime.combine(d, hd) - timedelta(minutes=prep or 0)
-            fin = datetime.combine(d, hf)
-            h = horaires.get(iid)
-            horaires[iid] = (min(h[0], debut), max(h[1], fin)) if h else (debut, fin)
-
-    def _horaire(c):
-        insc = inscriptions.get(c.id)
-        h = horaires.get(insc.id) if insc else None
-        if not h:
-            return {}
-        return {"date_passage": h[0].date(), "heure_debut": h[0].strftime("%H:%M"), "heure_fin": h[1].strftime("%H:%M")}
-
     return [
         CandidatListeItem(
             id=c.id,
@@ -276,7 +247,6 @@ def list_candidats_gestion(planning_id: int, db: Session = Depends(get_db)):
             statut=c.statut,
             profil=_profil_effectif(c) or None,
             commentaire=c.commentaire,
-            **_horaire(c),
         )
         for c in candidats
     ]
