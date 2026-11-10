@@ -4636,7 +4636,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
           ))}
         </div>
 
-        {/* Le nombre de salles se règle matière par matière (colonne « Salles » de chaque bloc) */}
+        {/* Le nombre de salles se règle matière par matière (colonne « Jurys en parallèle » de chaque bloc) */}
         <Field label="Nom">
           <Input value={p.nom} onChange={(e) => set("nom", e.target.value)} placeholder="Journée standard ECG" />
         </Field>
@@ -4726,7 +4726,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                           <th className="text-left px-3 py-1.5 text-gray-700 font-medium">Matière</th>
                           <th className="text-center px-3 py-1.5 text-gray-700 font-medium">Oral (min)</th>
                           <th className="text-center px-3 py-1.5 text-gray-700 font-medium">Prépa (min)</th>
-                          <th className="text-center px-3 py-1.5 text-gray-700 font-medium">Salles (dédoublement)</th>
+                          <th className="text-center px-3 py-1.5 text-gray-700 font-medium" title="Même matière, mêmes horaires, plusieurs salles (1 = un seul jury). Pour faire passer ESH et HGG en même temps, ajoute plutôt un bloc en parallèle.">Jurys en parallèle</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -4750,7 +4750,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                             <td className="px-2 py-1 text-center">
                               <input type="number" value={mc.salles ?? p.salles_par_matiere}
                                 onChange={(e) => setBlocMatiereConfig(idx, mc.nom, "salles", Math.max(1, Number(e.target.value)))}
-                                title="Nombre de salles en parallèle pour cette matière (dédoublement de jury)"
+                                title="Même matière, mêmes horaires, plusieurs salles (1 = un seul jury). Pour faire passer ESH et HGG en même temps, ajoute plutôt un bloc en parallèle."
                                 min={1} max={50}
                                 className="w-14 text-center border border-black/10 rounded-lg px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-black/20"
                               />
@@ -5143,7 +5143,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                           {row.extraCandidates?.[localJ]?.map((k2) => (
                             <span
                               key={k2}
-                              title="Salle parallèle (dédoublement)"
+                              title="Jury en parallèle (même horaire)"
                               className="inline-block ml-1 px-2 py-0.5 rounded-full font-semibold text-[11px] text-gray-700 bg-black/[0.03] border border-dashed border-black/15"
                             >
                               T{k2 + 1}
@@ -5325,8 +5325,8 @@ function EditBlocForm({
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Salles / matière">
-              <Input type="number" value={form.salles_par_matiere} onChange={(e) => set("salles_par_matiere", Number(e.target.value))} min={1} max={50} />
+            <Field label="Jurys en parallèle" hint="même matière, mêmes horaires">
+              <Input type="number" title="Même matière, mêmes horaires, plusieurs salles (1 = un seul jury). Pour faire passer ESH et HGG en même temps, ajoute plutôt un bloc en parallèle." value={form.salles_par_matiere} onChange={(e) => set("salles_par_matiere", Number(e.target.value))} min={1} max={50} />
             </Field>
             <Field label="Nb de créneaux" hint="vide = N²">
               <Input

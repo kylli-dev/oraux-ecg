@@ -598,7 +598,7 @@ function MatriceJourneeType({ bloc, jt, tripletStatuts, onTripletClick, tripletO
                             <span
                               key={k2}
                               onClick={() => onTripletClick(k2)}
-                              title={`T${k2 + 1} — salle parallèle (dédoublement)`}
+                              title={`T${k2 + 1} — jury en parallèle (même horaire)`}
                               className="inline-flex items-center justify-center px-2 py-1 rounded-lg font-semibold text-[11px] text-gray-500 bg-black/[0.03] border border-dashed border-black/15 cursor-pointer hover:bg-black/[0.06] transition"
                               style={{ minWidth: 40 }}
                             >
