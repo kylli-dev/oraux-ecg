@@ -1,7 +1,7 @@
 from datetime import date as Date, time as Time
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -22,6 +22,7 @@ from app.schemas.planning import PlanningCreate, PlanningOut, PlanningUpdate
 from app.services.excel import export_planning, export_template, import_epreuves
 from app.services.generation import apply_journee_type, generate_for_demi_journee
 from app.services.inscriptions import annuler_inscriptions_orphelines
+from app.services.monitoring import signaler_detail
 
 
 class CreateSessionIn(BaseModel):
@@ -119,7 +120,7 @@ def changer_statut(planning_id: int, body: dict, db: Session = Depends(get_db)):
 # ── Génération ────────────────────────────────────────────────────────────────
 
 @router.post("/{planning_id}/apply-journee-type")
-def apply_jt(planning_id: int, body: ApplyJourneeTypeIn, db: Session = Depends(get_db)):
+def apply_jt(planning_id: int, body: ApplyJourneeTypeIn, request: Request, db: Session = Depends(get_db)):
     p = db.get(Planning, planning_id)
     if not p:
         raise HTTPException(status_code=404, detail="Planning not found")
@@ -136,7 +137,29 @@ def apply_jt(planning_id: int, body: ApplyJourneeTypeIn, db: Session = Depends(g
             ),
         )
     result = apply_journee_type(db, planning_id, jt, body.date)
+    signaler_detail(request, f"Gabarit « {jt.nom} » appliqué au {body.date.strftime('%d/%m/%Y')} ({p.nom})")
     return {"planning_id": planning_id, "date": body.date, **result}
+
+
+@router.get("/{planning_id}/gabarits-appliques")
+def gabarits_appliques(planning_id: int, db: Session = Depends(get_db)):
+    """Gabarit appliqué à chaque demi-journée du planning (null = création manuelle)."""
+    djs = (
+        db.query(DemiJournee)
+        .filter(DemiJournee.planning_id == planning_id)
+        .order_by(DemiJournee.date, DemiJournee.heure_debut)
+        .all()
+    )
+    return [
+        {
+            "date": dj.date.isoformat(),
+            "type": dj.type,
+            "journee_type_id": dj.journee_type_id,
+            "journee_type_nom": dj.journee_type_nom,
+            "gabarit_applique_le": dj.gabarit_applique_le.isoformat() + "Z" if dj.gabarit_applique_le else None,
+        }
+        for dj in djs
+    ]
 
 
 # ── Liste épreuves d'un planning ──────────────────────────────────────────────
@@ -274,8 +297,10 @@ def create_session(
     else:
         dj.heure_debut = body.heure_debut
         dj.heure_fin = body.heure_fin
-        db.flush()
         is_new = False
+    # Générée à la main : ce n'est plus le gabarit
+    dj.journee_type_id = dj.journee_type_nom = dj.gabarit_applique_le = None
+    db.flush()
 
     gen_params = GenerateEpreuvesIn(
         matieres=[m.strip() for m in body.matieres if m.strip()],
@@ -494,6 +519,9 @@ def day_view(planning_id: int, date: Date = Query(...), db: Session = Depends(ge
                 type=dj.type,
                 heure_debut=dj.heure_debut,
                 heure_fin=dj.heure_fin,
+                journee_type_id=dj.journee_type_id,
+                journee_type_nom=dj.journee_type_nom,
+                gabarit_applique_le=dj.gabarit_applique_le.isoformat() + "Z" if dj.gabarit_applique_le else None,
                 epreuves=[
                     DayEpreuveOut(
                         id=e.id,

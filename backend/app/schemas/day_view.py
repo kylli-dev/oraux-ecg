@@ -29,6 +29,9 @@ class DayDemiJourneeOut(BaseModel):
     heure_debut: time
     heure_fin: time
     epreuves: List[DayEpreuveOut]
+    journee_type_id: Optional[int] = None
+    journee_type_nom: Optional[str] = None
+    gabarit_applique_le: Optional[str] = None  # ISO UTC (suffixe Z)
 
 
 class DayViewOut(BaseModel):

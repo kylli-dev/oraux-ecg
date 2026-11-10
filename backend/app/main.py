@@ -224,6 +224,12 @@ def _run_migrations():
         "ALTER TABLE epreuve ADD COLUMN triplet_num INTEGER",
         # Commentaire libre des admins sur la fiche candidat
         "ALTER TABLE candidat ADD COLUMN commentaire VARCHAR(2000)",
+        # Gabarit appliqué à chaque demi-journée
+        "ALTER TABLE demi_journee ADD COLUMN journee_type_id INTEGER REFERENCES journee_type(id) ON DELETE SET NULL",
+        "ALTER TABLE demi_journee ADD COLUMN journee_type_nom VARCHAR(255)",
+        "ALTER TABLE demi_journee ADD COLUMN gabarit_applique_le TIMESTAMP",
+        # Monitoring : précision lisible de l'action (ex. gabarit appliqué et date)
+        "ALTER TABLE audit_log ADD COLUMN detail VARCHAR(300)",
     ]
     with engine.connect() as conn:
         for sql in migrations:

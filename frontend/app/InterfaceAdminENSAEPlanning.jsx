@@ -17,6 +17,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { useConfirm } from "./admin/Toast";
 import { MARGE_ENTRE_EPREUVES, exceptionsMatrice, minutes, verifierEchange } from "./admin/echangeTriplets";
 import { corpsBlocModifie } from "./admin/blocsGabarit";
+import { gabaritsParDate, resumeGabarits } from "./admin/gabaritsAppliques";
 
 const ENSAE_RED = "#C62828";
 
@@ -953,6 +954,16 @@ export default function InterfaceAdminENSAEPlanning() {
   const [applying, setApplying] = useState(false);
   const [applyResult, setApplyResult] = useState(null);
   const [applyError, setApplyError] = useState("");
+  // Gabarit déjà appliqué à chaque date du planning choisi : { date: [{ type, journee_type_nom }] }
+  const [gabaritsDates, setGabaritsDates] = useState({});
+
+  const chargerGabarits = useCallback((planningId) => {
+    if (!planningId) { setGabaritsDates({}); return; }
+    apiFetch("GET", `plannings/${planningId}/gabarits-appliques`)
+      .then((l) => setGabaritsDates(gabaritsParDate(l)))
+      .catch(() => setGabaritsDates({}));
+  }, []);
+  useEffect(() => { chargerGabarits(selPlanningId); }, [selPlanningId, chargerGabarits]);
 
   useEffect(() => {
     apiFetch("GET", "journee-types/").then(setJourneeTypes).catch(() => {});
@@ -1108,6 +1119,7 @@ export default function InterfaceAdminENSAEPlanning() {
     setApplyResult(ok.length ? ok : null);
     if (echecs.length) setApplyError(echecs.join("\n"));
     setApplying(false);
+    chargerGabarits(selPlanningId);
   };
 
   const blocGeneration = blocs.filter((b) => b.type_bloc === "GENERATION");
@@ -1359,13 +1371,31 @@ export default function InterfaceAdminENSAEPlanning() {
                         </div>
                       </div>
                       <div className="max-h-56 overflow-y-auto rounded-lg border border-black/10 divide-y divide-black/5">
-                        {enumererDates(selPlanning.date_debut, selPlanning.date_fin).map((d) => (
-                          <label key={d} className="flex items-center gap-2 px-2.5 py-1.5 text-xs text-gray-900 cursor-pointer hover:bg-black/[0.03]">
-                            <input type="checkbox" checked={applyDates.has(d)} onChange={() => basculerDate(d)} />
-                            <span className="capitalize">{dateCourte(d)}</span>
-                          </label>
-                        ))}
+                        {enumererDates(selPlanning.date_debut, selPlanning.date_fin).map((d) => {
+                          const actuel = resumeGabarits(gabaritsDates[d] ?? []);
+                          const remplace = actuel && applyDates.has(d);
+                          return (
+                            <label key={d} className="flex items-center gap-2 px-2.5 py-1.5 text-xs text-gray-900 cursor-pointer hover:bg-black/[0.03]">
+                              <input type="checkbox" checked={applyDates.has(d)} onChange={() => basculerDate(d)} />
+                              <span className="capitalize shrink-0">{dateCourte(d)}</span>
+                              <span
+                                title={actuel ? `Gabarit appliqué : ${actuel}` : "Aucun gabarit appliqué"}
+                                className={`ml-auto truncate text-[11px] ${remplace ? "text-amber-800 font-semibold" : actuel ? "text-gray-800" : "text-gray-700 italic"}`}
+                              >
+                                {actuel || "vide"}
+                              </span>
+                            </label>
+                          );
+                        })}
                       </div>
+                      {(() => {
+                        const n = [...applyDates].filter((d) => (gabaritsDates[d] ?? []).length > 0).length;
+                        return n > 0 ? (
+                          <p className="text-[11px] text-amber-800">
+                            {n} date{n > 1 ? "s" : ""} cochée{n > 1 ? "s ont" : " a"} déjà un gabarit : il sera remplacé.
+                          </p>
+                        ) : null;
+                      })()}
                     </div>
                   )}
 

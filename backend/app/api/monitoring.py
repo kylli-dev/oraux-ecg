@@ -90,7 +90,7 @@ def en_ligne(minutes: int = Query(10, ge=1, le=240), db: Session = Depends(get_d
         out.append(EnLigneOut(
             acteur_type=l.acteur_type, acteur_id=l.acteur_id, nom=_nom(noms, l),
             derniere_activite=_iso_utc(l.created_at),
-            derniere_action=libelle_action(l.methode, l.route, l.chemin),
+            derniere_action=l.detail or libelle_action(l.methode, l.route, l.chemin),
         ))
     return out
 
@@ -129,7 +129,7 @@ def journal(
     return [
         JournalOut(
             id=l.id, date=_iso_utc(l.created_at), acteur_type=l.acteur_type, acteur_id=l.acteur_id,
-            nom=_nom(noms, l), action=libelle_action(l.methode, l.route, l.chemin),
+            nom=_nom(noms, l), action=l.detail or libelle_action(l.methode, l.route, l.chemin),
             methode=l.methode, chemin=l.chemin, statut_http=l.statut_http, duree_ms=l.duree_ms,
         )
         for l in lignes

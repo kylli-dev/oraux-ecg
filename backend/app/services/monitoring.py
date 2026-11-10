@@ -46,6 +46,11 @@ def signaler_acteur(request: Request, acteur_type: str, acteur_id: int, nom: Opt
     request.state.acteur = (acteur_type, acteur_id, nom)
 
 
+def signaler_detail(request: Request, texte: str) -> None:
+    """Précise l'action dans le journal (ex. « Gabarit « X » appliqué au 12/06/2026 »)."""
+    request.state.detail_action = texte
+
+
 def identifier_acteur(request: Request) -> Optional[Acteur]:
     signale = getattr(request.state, "acteur", None)
     if signale:
@@ -128,6 +133,7 @@ class JournalActiviteMiddleware(BaseHTTPMiddleware):
                     chemin=path[:500],
                     statut_http=response.status_code,
                     duree_ms=int((time.monotonic() - debut) * 1000),
+                    detail=(getattr(request.state, "detail_action", None) or "")[:300] or None,
                 )
                 asyncio.get_running_loop().run_in_executor(None, _enregistrer, ligne)
         except Exception as e:

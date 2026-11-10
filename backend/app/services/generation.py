@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from datetime import datetime, date, time, timedelta
+from datetime import datetime, date, time, timedelta, timezone
 from typing import List, Optional, Tuple
 
 from sqlalchemy.orm import Session
@@ -579,10 +579,14 @@ def apply_journee_type(
     all_warnings: List[str] = []
     generated_dj_ids: List[int] = []
 
+    applique_le = datetime.now(timezone.utc).replace(tzinfo=None)
     for plan in plans:
         dj, is_new = _upsert_demi_journee(db, planning_id, target_date, plan)
         if is_new:
             dj_created += 1
+        dj.journee_type_id = journee_type.id
+        dj.journee_type_nom = journee_type.nom
+        dj.gabarit_applique_le = applique_le
         n, warns = _apply_periode_plan(db, dj, plan, journee_type.statut_initial)
         ep_created += n
         all_warnings.extend(warns)

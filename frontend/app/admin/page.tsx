@@ -8,6 +8,7 @@ import { ToastProvider, useToast, useConfirm } from "./Toast";
 import { type CaseTriplet, MARGE_ENTRE_EPREUVES, exceptionsMatrice, minutes, verifierEchange } from "./echangeTriplets";
 import { corpsBlocModifie } from "./blocsGabarit";
 import MonitoringSection from "./MonitoringSection";
+import { dateApplication, resumeGabarits } from "./gabaritsAppliques";
 import {
   CalendarDays,
   Settings2,
@@ -135,6 +136,8 @@ type DemiJournee = {
   heure_debut: string;
   heure_fin: string;
   epreuves: Epreuve[];
+  journee_type_nom?: string | null;
+  gabarit_applique_le?: string | null;
 };
 
 type DayViewData = {
@@ -2086,6 +2089,18 @@ function PlanningDaySection({
                   {v === "triplets" ? "Association triplets" : "Vue créneaux"}
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* Gabarit appliqué à la date */}
+          {!loading && dayData && dayData.demi_journees.length > 0 && (
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-4 rounded-lg border border-black/10 bg-black/[0.02] px-3 py-2 text-sm text-gray-900">
+              <Wand2 className="h-4 w-4 text-gray-800" />
+              <span className="font-medium">Gabarit appliqué :</span>
+              <span className="font-semibold">{resumeGabarits(dayData.demi_journees)}</span>
+              {dateApplication(dayData.demi_journees) && (
+                <span className="text-gray-700">· appliqué {dateApplication(dayData.demi_journees)}</span>
+              )}
             </div>
           )}
 

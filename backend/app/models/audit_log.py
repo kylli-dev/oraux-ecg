@@ -32,6 +32,8 @@ class AuditLog(Base):
     chemin: Mapped[str] = mapped_column(String(500), nullable=False)
     statut_http: Mapped[int] = mapped_column(Integer, nullable=False)
     duree_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Libellé précis fourni par la route (signaler_detail), remplace le libellé générique
+    detail: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
 
     __table_args__ = (
         Index("ix_audit_log_created_at", "created_at"),

@@ -71,5 +71,7 @@ def generate_epreuves(
     if not dj:
         raise HTTPException(status_code=404, detail="DemiJournee not found")
 
+    # Régénérée à la main : ce n'est plus le gabarit
+    dj.journee_type_id = dj.journee_type_nom = dj.gabarit_applique_le = None
     count = generate_for_demi_journee(db, dj, body)
     return {"demi_journee_id": dj_id, "epreuves_created": count}
