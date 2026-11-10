@@ -4,7 +4,8 @@ Portail examinateur : accès via code_acces unique, saisie de notes.
 from typing import List, Optional
 from datetime import date as Date
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Security
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Security, Request
+from app.services.monitoring import signaler_acteur
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError
 from pydantic import BaseModel
@@ -142,7 +143,7 @@ def code_perdu(body: CodePerduIn, background_tasks: BackgroundTasks, db: Session
 
 
 @router.post("/login", response_model=LoginOut)
-def login(body: LoginIn, db: Session = Depends(get_db)):
+def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
     from sqlalchemy import func as _func
     # Connexion par email + mot de passe uniquement, comme l'espace candidat. La connexion par
     # code d'accès est désactivée : première connexion via « Mot de passe oublié ? ».
@@ -160,6 +161,7 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
     if not ex or not ex.password_hash or not verify_password(body.password, ex.password_hash):
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
     token = create_examinateur_token(ex.id)
+    signaler_acteur(request, "examinateur", ex.id)
     return LoginOut(access_token=token)
 
 

@@ -20,6 +20,7 @@ from app.models.planche_historique import PlancheHistorique
 from app.models.planning_salle_defaut import PlanningMatiereSalleDefaut
 from app.models.etablissement import Etablissement
 from app.models.admin import Admin
+from app.models.audit_log import AuditLog
 
 __all__ = [
     "Planning",
@@ -45,4 +46,5 @@ __all__ = [
     "PlanningMatiereSalleDefaut",
     "Etablissement",
     "Admin",
+    "AuditLog",
 ]

@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { ToastProvider, useToast, useConfirm } from "./Toast";
 import { type CaseTriplet, MARGE_ENTRE_EPREUVES, exceptionsMatrice, minutes, verifierEchange } from "./echangeTriplets";
 import { corpsBlocModifie } from "./blocsGabarit";
+import MonitoringSection from "./MonitoringSection";
 import {
   CalendarDays,
   Settings2,
@@ -54,6 +55,7 @@ import {
   Eraser,
   Eye,
   EyeOff,
+  Activity,
 } from "lucide-react";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -237,7 +239,7 @@ type DashboardData = {
   by_date: { date: string; count: number }[];
 };
 
-type SectionKey = "plannings" | "journeeTypes" | "candidats" | "examinateurs" | "surveillants" | "dashboard" | "conflits" | "parametrages" | "notes" | "salles" | "planches";
+type SectionKey = "plannings" | "journeeTypes" | "candidats" | "examinateurs" | "surveillants" | "dashboard" | "conflits" | "parametrages" | "notes" | "salles" | "planches" | "monitoring";
 
 type Surveillant = {
   id: number;
@@ -11629,6 +11631,14 @@ function Sidebar({
   onSelect: (k: SectionKey) => void;
   nbConflits?: number;
 }) {
+  // Le Monitoring est réservé aux super-administrateurs (le serveur refuse aussi les autres)
+  const [superAdmin, setSuperAdmin] = useState(false);
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => setSuperAdmin(data?.role === "super_admin"))
+      .catch(() => {});
+  }, []);
   const items: { key: SectionKey; label: string; icon: React.ElementType; badge?: number }[] =
     [
       { key: "plannings", label: "Planning", icon: CalendarDays },
@@ -11642,6 +11652,7 @@ function Sidebar({
       { key: "salles", label: "Salles", icon: Building2 },
       { key: "notes", label: "Notes", icon: FileSpreadsheet },
       { key: "parametrages", label: "Paramétrages", icon: Settings2 },
+      ...(superAdmin ? [{ key: "monitoring" as const, label: "Monitoring", icon: Activity }] : []),
     ];
 
   return (
@@ -14231,6 +14242,7 @@ export default function AdminPage() {
             {section === "salles" && <SallesSection />}
             {section === "notes" && <NotesSection />}
             {section === "parametrages" && <ParametragesSection />}
+            {section === "monitoring" && <MonitoringSection get={get} />}
           </div>
         </main>
       </div>

@@ -45,16 +45,34 @@ function wakingUpResponse() {
   );
 }
 
-async function currentAdminRole(req: NextRequest): Promise<string | null> {
+type SessionAdmin = { role: string; id: string; username: string };
+
+async function currentAdmin(req: NextRequest): Promise<SessionAdmin | null> {
   const token = req.cookies.get("admin_session")?.value;
   if (!token || !process.env.JWT_SECRET) return null;
   try {
     const secret = new TextEncoder().encode(process.env.JWT_SECRET);
     const { payload } = await jwtVerify(token, secret);
-    return typeof payload.role === "string" ? payload.role : null;
+    if (typeof payload.role !== "string") return null;
+    return {
+      role: payload.role,
+      id: typeof payload.sub === "string" ? payload.sub : "",
+      username: typeof payload.username === "string" ? payload.username : "",
+    };
   } catch {
     return null;
   }
+}
+
+// Identité de l'admin connecté, pour le journal d'activité (onglet Monitoring)
+function enTetesAdmin(admin: SessionAdmin): Record<string, string> {
+  return {
+    "X-Admin-Api-Key": KEY,
+    "X-Admin-Role": admin.role,
+    "X-Admin-Id": admin.id,
+    // encodeURIComponent : un en-tête HTTP n'accepte pas les caractères accentués
+    "X-Admin-Username": encodeURIComponent(admin.username),
+  };
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
@@ -66,12 +84,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ path
   if (!KEY)  return NextResponse.json({ detail: "ADMIN_API_KEY manquant" },  { status: 500 });
   if (!BASE) return NextResponse.json({ detail: "API_BASE_URL manquant" }, { status: 500 });
 
-  const role = await currentAdminRole(req);
-  if (!role) return nonAuthentifie();
+  const admin = await currentAdmin(req);
+  if (!admin) return nonAuthentifie();
 
   try {
-    const headers: Record<string, string> = { "X-Admin-Api-Key": KEY };
-    if (role) headers["X-Admin-Role"] = role;
+    const headers = enTetesAdmin(admin);
     const r = await fetchBackend(url, { headers, cache: "no-store" });
     const ct = r.headers.get("content-type") ?? "application/json";
     const isBinary = ct.includes("application/pdf") || ct.includes("application/zip") ||
@@ -97,14 +114,13 @@ async function mut(req: NextRequest, { params }: { params: Promise<{ path: strin
   if (!KEY)  return NextResponse.json({ detail: "ADMIN_API_KEY manquant" },  { status: 500 });
   if (!BASE) return NextResponse.json({ detail: "API_BASE_URL manquant" }, { status: 500 });
 
-  const role = await currentAdminRole(req);
-  if (!role) return nonAuthentifie();
+  const admin = await currentAdmin(req);
+  if (!admin) return nonAuthentifie();
 
   try {
     const ct   = req.headers.get("content-type") ?? "";
     const body = ct.includes("multipart") ? await req.arrayBuffer() : await req.text();
-    const hdrs: Record<string, string> = { "X-Admin-Api-Key": KEY };
-    if (role) hdrs["X-Admin-Role"] = role;
+    const hdrs = enTetesAdmin(admin);
     if (body) hdrs["Content-Type"] = ct.includes("multipart") ? ct : "application/json";
 
     const r = await fetchBackend(url, {

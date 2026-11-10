@@ -17,7 +17,8 @@ def _ensure_naive(dt: datetime) -> datetime:
     return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
 from typing import List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from app.services.monitoring import signaler_acteur
 from pydantic import BaseModel
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
@@ -178,7 +179,7 @@ class InscriptionActiveOut(BaseModel):
 # ── Auth ───────────────────────────────────────────────────────────────────────
 
 @router.post("/login", response_model=TokenOut)
-def login(body: LoginIn, db: Session = Depends(get_db)):
+def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
     """Authentification candidat par login ou email / mot de passe."""
     identifier = body.login.strip()
     c = (
@@ -187,6 +188,7 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
     )
     if not c or not c.password_hash or not verify_password(body.password, c.password_hash):
         raise HTTPException(status_code=401, detail="Identifiants incorrects")
+    signaler_acteur(request, "candidat", c.id)
     return TokenOut(access_token=create_access_token(c.id))
 
 

@@ -5,7 +5,8 @@ import io
 from datetime import date as Date
 from typing import List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Security
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Security, Request
+from app.services.monitoring import signaler_acteur
 from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError
@@ -90,12 +91,13 @@ class EpreuveSurveillant(BaseModel):
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.post("/login", response_model=LoginOut)
-def login(body: LoginIn, db: Session = Depends(get_db)):
+def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
     s = db.query(Surveillant).filter(
         Surveillant.email == body.email.strip().lower()
     ).first()
     if not s or not s.password_hash or not verify_password(body.password, s.password_hash):
         raise HTTPException(status_code=401, detail="Identifiants invalides")
+    signaler_acteur(request, "surveillant", s.id)
     return LoginOut(access_token=create_surveillant_token(s.id))
 
 
