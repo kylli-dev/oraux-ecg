@@ -548,9 +548,31 @@ def apply_journee_type(
       2. Upsert         — crée ou met à jour les DemiJournee en base
       3. Génération     — supprime et recrée les épreuves selon le plan
 
-    Retourne {"demi_journees_created": int, "epreuves_created": int}.
+    Le gabarit remplace entièrement ce que la date contenait : une demi-journée absente du
+    gabarit est supprimée.
+
+    Retourne {"demi_journees_created", "demi_journees_supprimees", "epreuves_created", "warnings"}.
     """
     plans = build_journee_plan(journee_type)
+
+    # Remplacement complet : les demi-journées de cette date que le nouveau gabarit ne contient
+    # pas (ex. l'après-midi d'un ancien gabarit quand le nouveau n'a qu'un matin) sont
+    # supprimées avec leurs épreuves, comme celles qu'il régénère.
+    types_plan = {plan.type_dj for plan in plans}
+    anciennes = (
+        db.query(DemiJournee)
+        .filter(DemiJournee.planning_id == planning_id, DemiJournee.date == target_date)
+        .all()
+    )
+    dj_deleted = 0
+    for dj in anciennes:
+        if dj.type not in types_plan:
+            db.query(Epreuve).filter(Epreuve.demi_journee_id == dj.id).delete()
+            db.delete(dj)
+            dj_deleted += 1
+    if dj_deleted:
+        db.flush()
+        annuler_inscriptions_orphelines(db)
 
     dj_created = 0
     ep_created = 0
@@ -571,6 +593,7 @@ def apply_journee_type(
     db.commit()
     return {
         "demi_journees_created": dj_created,
+        "demi_journees_supprimees": dj_deleted,
         "epreuves_created": ep_created,
         "warnings": all_warnings,
     }
