@@ -334,9 +334,84 @@ function manquesPublication(e: {
   return manques;
 }
 
+// ── Liens vers l'affectation manquante ──
+// Un clic sur « salle », « examinateur » ou « surveillant » ouvre l'écran d'affectation
+// correspondant (Salles, Examinateurs > Affectation, Surveillants > Planning), déjà filtré
+// sur le planning, le jour, la matière et l'heure du créneau, et sur les créneaux sans
+// cette affectation. L'intention est gardée ici le temps que l'écran cible la lise.
+type AffectationManquante = "salle" | "examinateur" | "surveillant";
+type IntentionAffectation = {
+  manque: AffectationManquante;
+  planningId: number;
+  date?: string;
+  matiere?: string;
+  heure?: string;
+};
+const SECTION_AFFECTATION: Record<AffectationManquante, SectionKey> = {
+  salle: "salles",
+  examinateur: "examinateurs",
+  surveillant: "surveillants",
+};
+let intentionAffectation: IntentionAffectation | null = null;
+const lireIntention = (manque: AffectationManquante) =>
+  intentionAffectation?.manque === manque ? intentionAffectation : null;
+const NavAffectationContext = React.createContext<(i: IntentionAffectation) => void>(() => {});
+
+// L'écran cible lit l'intention à son montage, puis l'efface
+function useIntentionAffectation(manque: AffectationManquante) {
+  const [intention] = useState(() => lireIntention(manque));
+  useEffect(() => { if (intention) intentionAffectation = null; }, [intention]);
+  return intention;
+}
+
+function LienAffectation({ manque, ...creneau }: IntentionAffectation) {
+  const aller = React.useContext(NavAffectationContext);
+  return (
+    <button
+      type="button"
+      onClick={(ev) => { ev.stopPropagation(); aller({ manque, ...creneau }); }}
+      title={`Affecter : ouvre l'écran ${manque === "salle" ? "Salles" : manque === "examinateur" ? "Examinateurs > Affectation" : "Surveillants > Planning"}, filtré sur ce créneau`}
+      className="font-semibold underline decoration-dotted underline-offset-2 hover:decoration-solid"
+    >
+      {manque}
+    </button>
+  );
+}
+
+// Liens séparés par des virgules : « manque salle, surveillant »
+function LiensManques({ manques, ...creneau }: { manques: string[] } & Omit<IntentionAffectation, "manque">) {
+  return (
+    <>
+      {manques.map((m, i) => (
+        <React.Fragment key={m}>
+          {i > 0 && ", "}
+          <LienAffectation manque={m as AffectationManquante} {...creneau} />
+        </React.Fragment>
+      ))}
+    </>
+  );
+}
+
+// « Maths 15:30 : examinateur, surveillant » (manques_publication du serveur) → éléments
+function lireManque(ligne: string): { matiere: string; heure: string; manques: string[] } | null {
+  const m = /^(.*) (\d{2}:\d{2}) : (.*)$/.exec(ligne);
+  return m ? { matiere: m[1], heure: m[2], manques: m[3].split(", ") } : null;
+}
+
+// Une ligne de manque d'un triplet, avec liens : « Maths 15:30 : examinateur, surveillant »
+function LigneManque({ ligne, planningId, date }: { ligne: string; planningId: number; date: string }) {
+  const m = lireManque(ligne);
+  if (!m) return <>{ligne}</>;
+  return (
+    <>
+      {m.matiere} {m.heure} : <LiensManques manques={m.manques} planningId={planningId} date={date} matiere={m.matiere} heure={m.heure} />
+    </>
+  );
+}
+
 // Badge « Non visible candidats » d'un triplet libre auquel il manque une affectation,
 // avec la raison affichée en dessous
-function BadgeNonPublie({ manques }: { manques?: string[] }) {
+function BadgeNonPublie({ manques, planningId, date }: { manques?: string[]; planningId: number; date: string }) {
   if (!manques || manques.length === 0) return null;
   return (
     <span
@@ -347,7 +422,9 @@ function BadgeNonPublie({ manques }: { manques?: string[] }) {
         Non visible candidats
       </span>
       {manques.map((m) => (
-        <span key={m} className="text-[10px] text-orange-800 whitespace-nowrap">Manque {m}</span>
+        <span key={m} className="text-[10px] text-orange-800 whitespace-nowrap">
+          Manque <LigneManque ligne={m} planningId={planningId} date={date} />
+        </span>
       ))}
     </span>
   );
@@ -1938,7 +2015,8 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                                       className="text-[11px] font-semibold text-orange-800"
                                       title="Créneau libre invisible des candidats tant que salle, examinateur et surveillant ne sont pas affectés"
                                     >
-                                      Non visible · manque {manquesPublication(e).join(", ")}
+                                      Non visible · manque{" "}
+                                      <LiensManques manques={manquesPublication(e)} planningId={planningId} date={e.date} matiere={e.matiere} heure={e.heure_debut} />
                                     </span>
                                   ) : (
                                     <span className="text-gray-700 text-[13px]">—</span>
@@ -2831,7 +2909,9 @@ function TripletsAdminView({ planningId, planningNom }: { planningId: number; pl
                       {!!t.manques_publication?.length && (
                         <ul className="mt-1 pl-[4.5rem] pr-2 space-y-0.5">
                           {t.manques_publication.map((m) => (
-                            <li key={m} className="text-[11px] leading-snug text-orange-800">✗ Manque {m}</li>
+                            <li key={m} className="text-[11px] leading-snug text-orange-800">
+                              ✗ Manque <LigneManque ligne={m} planningId={planningId} date={t.date} />
+                            </li>
                           ))}
                         </ul>
                       )}
@@ -6570,7 +6650,7 @@ function CandidatGestionDrawer({
                                       );
                                     })}
                                     <td className="px-3 py-2 text-right whitespace-nowrap">
-                                      <BadgeNonPublie manques={t.manques_publication} />
+                                      <BadgeNonPublie manques={t.manques_publication} planningId={planningId} date={t.date} />
                                       {t.type_slot === "PRERESERVEE" && (
                                         <span className="mr-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
                                           Préréservé
@@ -7304,7 +7384,7 @@ function ListeAttenteTab({ planningId }: { planningId: number }) {
                               return <td key={mat} className="px-4 py-2.5">{ep?.heure_debut ?? '–'}</td>;
                             })}
                             <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                              <BadgeNonPublie manques={t.manques_publication} />
+                              <BadgeNonPublie manques={t.manques_publication} planningId={planningId} date={t.date} />
                               {t.type_slot === "PRERESERVEE" && (
                                 <span className="mr-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
                                   Préréservé
@@ -7685,7 +7765,7 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
                                     return <td key={mat} className="px-3 py-2">{ep?.heure_debut ?? '–'}</td>;
                                   })}
                                   <td className="px-3 py-2 text-right whitespace-nowrap">
-                                    <BadgeNonPublie manques={t.manques_publication} />
+                                    <BadgeNonPublie manques={t.manques_publication} planningId={planningId} date={t.date} />
                                     {t.type_slot === "PRERESERVEE" && (
                                       <span className="mr-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
                                         Préréservé
@@ -7722,16 +7802,21 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
 
 type IndispoItem = { id: number; debut: string; fin: string };
 
-function AffectationTab({ planningId, examinateurs }: { planningId: number; examinateurs: Examinateur[] }) {
+function AffectationTab({ planningId, examinateurs, filtresInitiaux }: {
+  planningId: number;
+  examinateurs: Examinateur[];
+  // Arrivée depuis un lien « manque examinateur » : créneau visé, sans examinateur
+  filtresInitiaux?: IntentionAffectation | null;
+}) {
   const toast = useToast();
   const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedExId, setSelectedExId] = useState<number | "">("");
-  const [filterDate, setFilterDate] = useState("");
-  const [filterMatiere, setFilterMatiere] = useState("");
+  const [filterDate, setFilterDate] = useState(filtresInitiaux?.date ?? "");
+  const [filterMatiere, setFilterMatiere] = useState(filtresInitiaux?.matiere ?? "");
   const [filterSession, setFilterSession] = useState<"" | "MATIN" | "APRES_MIDI">("");
-  const [filterHeure, setFilterHeure] = useState("");
-  const [filterEtat, setFilterEtat] = useState<"" | "sans" | "avec" | "lui">("");
+  const [filterHeure, setFilterHeure] = useState(filtresInitiaux?.heure ?? "");
+  const [filterEtat, setFilterEtat] = useState<"" | "sans" | "avec" | "lui">(filtresInitiaux ? "sans" : "");
   // 2ᵉ examinateur : "" = tous, "__avec" / "__sans", ou l'id d'un examinateur précis
   const [filterEx2, setFilterEx2] = useState("");
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -8943,8 +9028,9 @@ function CreateExaminateurForm({
 
 function ExaminateursSection() {
   const toast = useToast();
+  const intention = useIntentionAffectation("examinateur");
   const [plannings, setPlannings] = useState<Planning[]>([]);
-  const [selectedPlanningId, setSelectedPlanningId] = useState<number | null>(null);
+  const [selectedPlanningId, setSelectedPlanningId] = useState<number | null>(intention?.planningId ?? null);
   const [examinateurs, setExaminateurs] = useState<Examinateur[]>([]);
   const [selectedEx, setSelectedEx] = useState<Examinateur | null>(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -8954,12 +9040,12 @@ function ExaminateursSection() {
   const [searchEx, setSearchEx] = useState("");
   const [filterMatiereEx, setFilterMatiereEx] = useState("");
   const [filterEtabEx, setFilterEtabEx] = useState("");
-  const [tab, setTab] = useState<"fiche" | "affectation">("fiche");
+  const [tab, setTab] = useState<"fiche" | "affectation">(intention ? "affectation" : "fiche");
 
   useEffect(() => {
     get<Planning[]>("plannings/").then((ps) => {
       setPlannings(ps);
-      if (ps.length > 0) setSelectedPlanningId(ps[0].id);
+      if (ps.length > 0) setSelectedPlanningId((cur) => cur ?? ps[0].id);
     }).catch(() => {});
   }, []);
 
@@ -9036,7 +9122,7 @@ function ExaminateursSection() {
       )}
 
       {selectedPlanningId && tab === "affectation" && (
-        <AffectationTab planningId={selectedPlanningId} examinateurs={examinateurs} />
+        <AffectationTab planningId={selectedPlanningId} examinateurs={examinateurs} filtresInitiaux={intention} />
       )}
 
       {selectedPlanningId && tab === "fiche" && (
@@ -11260,8 +11346,9 @@ function CredentialsModal({
 function SurveillantsSection() {
   const toast = useToast();
   const confirm = useConfirm();
+  const intention = useIntentionAffectation("surveillant");
   const [plannings, setPlannings] = useState<Planning[]>([]);
-  const [selectedPlanningId, setSelectedPlanningId] = useState<number | null>(null);
+  const [selectedPlanningId, setSelectedPlanningId] = useState<number | null>(intention?.planningId ?? null);
   const [surveillants, setSurvaillants] = useState<Surveillant[]>([]);
   const [loading, setLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -11271,22 +11358,22 @@ function SurveillantsSection() {
   } | null>(null);
   const [filterActif, setFilterActif] = useState<"tous" | "actif" | "inactif">("tous");
   const [search, setSearch] = useState("");
-  const [view, setView] = useState<"annuaire" | "planning">("annuaire");
+  const [view, setView] = useState<"annuaire" | "planning">(intention ? "planning" : "annuaire");
   const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
   const [loadingEp, setLoadingEp] = useState(false);
-  const [filterDate, setFilterDate] = useState("");
-  const [filterSurv, setFilterSurv] = useState<string>("");
+  const [filterDate, setFilterDate] = useState(intention?.date ?? "");
+  const [filterSurv, setFilterSurv] = useState<string>(intention ? "0" : "");
   // 2ᵉ surveillant : "" = tous, "__avec" / "__sans", ou l'id d'un surveillant précis
   const [filterSurv2, setFilterSurv2] = useState("");
-  const [filterMatiereS, setFilterMatiereS] = useState("");
+  const [filterMatiereS, setFilterMatiereS] = useState(intention?.matiere ?? "");
   const [filterSessionS, setFilterSessionS] = useState<"" | "MATIN" | "APRES_MIDI">("");
-  const [filterHeureS, setFilterHeureS] = useState("");
+  const [filterHeureS, setFilterHeureS] = useState(intention?.heure ?? "");
   const [filterStatutS, setFilterStatutS] = useState("");
 
   useEffect(() => {
     get<Planning[]>("plannings/").then((ps) => {
       setPlannings(ps);
-      if (ps.length > 0) setSelectedPlanningId(ps[0].id);
+      if (ps.length > 0) setSelectedPlanningId((cur) => cur ?? ps[0].id);
     }).catch(() => {});
   }, []);
 
@@ -13497,8 +13584,9 @@ function SyncedScrollX({ children }: { children: React.ReactNode }) {
 function SallesSection() {
   const toast = useToast();
   const confirm = useConfirm();
+  const intention = useIntentionAffectation("salle");
   const [plannings, setPlannings] = useState<Planning[]>([]);
-  const [planningId, setPlanningId] = useState<number | "">("");
+  const [planningId, setPlanningId] = useState<number | "">(intention?.planningId ?? "");
   const [salles, setSalles] = useState<Salle[]>([]);
   const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
   const [loading, setLoading] = useState(false);
@@ -13506,11 +13594,11 @@ function SallesSection() {
   const [newSalle, setNewSalle] = useState("");
   const [addingS, setAddingS] = useState(false);
   const [addErr, setAddErr] = useState("");
-  const [filterMatiere, setFilterMatiere] = useState("");
-  const [filterDate, setFilterDate] = useState("");
-  const [filterHeure, setFilterHeure] = useState("");
+  const [filterMatiere, setFilterMatiere] = useState(intention?.matiere ?? "");
+  const [filterDate, setFilterDate] = useState(intention?.date ?? "");
+  const [filterHeure, setFilterHeure] = useState(intention?.heure ?? "");
   // "" = toutes, "none" = non affectée, sinon l'id de la salle (en string)
-  const [filterSalle, setFilterSalle] = useState("");
+  const [filterSalle, setFilterSalle] = useState(intention ? "none" : "");
   // Ne montrer que les doublons (créneau avec plusieurs épreuves en parallèle) dont les
   // salles ne sont pas toutes distinctes — pas encore vérifiés/différenciés, donc à risque
   // (2 candidats pourraient se retrouver affectés à la même salle physique).
@@ -14345,6 +14433,18 @@ export default function AdminPage() {
     setMobileSidebar(false);
   };
 
+  // Lien « manque … » : ouvre l'écran d'affectation (remonté pour qu'il lise ses filtres)
+  const [cleNavigation, setCleNavigation] = useState(0);
+  const allerAffecter = useCallback((i: IntentionAffectation) => {
+    intentionAffectation = i;
+    const k = SECTION_AFFECTATION[i.manque];
+    setSection(k);
+    localStorage.setItem("admin_section", k);
+    setSelectedPlanning(null);
+    setCleNavigation((c) => c + 1);
+    window.scrollTo({ top: 0 });
+  }, []);
+
   return (
     <ToastProvider>
     <BackendWakingBanner />
@@ -14396,7 +14496,8 @@ export default function AdminPage() {
         </div>
 
         <main className="flex-1 overflow-auto">
-          <div className={`${(section === "plannings" && selectedPlanning) || section === "salles" || section === "candidats" || section === "examinateurs" ? "max-w-none" : "max-w-6xl"} mx-auto px-4 md:px-8 py-8`}>
+          <NavAffectationContext.Provider value={allerAffecter}>
+          <div key={cleNavigation} className={`${(section === "plannings" && selectedPlanning) || section === "salles" || section === "candidats" || section === "examinateurs" ? "max-w-none" : "max-w-6xl"} mx-auto px-4 md:px-8 py-8`}>
             {section === "plannings" && !selectedPlanning && (
               <PlanningsSection onSelect={setSelectedPlanning} />
             )}
@@ -14419,6 +14520,7 @@ export default function AdminPage() {
             {section === "parametrages" && <ParametragesSection />}
             {section === "monitoring" && <MonitoringSection get={get} />}
           </div>
+          </NavAffectationContext.Provider>
         </main>
       </div>
     </div>
