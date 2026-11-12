@@ -20,6 +20,7 @@ from app.models.planning import Planning
 from app.models.inscription import Inscription, InscriptionEpreuve
 from app.models.liste_attente import ListeAttente
 from app.services.inscriptions import annuler_inscriptions_orphelines, epreuves_valides
+from app.services.publication import epreuve_publiable, manques_publication
 from app.services.triplets import GroupeTriplet, choisir_epreuves, groupes_du_jour, groupes_pour_profil
 
 router = APIRouter(
@@ -67,6 +68,9 @@ class TripletOut(BaseModel):
     details: List[str] = []      # une ligne par épreuve : son état et, si elle bloque, pourquoi
     cle: Optional[str] = None      # identifiant du triplet dans la journée (voir services/triplets)
     numero: Optional[int] = None   # numéro de la matrice de la journée type (T5 → 5)
+    # Triplet libre mais invisible des candidats : ce qui manque, une ligne par épreuve
+    # (« Maths 08:30 : surveillant ») — voir services/publication
+    manques_publication: List[str] = []
 
 
 class InscriptionOut(BaseModel):
@@ -455,12 +459,23 @@ def _triplets_depuis_groupes(groupes: list, date, seen_global: set, inclure_inco
         # préréservé lui-même — ni "Préréserver" ni "Libérer" n'ont de sens dessus).
         statuts = {e.statut for e in assigned}
         details = _details_epreuves(assigned)
+        manques: List[str] = []
         if statuts == {"LIBRE"}:
             type_slot = "LIBRE"
             motif = (
                 f"Triplet complet et libre : les {len(assigned)} épreuves sont disponibles. "
                 "Il peut être choisi par un candidat, ou préréservé pour le mettre de côté."
             )
+            if choisir_epreuves(groupe, ("LIBRE",), epreuve_publiable) is None:
+                manques = [
+                    f"{e.matiere} {str(e.heure_debut)[:5]} : {', '.join(manques_publication(e))}"
+                    for e in sorted(assigned, key=lambda x: x.heure_debut)
+                    if manques_publication(e)
+                ]
+                motif = (
+                    "Triplet libre mais invisible des candidats : il manque une salle, un examinateur "
+                    "ou un surveillant. L'admin peut tout de même y inscrire un candidat."
+                )
         elif statuts == {"PRERESERVEE"}:
             type_slot = "PRERESERVEE"
             motif = (
@@ -528,6 +543,7 @@ def _triplets_depuis_groupes(groupes: list, date, seen_global: set, inclure_inco
             details=details,
             cle=groupe.cle,
             numero=groupe.numero,
+            manques_publication=manques,
         ))
     return result
 

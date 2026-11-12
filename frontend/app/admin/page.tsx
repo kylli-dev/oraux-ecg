@@ -315,7 +315,43 @@ type TripletDisponible = {
   cle?: string | null;
   // Numéro du triplet dans la matrice de la journée type (T5 → 5), absent en rotation
   numero?: number | null;
+  // Libre mais invisible des candidats (salle, examinateur ou surveillant manquant)
+  manques_publication?: string[];
 };
+
+// Ce qui manque à une épreuve LIBRE pour être proposée aux candidats — même règle que
+// backend/app/services/publication.py (salle, examinateur 1 ou 2, surveillant 1 ou 2)
+function manquesPublication(e: {
+  statut?: string; salle_id?: number | null;
+  examinateur_id?: number | null; examinateur2_id?: number | null;
+  surveillant_id?: number | null; surveillant2_id?: number | null;
+}): string[] {
+  if (e.statut !== "LIBRE") return [];
+  const manques: string[] = [];
+  if (!e.salle_id) manques.push("salle");
+  if (!e.examinateur_id && !e.examinateur2_id) manques.push("examinateur");
+  if (!e.surveillant_id && !e.surveillant2_id) manques.push("surveillant");
+  return manques;
+}
+
+// Badge « Non visible candidats » d'un triplet libre auquel il manque une affectation,
+// avec la raison affichée en dessous
+function BadgeNonPublie({ manques }: { manques?: string[] }) {
+  if (!manques || manques.length === 0) return null;
+  return (
+    <span
+      className="inline-flex flex-col items-end gap-0.5 mr-2 align-middle"
+      title="L'admin peut tout de même inscrire un candidat sur ce créneau."
+    >
+      <span className="text-[10px] font-semibold text-orange-800 bg-orange-50 border border-orange-300 px-1.5 py-0.5 rounded">
+        Non visible candidats
+      </span>
+      {manques.map((m) => (
+        <span key={m} className="text-[10px] text-orange-800 whitespace-nowrap">Manque {m}</span>
+      ))}
+    </span>
+  );
+}
 
 type InscriptionGestion = {
   id: number;
@@ -1662,6 +1698,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
   const nbLibres = actives.filter((e) => e.candidat_id == null && e.statut === "LIBRE").length;
   const nbPrereservees = actives.filter((e) => e.candidat_id == null && e.statut === "PRERESERVEE").length;
   const nbAutres = actives.length - nbAttribuees - nbLibres - nbPrereservees;
+  const nbNonVisibles = actives.filter((e) => e.candidat_id == null && manquesPublication(e).length > 0).length;
   const horsInscription = actives.filter((e) => e.hors_inscription);
   const libererHorsInscription = async (e: EpreuveFlat) => {
     const ok = await confirm(
@@ -1691,6 +1728,14 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
           <button onClick={() => setFilterStatut("LIBRE")} className="text-green-800 hover:underline">
             <span className="font-semibold">{nbLibres}</span> libre{nbLibres > 1 ? "s" : ""}
           </button>
+        )}
+        {nbNonVisibles > 0 && (
+          <span
+            className="text-orange-800"
+            title="Créneaux libres sans salle, examinateur ou surveillant : les candidats ne les voient pas"
+          >
+            dont <span className="font-semibold">{nbNonVisibles}</span> non visible{nbNonVisibles > 1 ? "s" : ""} des candidats
+          </span>
         )}
         {nbPrereservees > 0 && (
           <button onClick={() => setFilterStatut("PRERESERVEE")} className="text-amber-800 hover:underline">
@@ -1887,6 +1932,13 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                                   {e.candidat_nom ? (
                                     <span className="font-semibold text-sm text-gray-900">
                                       {e.candidat_nom} {e.candidat_prenom}
+                                    </span>
+                                  ) : manquesPublication(e).length > 0 ? (
+                                    <span
+                                      className="text-[11px] font-semibold text-orange-800"
+                                      title="Créneau libre invisible des candidats tant que salle, examinateur et surveillant ne sont pas affectés"
+                                    >
+                                      Non visible · manque {manquesPublication(e).join(", ")}
                                     </span>
                                   ) : (
                                     <span className="text-gray-700 text-[13px]">—</span>
@@ -2751,6 +2803,11 @@ function TripletsAdminView({ planningId, planningNom }: { planningId: number; pl
                         <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold border ${etat.cls}`}>
                           {etat.label}
                         </span>
+                        {!!t.manques_publication?.length && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold border border-orange-300 bg-orange-50 text-orange-800">
+                            Non visible candidats
+                          </span>
+                        )}
                         {editable && (
                           <button
                             onClick={() => toggle(t)}
@@ -2770,6 +2827,13 @@ function TripletsAdminView({ planningId, planningNom }: { planningId: number; pl
                         }`}>
                           {t.motif}
                         </p>
+                      )}
+                      {!!t.manques_publication?.length && (
+                        <ul className="mt-1 pl-[4.5rem] pr-2 space-y-0.5">
+                          {t.manques_publication.map((m) => (
+                            <li key={m} className="text-[11px] leading-snug text-orange-800">✗ Manque {m}</li>
+                          ))}
+                        </ul>
                       )}
                       {t.details && t.details.length > 0 && (
                         <details className="mt-1 pl-[4.5rem] pr-2" open={t.type_slot === "INCOMPLET" || t.type_slot === "INDISPONIBLE"}>
@@ -6506,6 +6570,7 @@ function CandidatGestionDrawer({
                                       );
                                     })}
                                     <td className="px-3 py-2 text-right whitespace-nowrap">
+                                      <BadgeNonPublie manques={t.manques_publication} />
                                       {t.type_slot === "PRERESERVEE" && (
                                         <span className="mr-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
                                           Préréservé
@@ -7239,6 +7304,7 @@ function ListeAttenteTab({ planningId }: { planningId: number }) {
                               return <td key={mat} className="px-4 py-2.5">{ep?.heure_debut ?? '–'}</td>;
                             })}
                             <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                              <BadgeNonPublie manques={t.manques_publication} />
                               {t.type_slot === "PRERESERVEE" && (
                                 <span className="mr-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
                                   Préréservé
@@ -7619,6 +7685,7 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
                                     return <td key={mat} className="px-3 py-2">{ep?.heure_debut ?? '–'}</td>;
                                   })}
                                   <td className="px-3 py-2 text-right whitespace-nowrap">
+                                    <BadgeNonPublie manques={t.manques_publication} />
                                     {t.type_slot === "PRERESERVEE" && (
                                       <span className="mr-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
                                         Préréservé

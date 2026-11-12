@@ -45,6 +45,7 @@ from app.services.email import (
     build_from_template, build_reset_password_candidat, date_fr, send_email, send_reset_password_candidat,
 )
 from app.services.inscriptions import annuler_inscriptions_orphelines, epreuves_valides
+from app.services.publication import condition_publiable, epreuve_publiable
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 
@@ -339,6 +340,8 @@ def _build_planning_out(c: Candidat, db: Session) -> PortalPlanningOut:
             est_le_mien = e.candidat_id == c.id
             if e.statut == "ATTRIBUEE" and not est_le_mien:
                 continue
+            if e.statut == "LIBRE" and not epreuve_publiable(e):
+                continue
             epreuves_out.append(
                 PortalEpreuveOut(
                     id=e.id,
@@ -479,7 +482,8 @@ def get_triplets(
 
         seen: set = set()
         for groupe in groupes_pour_profil(all_day_epreuves_raw, profil_upper, matiere_exclue):
-            choisies = choisir_epreuves(groupe, ("LIBRE",))
+            # Seules les épreuves avec salle, examinateur et surveillant sont proposées
+            choisies = choisir_epreuves(groupe, ("LIBRE",), epreuve_publiable)
             if not choisies:
                 continue
             candidate = [(e, epreuve_to_dj[e.id]) for e in choisies]
@@ -655,7 +659,7 @@ def s_inscrire_triplet(
 
     epreuves_a_attribuer = None
     for groupe in groupes_pour_profil(all_day_epreuves_raw, profil_upper, matiere_exclue):
-        choisies = choisir_epreuves(groupe, ("LIBRE",))
+        choisies = choisir_epreuves(groupe, ("LIBRE",), epreuve_publiable)
         if not choisies:
             continue
         if body.cle is not None:
@@ -836,6 +840,7 @@ def get_liste_attente(
         q = db.query(Epreuve).filter(
             Epreuve.demi_journee_id.in_(dj_ids_map.keys()),
             Epreuve.statut == "LIBRE",
+            condition_publiable(),
         )
         if profil_effectif:
             q = q.filter(Epreuve.matiere == profil_effectif)
@@ -903,6 +908,7 @@ def update_liste_attente(
             has_epreuve = dj_ids_d and db.query(Epreuve).filter(
                 Epreuve.demi_journee_id.in_(dj_ids_d),
                 Epreuve.statut == "LIBRE",
+                condition_publiable(),
                 Epreuve.matiere == profil_effectif,
             ).first()
             if not has_epreuve:
@@ -940,7 +946,7 @@ def s_inscrire(body: InscriptionIn, code: str = Query(...), db: Session = Depend
     e = db.get(Epreuve, body.epreuve_id)
     if not e:
         raise HTTPException(status_code=404, detail="Épreuve introuvable")
-    if e.statut != "LIBRE":
+    if e.statut != "LIBRE" or not epreuve_publiable(e):
         raise HTTPException(status_code=409, detail="Ce créneau n'est plus disponible")
 
     dj = db.get(DemiJournee, e.demi_journee_id)

@@ -162,11 +162,14 @@ def groupes_pour_profil(epreuves: list, profil: str, matiere_exclue: Optional[st
     return result
 
 
-def choisir_epreuves(groupe: GroupeTriplet, statuts: tuple) -> Optional[list]:
-    """Une épreuve disponible par case (la première des salles en parallèle), ou None."""
+def choisir_epreuves(groupe: GroupeTriplet, statuts: tuple, accepte=None) -> Optional[list]:
+    """
+    Une épreuve disponible par case (la première des salles en parallèle), ou None.
+    `accepte(e)` restreint en plus les épreuves retenues (ex. publiables aux candidats).
+    """
     choisies = []
     for eps in groupe.cases.values():
-        dispo = [e for e in eps if e.statut in statuts]
+        dispo = [e for e in eps if e.statut in statuts and (accepte is None or accepte(e))]
         if not dispo:
             return None
         choisies.append(dispo[0])
