@@ -8292,6 +8292,11 @@ function CreneauxExaminateur({
 }) {
   const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
   const [loading, setLoading] = useState(true);
+  // Filtres de recherche
+  const [fExaminateur, setFExaminateur] = useState("");
+  const [fCandidat, setFCandidat] = useState("");
+  const [fHeure, setFHeure] = useState("");
+  const [fJour, setFJour] = useState("");
 
   useEffect(() => {
     setLoading(true);
@@ -8310,7 +8315,52 @@ function CreneauxExaminateur({
   if (epreuves.length === 0)
     return <p className="text-sm text-gray-700 text-center py-4">Aucun créneau dans ce planning pour ces matières.</p>;
 
+  const contient = (texte: string, q: string) => texte.toLowerCase().includes(q.trim().toLowerCase());
+  const jours = [...new Set(epreuves.map((e) => e.date))].sort();
+  const heures = [...new Set(epreuves.filter((e) => !fJour || e.date === fJour).map((e) => e.heure_debut))].sort();
+  const heure = heures.includes(fHeure) ? fHeure : "";
+  const filtrees = epreuves.filter((e) => {
+    if (fJour && e.date !== fJour) return false;
+    if (heure && e.heure_debut !== heure) return false;
+    if (fExaminateur.trim()) {
+      const noms = [e.examinateur_nom, e.examinateur_prenom, e.examinateur2_nom, e.examinateur2_prenom].filter(Boolean).join(" ");
+      if (!contient(noms, fExaminateur)) return false;
+    }
+    if (fCandidat.trim() && !contient(`${e.candidat_nom ?? ""} ${e.candidat_prenom ?? ""}`, fCandidat)) return false;
+    return true;
+  });
+  const filtresActifs = !!(fExaminateur.trim() || fCandidat.trim() || heure || fJour);
+  const champ = "text-xs text-gray-900 border border-black/15 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-black/10";
+
   return (
+    <div className="space-y-2">
+      {/* Filtres de recherche */}
+      <div className="rounded-xl border border-black/10 bg-black/[0.02] p-2.5 space-y-2">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+          <input type="text" value={fExaminateur} onChange={(e) => setFExaminateur(e.target.value)}
+            placeholder="Examinateur…" aria-label="Filtrer par examinateur" className={champ} />
+          <input type="text" value={fCandidat} onChange={(e) => setFCandidat(e.target.value)}
+            placeholder="Candidat…" aria-label="Filtrer par candidat" className={champ} />
+          <select value={heure} onChange={(e) => setFHeure(e.target.value)} aria-label="Filtrer par heure de passage" className={champ}>
+            <option value="">Toutes les heures</option>
+            {heures.map((h) => <option key={h} value={h}>{h}</option>)}
+          </select>
+          <select value={fJour} onChange={(e) => setFJour(e.target.value)} aria-label="Filtrer par jour" className={champ}>
+            <option value="">Tous les jours</option>
+            {jours.map((d) => <option key={d} value={d}>{formatDate(d)}</option>)}
+          </select>
+        </div>
+        <div className="flex items-center justify-end gap-2 text-xs text-gray-900">
+          <span><span className="font-semibold">{filtrees.length}</span> créneau{filtrees.length > 1 ? "x" : ""}{filtresActifs && <> sur {epreuves.length}</>}</span>
+          {filtresActifs && (
+            <button type="button" onClick={() => { setFExaminateur(""); setFCandidat(""); setFHeure(""); setFJour(""); }}
+              className="font-medium text-[#C62828] hover:underline">
+              Réinitialiser
+            </button>
+          )}
+        </div>
+      </div>
+
     <div className="overflow-x-auto rounded-xl border">
       <table className="w-full text-sm">
         <thead>
@@ -8325,7 +8375,10 @@ function CreneauxExaminateur({
           </tr>
         </thead>
         <tbody>
-          {epreuves.map((e) => {
+          {filtrees.length === 0 && (
+            <tr><td colSpan={7} className="px-3 py-6 text-center text-sm text-gray-700">Aucun créneau ne correspond aux filtres.</td></tr>
+          )}
+          {filtrees.map((e) => {
             const indispo = isIndispo(e.date, e.heure_debut);
             return (
               <tr key={e.id} className={`border-b last:border-0 ${indispo ? "bg-red-50/60" : "hover:bg-black/[0.01]"}`}>
@@ -8355,6 +8408,7 @@ function CreneauxExaminateur({
           })}
         </tbody>
       </table>
+    </div>
     </div>
   );
 }
