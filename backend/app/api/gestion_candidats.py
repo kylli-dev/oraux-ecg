@@ -52,6 +52,7 @@ class TripletEpreuveOut(BaseModel):
     heure_debut: str
     heure_fin: str
     statut: str = "ATTRIBUEE"
+    preparation_minutes: Optional[int] = None  # la préparation précède heure_debut
 
 
 class TripletOut(BaseModel):
@@ -146,6 +147,7 @@ class EpreuveDisponibleOut(BaseModel):
     heure_debut: str
     heure_fin: str
     statut: str
+    preparation_minutes: Optional[int] = None
 
 
 class InscrireDirectIn(BaseModel):
@@ -193,7 +195,7 @@ def _build_inscription_out(insc: Inscription, db: Session) -> InscriptionOut:
             id=e.id,
             matiere=e.matiere,
             heure_debut=str(e.heure_debut)[:5],
-            heure_fin=str(e.heure_fin)[:5],
+            heure_fin=str(e.heure_fin)[:5], preparation_minutes=e.preparation_minutes,
         ))
     epreuves_out.sort(key=lambda x: x.heure_debut)
     return InscriptionOut(id=insc.id, date=date_val, epreuves=epreuves_out)
@@ -384,7 +386,7 @@ def _triplet_incomplet(groupe: GroupeTriplet, date) -> Optional[TripletOut]:
     epreuves_out = [
         TripletEpreuveOut(
             id=e.id, matiere=e.matiere,
-            heure_debut=str(e.heure_debut)[:5], heure_fin=str(e.heure_fin)[:5], statut=e.statut,
+            heure_debut=str(e.heure_debut)[:5], heure_fin=str(e.heure_fin)[:5], preparation_minutes=e.preparation_minutes, statut=e.statut,
         )
         for e in presentes
     ] + [
@@ -511,7 +513,7 @@ def _triplets_depuis_groupes(groupes: list, date, seen_global: set, inclure_inco
                 id=e.id,
                 matiere=e.matiere,
                 heure_debut=str(e.heure_debut)[:5],
-                heure_fin=str(e.heure_fin)[:5],
+                heure_fin=str(e.heure_fin)[:5], preparation_minutes=e.preparation_minutes,
                 statut=e.statut,
             )
             for e in assigned
@@ -562,7 +564,7 @@ def _triplets_attribues(planning_id: int, db: Session) -> list:
             date=dj.date,
             heure_debut=str(eps_sorted[0].heure_debut)[:5],
             epreuves=[
-                TripletEpreuveOut(id=e.id, matiere=e.matiere, heure_debut=str(e.heure_debut)[:5], heure_fin=str(e.heure_fin)[:5], statut=e.statut)
+                TripletEpreuveOut(id=e.id, matiere=e.matiere, heure_debut=str(e.heure_debut)[:5], heure_fin=str(e.heure_fin)[:5], preparation_minutes=e.preparation_minutes, statut=e.statut)
                 for e in eps_sorted
             ],
             type_slot="ATTRIBUEE",
@@ -600,7 +602,7 @@ def _triplets_attribues(planning_id: int, db: Session) -> list:
         result.append(TripletOut(
             date=dj.date,
             heure_debut=str(e.heure_debut)[:5],
-            epreuves=[TripletEpreuveOut(id=e.id, matiere=e.matiere, heure_debut=str(e.heure_debut)[:5], heure_fin=str(e.heure_fin)[:5], statut=e.statut)],
+            epreuves=[TripletEpreuveOut(id=e.id, matiere=e.matiere, heure_debut=str(e.heure_debut)[:5], heure_fin=str(e.heure_fin)[:5], preparation_minutes=e.preparation_minutes, statut=e.statut)],
             type_slot="INCOMPLET",
             candidat_id=e.candidat_id,
             candidat_nom=e.candidat.nom if e.candidat else None,
@@ -838,7 +840,7 @@ def get_inscrits_journee(
                 id=e.id,
                 matiere=e.matiere,
                 heure_debut=str(e.heure_debut)[:5],
-                heure_fin=str(e.heure_fin)[:5],
+                heure_fin=str(e.heure_fin)[:5], preparation_minutes=e.preparation_minutes,
                 statut=e.statut,
             )
             for e in eps
@@ -1111,6 +1113,7 @@ def get_epreuves_disponibles(
             heure_debut=str(ep.heure_debut)[:5],
             heure_fin=str(ep.heure_fin)[:5],
             statut=ep.statut,
+            preparation_minutes=ep.preparation_minutes,
         )
         for ep, dj in q.all()
     ]

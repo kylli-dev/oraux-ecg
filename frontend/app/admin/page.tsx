@@ -281,7 +281,26 @@ type TripletEpreuveGestion = {
   heure_debut: string;
   heure_fin: string;
   statut?: string;
+  preparation_minutes?: number | null;
 };
+
+// Début de la préparation (heure de l'oral moins la préparation), « HH:MM »
+function debutPrepa(e: { heure_debut: string; preparation_minutes?: number | null }): string {
+  if (!e.preparation_minutes || !e.heure_debut) return e.heure_debut;
+  const [h, m] = e.heure_debut.split(":").map(Number);
+  const t = h * 60 + m - e.preparation_minutes;
+  return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+}
+
+// « 10:30 – 11:30 » préparation comprise
+const plageAvecPrepa = (e: { heure_debut: string; heure_fin: string; preparation_minutes?: number | null }) =>
+  `${debutPrepa(e)} – ${e.heure_fin}`;
+
+// Info-bulle détaillant préparation et oral
+const detailPrepa = (e: { heure_debut: string; heure_fin: string; preparation_minutes?: number | null }) =>
+  e.preparation_minutes
+    ? `Préparation ${debutPrepa(e)} – ${e.heure_debut} (${e.preparation_minutes} min), oral ${e.heure_debut} – ${e.heure_fin}`
+    : `Oral ${e.heure_debut} – ${e.heure_fin} (sans préparation)`;
 
 type TripletDisponible = {
   date: string;
@@ -5991,7 +6010,7 @@ function CandidatGestionDrawer({
   // Mode assignation libre
   const [modeLibre, setModeLibre] = useState(false);
   const [libresDate, setLibresDate] = useState("");
-  const [libresData, setLibresData] = useState<Record<string, { id: number; heure_debut: string; heure_fin: string; statut: string }[]>>({});
+  const [libresData, setLibresData] = useState<Record<string, { id: number; heure_debut: string; heure_fin: string; statut: string; preparation_minutes?: number | null }[]>>({});
   const [selection, setSelection] = useState<Record<string, number>>({});
   const [loadingLibres, setLoadingLibres] = useState(false);
 
@@ -6081,13 +6100,13 @@ function CandidatGestionDrawer({
     if (!date) { setLibresData({}); return; }
     setLoadingLibres(true);
     try {
-      const eps = await get<{ id: number; matiere: string; heure_debut: string; heure_fin: string; statut: string }[]>(
+      const eps = await get<{ id: number; matiere: string; heure_debut: string; heure_fin: string; statut: string; preparation_minutes?: number | null }[]>(
         `gestion-candidats/${planningId}/epreuves-disponibles?date=${date}`
       );
-      const grouped: Record<string, { id: number; heure_debut: string; heure_fin: string; statut: string }[]> = {};
+      const grouped: Record<string, { id: number; heure_debut: string; heure_fin: string; statut: string; preparation_minutes?: number | null }[]> = {};
       for (const ep of eps) {
         if (!grouped[ep.matiere]) grouped[ep.matiere] = [];
-        grouped[ep.matiere].push({ id: ep.id, heure_debut: ep.heure_debut, heure_fin: ep.heure_fin, statut: ep.statut });
+        grouped[ep.matiere].push({ id: ep.id, heure_debut: ep.heure_debut, heure_fin: ep.heure_fin, statut: ep.statut, preparation_minutes: ep.preparation_minutes });
       }
       setLibresData(grouped);
       setSelection({});
@@ -6271,7 +6290,10 @@ function CandidatGestionDrawer({
                   {fiche.inscription.epreuves.map(e => (
                     <div key={e.id} className="flex flex-wrap items-center gap-2 px-3 py-2">
                       <span className="font-semibold text-gray-900 w-20">{e.matiere}</span>
-                      <span className="text-gray-900 tabular-nums">{e.heure_debut} – {e.heure_fin}</span>
+                      <span className="text-gray-900 tabular-nums font-medium" title={detailPrepa(e)}>{plageAvecPrepa(e)}</span>
+                      {!!e.preparation_minutes && (
+                        <span className="text-[11px] text-gray-700 tabular-nums">prépa {e.preparation_minutes} min · oral {e.heure_debut}</span>
+                      )}
                       <div className="ml-auto flex gap-1.5">
                         <button
                           onClick={() => doRetirerEpreuve(e, "LIBRE")}
@@ -6477,7 +6499,11 @@ function CandidatGestionDrawer({
                                     <td className="px-3 py-2 font-medium">{t.heure_debut}</td>
                                     {allMatieres.map(mat => {
                                       const ep = t.epreuves.find(e => e.matiere === mat);
-                                      return <td key={mat} className="px-3 py-2">{ep?.heure_debut ?? '–'}</td>;
+                                      return (
+                                        <td key={mat} className="px-3 py-2 tabular-nums whitespace-nowrap" title={ep && ep.heure_fin ? detailPrepa(ep) : undefined}>
+                                          {ep ? (ep.heure_fin ? plageAvecPrepa(ep) : ep.heure_debut) : '–'}
+                                        </td>
+                                      );
                                     })}
                                     <td className="px-3 py-2 text-right whitespace-nowrap">
                                       {t.type_slot === "PRERESERVEE" && (
@@ -6541,7 +6567,7 @@ function CandidatGestionDrawer({
                             <option value="">-- Choisir --</option>
                             {eps.map(ep => (
                               <option key={ep.id} value={ep.id}>
-                                {ep.heure_debut} – {ep.heure_fin}{ep.statut === "PRERESERVEE" ? " ★" : ""}
+                                {plageAvecPrepa(ep)}{ep.preparation_minutes ? ` (oral ${ep.heure_debut})` : ""}{ep.statut === "PRERESERVEE" ? " ★" : ""}
                               </option>
                             ))}
                           </select>
