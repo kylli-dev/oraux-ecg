@@ -8297,6 +8297,7 @@ function CreneauxExaminateur({
   const [fCandidat, setFCandidat] = useState("");
   const [fHeure, setFHeure] = useState("");
   const [fJour, setFJour] = useState("");
+  const [fMatiere, setFMatiere] = useState("");
 
   useEffect(() => {
     setLoading(true);
@@ -8317,9 +8318,12 @@ function CreneauxExaminateur({
 
   const contient = (texte: string, q: string) => texte.toLowerCase().includes(q.trim().toLowerCase());
   const jours = [...new Set(epreuves.map((e) => e.date))].sort();
+  const matieresCreneaux = [...new Set(epreuves.map((e) => e.matiere))].sort();
+  const matiere = matieresCreneaux.includes(fMatiere) ? fMatiere : "";
   const heures = [...new Set(epreuves.filter((e) => !fJour || e.date === fJour).map((e) => e.heure_debut))].sort();
   const heure = heures.includes(fHeure) ? fHeure : "";
   const filtrees = epreuves.filter((e) => {
+    if (matiere && e.matiere !== matiere) return false;
     if (fJour && e.date !== fJour) return false;
     if (heure && e.heure_debut !== heure) return false;
     if (fExaminateur.trim()) {
@@ -8329,14 +8333,18 @@ function CreneauxExaminateur({
     if (fCandidat.trim() && !contient(`${e.candidat_nom ?? ""} ${e.candidat_prenom ?? ""}`, fCandidat)) return false;
     return true;
   });
-  const filtresActifs = !!(fExaminateur.trim() || fCandidat.trim() || heure || fJour);
+  const filtresActifs = !!(fExaminateur.trim() || fCandidat.trim() || heure || fJour || matiere);
   const champ = "text-xs text-gray-900 border border-black/15 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-black/10";
 
   return (
     <div className="space-y-2">
       {/* Filtres de recherche */}
       <div className="rounded-xl border border-black/10 bg-black/[0.02] p-2.5 space-y-2">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
+          <select value={matiere} onChange={(e) => setFMatiere(e.target.value)} aria-label="Filtrer par matière" className={champ}>
+            <option value="">Toutes les matières</option>
+            {matieresCreneaux.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
           <input type="text" value={fExaminateur} onChange={(e) => setFExaminateur(e.target.value)}
             placeholder="Examinateur…" aria-label="Filtrer par examinateur" className={champ} />
           <input type="text" value={fCandidat} onChange={(e) => setFCandidat(e.target.value)}
@@ -8353,7 +8361,7 @@ function CreneauxExaminateur({
         <div className="flex items-center justify-end gap-2 text-xs text-gray-900">
           <span><span className="font-semibold">{filtrees.length}</span> créneau{filtrees.length > 1 ? "x" : ""}{filtresActifs && <> sur {epreuves.length}</>}</span>
           {filtresActifs && (
-            <button type="button" onClick={() => { setFExaminateur(""); setFCandidat(""); setFHeure(""); setFJour(""); }}
+            <button type="button" onClick={() => { setFExaminateur(""); setFCandidat(""); setFHeure(""); setFJour(""); setFMatiere(""); }}
               className="font-medium text-[#C62828] hover:underline">
               Réinitialiser
             </button>
