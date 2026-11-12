@@ -1195,7 +1195,7 @@ function PlanningsSection({
                 {["Nom", "Période", "Statut", "Actions"].map((h) => (
                   <th
                     key={h}
-                    className={`px-5 py-3.5 text-xs font-semibold text-gray-800 tracking-wide ${h === "Actions" ? "text-right" : ""}`}
+                    className={`px-5 py-3.5 align-middle text-xs font-semibold text-gray-800 tracking-wide ${h === "Actions" ? "w-px text-right" : ""}`}
                   >
                     {h}
                   </th>
@@ -1208,12 +1208,12 @@ function PlanningsSection({
                   key={p.id}
                   className="border-t border-black/5 hover:bg-black/[0.012] transition"
                 >
-                  <td className="px-5 py-3.5 font-medium">{p.nom}</td>
-                  <td className="px-5 py-3.5 text-gray-800 text-xs whitespace-nowrap">
+                  <td className="px-5 py-3.5 align-middle font-medium">{p.nom}</td>
+                  <td className="px-5 py-3.5 align-middle text-gray-800 text-xs whitespace-nowrap">
                     {formatDateCourte(p.date_debut)} &rarr; {formatDateCourte(p.date_fin)}
                   </td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-2 flex-wrap">
+                  <td className="px-5 py-3.5 align-middle">
+                    <div className="flex items-center gap-2 whitespace-nowrap">
                       <StatutBadge statut={p.statut} />
                       {(TRANSITIONS[p.statut] ?? []).map((t) => (
                         <button
@@ -1226,7 +1226,8 @@ function PlanningsSection({
                       ))}
                     </div>
                   </td>
-                  <td className="px-5 py-3.5 text-right">
+                  <td className="px-5 py-3.5 align-middle text-right">
+                    {/* Même cadre pour les deux groupes : boutons de même hauteur, alignés */}
                     <div className="flex items-center justify-end gap-2 whitespace-nowrap">
                       <div className="flex items-center gap-0.5 rounded-lg border border-black/10 p-0.5">
                         <Btn
@@ -1251,13 +1252,15 @@ function PlanningsSection({
                           icon={Download}
                         />
                       </div>
-                      <Btn
-                        label="Supprimer"
-                        onClick={() => handleDelete(p.id)}
-                        small
-                        variant="danger"
-                        icon={Trash2}
-                      />
+                      <div className="flex items-center rounded-lg border border-red-200 p-0.5">
+                        <Btn
+                          label="Supprimer"
+                          onClick={() => handleDelete(p.id)}
+                          small
+                          variant="danger"
+                          icon={Trash2}
+                        />
+                      </div>
                     </div>
                   </td>
                 </tr>
