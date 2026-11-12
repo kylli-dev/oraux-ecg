@@ -1195,7 +1195,7 @@ function PlanningsSection({
                 {["Nom", "Période", "Statut", "Actions"].map((h) => (
                   <th
                     key={h}
-                    className={`px-5 py-3.5 text-xs font-semibold text-gray-800 tracking-wide ${h === "Actions" ? "text-right" : ""}`}
+                    className="px-5 py-3.5 text-xs font-semibold text-gray-800 tracking-wide"
                   >
                     {h}
                   </th>
@@ -1226,8 +1226,9 @@ function PlanningsSection({
                       ))}
                     </div>
                   </td>
-                  <td className="px-5 py-3.5 text-right">
-                    <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+                  <td className="px-5 py-3.5">
+                    {/* Aligné à gauche : le titre « Actions » est au-dessus du bouton « Voir » */}
+                    <div className="flex items-center gap-2 whitespace-nowrap">
                       <div className="flex items-center gap-0.5 rounded-lg border border-black/10 p-0.5">
                         <Btn
                           label="Voir"
