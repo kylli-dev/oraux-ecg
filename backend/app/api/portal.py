@@ -46,6 +46,7 @@ from app.services.email import (
 )
 from app.services.inscriptions import annuler_inscriptions_orphelines, epreuves_valides
 from app.services.publication import condition_publiable, epreuve_publiable
+from app.services.notifications import notifier_admins
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 
@@ -923,6 +924,19 @@ def update_liste_attente(
     dates = sorted(set(body.dates))
     for d in dates:
         db.add(ListeAttente(candidat_id=candidat_id, date=d))
+    # Admins prévenus (cloche + email) quand le candidat coche de nouvelles journées
+    nouvelles = sorted(set(dates) - anciennes)
+    if nouvelles:
+        notifier_admins(
+            db, background_tasks, "LISTE_ATTENTE",
+            titre=f"Liste d'attente : {c.prenom} {c.nom}",
+            message=(
+                f"Nouvelle demande de liste d'attente de {c.prenom} {c.nom} ({planning.nom}) pour : "
+                f"{', '.join(date_fr(d) for d in nouvelles)}."
+            ),
+            planning_id=c.planning_id,
+            candidat_id=c.id,
+        )
     db.commit()
 
     # Confirmation par email (Message-type LISTE_ATTENTE) — seulement si de nouvelles

@@ -21,6 +21,7 @@ from app.models.planning_salle_defaut import PlanningMatiereSalleDefaut
 from app.models.etablissement import Etablissement
 from app.models.admin import Admin
 from app.models.audit_log import AuditLog
+from app.models.notification_admin import NotificationAdmin
 
 __all__ = [
     "Planning",

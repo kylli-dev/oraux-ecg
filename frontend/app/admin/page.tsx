@@ -8,6 +8,7 @@ import { ToastProvider, useToast, useConfirm } from "./Toast";
 import { type CaseTriplet, MARGE_ENTRE_EPREUVES, exceptionsMatrice, minutes, verifierEchange } from "./echangeTriplets";
 import { corpsBlocModifie } from "./blocsGabarit";
 import MonitoringSection from "./MonitoringSection";
+import NotificationsCloche, { type NotificationAdmin } from "./NotificationsCloche";
 import { dateApplication, resumeGabarits } from "./gabaritsAppliques";
 import {
   CalendarDays,
@@ -333,6 +334,11 @@ function manquesPublication(e: {
   if (!e.surveillant_id && !e.surveillant2_id) manques.push("surveillant");
   return manques;
 }
+
+// ── Ouverture de Candidats depuis une notification ──
+// Planning, onglet et candidat à présélectionner, lus par CandidatsSection à son montage.
+type IntentionCandidats = { planningId: number; tab: "liste_attente"; candidatId: number | null };
+let intentionCandidats: IntentionCandidats | null = null;
 
 // ── Liens vers l'affectation manquante ──
 // Un clic sur « salle », « examinateur » ou « surveillant » ouvre l'écran d'affectation
@@ -5518,14 +5524,16 @@ function EditBlocForm({
 function CandidatsSection() {
   const toast = useToast();
   const confirm = useConfirm();
+  const [intention] = useState(() => intentionCandidats);
+  useEffect(() => { if (intention) intentionCandidats = null; }, [intention]);
   const [plannings, setPlannings] = useState<Planning[]>([]);
   const [candidats, setCandidats] = useState<Candidat[]>([]);
-  const [planningId, setPlanningId] = useState<number | "">("");
+  const [planningId, setPlanningId] = useState<number | "">(intention?.planningId ?? "");
   const [loading, setLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [gestionKey, setGestionKey] = useState(0);
-  const [tab, setTab] = useState<"liste" | "gestion" | "liste_attente" | "compactage">("liste");
+  const [tab, setTab] = useState<"liste" | "gestion" | "liste_attente" | "compactage">(intention?.tab ?? "liste");
   const [error, setError] = useState("");
   const [searchCand, setSearchCand] = useState("");
   const [filterProfil, setFilterProfil] = useState<"" | "HGG" | "ESH">("");
@@ -5763,7 +5771,7 @@ function CandidatsSection() {
           )}
 
           {tab === "liste_attente" && (
-            <ListeAttenteTab planningId={planningId as number} />
+            <ListeAttenteTab planningId={planningId as number} candidatInitial={intention?.candidatId ?? null} />
           )}
 
           {tab === "compactage" && (
@@ -7151,12 +7159,12 @@ function CompactageTab({
 }
 
 // ── ListeAttenteTab ──────────────────────────────────────────────────────────
-function ListeAttenteTab({ planningId }: { planningId: number }) {
+function ListeAttenteTab({ planningId, candidatInitial = null }: { planningId: number; candidatInitial?: number | null }) {
   const toast = useToast();
   const confirm = useConfirm();
   const [liste, setListe] = useState<ListeAttenteAdminItem[]>([]);
   const [triplets, setTriplets] = useState<TripletDisponible[]>([]);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(candidatInitial);
   const [search, setSearch] = useState("");
   const [loadingAction, setLoadingAction] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -11889,10 +11897,12 @@ function Sidebar({
   active,
   onSelect,
   nbConflits = 0,
+  onNotification,
 }: {
   active: SectionKey;
   onSelect: (k: SectionKey) => void;
   nbConflits?: number;
+  onNotification: (n: NotificationAdmin) => void;
 }) {
   // Le Monitoring est réservé aux super-administrateurs (le serveur refuse aussi les autres)
   const [superAdmin, setSuperAdmin] = useState(false);
@@ -11960,8 +11970,11 @@ function Sidebar({
         ))}
       </nav>
 
-      <div className="p-3 border-t border-white/10">
-        <ProfilMenu />
+      <div className="p-3 border-t border-white/10 flex items-center gap-2">
+        <div className="flex-1 min-w-0">
+          <ProfilMenu />
+        </div>
+        <NotificationsCloche get={get} post={post} onOuvrir={onNotification} />
       </div>
     </aside>
   );
@@ -14436,6 +14449,17 @@ export default function AdminPage() {
 
   // Lien « manque … » : ouvre l'écran d'affectation (remonté pour qu'il lise ses filtres)
   const [cleNavigation, setCleNavigation] = useState(0);
+
+  // Notification « liste d'attente » : Candidats > Liste d'attente du planning, candidat présélectionné
+  const ouvrirNotification = useCallback((n: NotificationAdmin) => {
+    if (n.type !== "LISTE_ATTENTE" || !n.planning_id) return;
+    intentionCandidats = { planningId: n.planning_id, tab: "liste_attente", candidatId: n.candidat_id };
+    setSection("candidats");
+    localStorage.setItem("admin_section", "candidats");
+    setSelectedPlanning(null);
+    setMobileSidebar(false);
+    setCleNavigation((c) => c + 1);
+  }, []);
   const allerAffecter = useCallback((i: IntentionAffectation) => {
     intentionAffectation = i;
     const k = SECTION_AFFECTATION[i.manque];
@@ -14452,7 +14476,7 @@ export default function AdminPage() {
     <div className="flex min-h-screen bg-[#F5F5F5]">
       {/* Sidebar desktop */}
       <div className="hidden md:block h-screen sticky top-0">
-        <Sidebar active={section} onSelect={switchSection} nbConflits={nbConflits} />
+        <Sidebar active={section} onSelect={switchSection} nbConflits={nbConflits} onNotification={ouvrirNotification} />
       </div>
 
       {/* Sidebar mobile overlay */}
@@ -14475,7 +14499,7 @@ export default function AdminPage() {
               transition={{ type: "spring", stiffness: 280, damping: 26 }}
               className="absolute left-0 top-0 h-full"
             >
-              <Sidebar active={section} onSelect={switchSection} nbConflits={nbConflits} />
+              <Sidebar active={section} onSelect={switchSection} nbConflits={nbConflits} onNotification={ouvrirNotification} />
             </motion.div>
           </motion.div>
         )}
