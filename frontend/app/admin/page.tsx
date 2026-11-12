@@ -8387,7 +8387,12 @@ function CreneauxExaminateur({
                 </td>
                 <td className="px-3 py-2 font-medium">{e.matiere}</td>
                 <td className="px-3 py-2 whitespace-nowrap text-gray-800">{formatDate(e.date)}</td>
-                <td className="px-3 py-2 font-mono">{e.heure_debut}</td>
+                <td className="px-3 py-2 whitespace-nowrap" title={detailPrepa(e)}>
+                  <span className="font-mono text-gray-900">{plageAvecPrepa(e)}</span>
+                  {!!e.preparation_minutes && (
+                    <span className="block text-[11px] text-gray-700">prépa {debutPrepa(e)} · oral {e.heure_debut}</span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-gray-800">
                   {e.examinateur_nom
                     ? `${e.examinateur_nom} ${e.examinateur_prenom ?? ""}`
