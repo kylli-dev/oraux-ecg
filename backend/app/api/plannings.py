@@ -453,38 +453,80 @@ def upsert_salle_defaults(
     return get_salle_defaults(planning_id, db)
 
 
+class AppliquerDefautsIn(BaseModel):
+    # Nouveau tableau des défauts : enregistré à la place de l'ancien avant application
+    defauts: Optional[List[SalleDefautIn]] = None
+
+
 @router.post("/{planning_id}/salle-defaults/apply", status_code=200)
-def apply_salle_defaults(planning_id: int, db: Session = Depends(get_db)):
-    """Applique les salles et surveillant par défaut à toutes les épreuves du planning."""
+def apply_salle_defaults(
+    planning_id: int,
+    body: Optional[AppliquerDefautsIn] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Applique les salles et surveillants par défaut à toutes les épreuves du planning.
+
+    Avec `defauts`, enregistre d'abord ce nouveau tableau. Une valeur remise à « Aucune »
+    (présente avant, vide maintenant) est retirée des épreuves de la matière qui l'ont
+    encore — celles affectées autrement, à la main, gardent leur valeur.
+
+    `updated` = épreuves réellement modifiées (remplies ou vidées) ; `retirees` = dont
+    vidées ; `renseignes` = nombre de valeurs par défaut remplies.
+    """
+    champs = ("salle_id", "salle_preparation_id", "surveillant_id", "surveillant2_id")
+    anciens = {
+        r.matiere: {c: getattr(r, c) for c in champs}
+        for r in db.query(PlanningMatiereSalleDefaut).filter_by(planning_id=planning_id).all()
+    }
+    if body is not None and body.defauts is not None:
+        upsert_salle_defaults(planning_id, body.defauts, db)
     defaults = {
         r.matiere: r
         for r in db.query(PlanningMatiereSalleDefaut).filter_by(planning_id=planning_id).all()
     }
-    if not defaults:
-        return {"updated": 0}
+    renseignes = sum(1 for d in defaults.values() for c in champs if getattr(d, c) is not None)
+    # Valeurs retirées du tableau : {matière: {champ: ancienne valeur}}
+    retraits = {}
+    for m, vals in anciens.items():
+        nouveau = defaults.get(m)
+        for c, v in vals.items():
+            if v is not None and (nouveau is None or getattr(nouveau, c) is None):
+                retraits.setdefault(m, {})[c] = v
 
     dj_ids = [
         dj.id for dj in db.query(DemiJournee).filter_by(planning_id=planning_id).all()
     ]
     epreuves = db.query(Epreuve).filter(Epreuve.demi_journee_id.in_(dj_ids)).all()
 
-    count = 0
+    modifiees: set = set()
+    videes: set = set()
+    for e in epreuves:
+        for c, ancienne in retraits.get(e.matiere, {}).items():
+            if getattr(e, c) == ancienne:
+                setattr(e, c, None)
+                videes.add(e.id)
+                if c == "salle_id":
+                    e.salle_verifiee = False
+    modifiees |= videes
+    if not renseignes:
+        db.commit()
+        return {"updated": len(modifiees), "retirees": len(videes), "renseignes": 0}
+
     for e in epreuves:
         d = defaults.get(e.matiere)
         if not d:
             continue
-        if d.salle_id is not None:
-            e.salle_id = d.salle_id
-        if d.salle_preparation_id is not None:
-            e.salle_preparation_id = d.salle_preparation_id
-        if d.surveillant_id is not None:
-            e.surveillant_id = d.surveillant_id
-        if d.surveillant2_id is not None:
-            e.surveillant2_id = d.surveillant2_id
-        count += 1
+        for c in champs:
+            valeur = getattr(d, c)
+            if valeur is not None and getattr(e, c) != valeur:
+                setattr(e, c, valeur)
+                modifiees.add(e.id)
+                if c == "salle_id":
+                    e.salle_verifiee = False  # comme patch_epreuve
 
     db.commit()
-    return {"updated": count}
+    return {"updated": len(modifiees), "retirees": len(videes), "renseignes": renseignes}
 
 
 # ── Import / Export Excel ──────────────────────────────────────────────────────

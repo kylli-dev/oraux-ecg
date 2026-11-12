@@ -13630,6 +13630,9 @@ function SallesSection() {
   type SalleDefaut = { matiere: string; salle_id: number | null; salle_preparation_id: number | null; surveillant_id: number | null; surveillant2_id: number | null };
   type SurveillantItem = { id: number; nom: string; prenom: string; actif: boolean };
   const [defaults, setDefaults] = useState<SalleDefaut[]>([]);
+  // Tableau tel qu'enregistré : une valeur présente ici et vidée dans `defaults` sera
+  // retirée des épreuves qui l'ont encore (voir apply_salle_defaults)
+  const [defautsEnregistres, setDefautsEnregistres] = useState<SalleDefaut[]>([]);
   const [savingDefaults, setSavingDefaults] = useState(false);
   const [surveillants, setSurveillants] = useState<SurveillantItem[]>([]);
 
@@ -13650,7 +13653,7 @@ function SallesSection() {
       get<SalleDefaut[]>(`plannings/${planningId}/salle-defaults`),
       get<SurveillantItem[]>(`surveillants/?planning_id=${planningId}`),
     ])
-      .then(([eps, defs, survs]) => { setEpreuves(eps); setDefaults(defs); setSurveillants(survs); })
+      .then(([eps, defs, survs]) => { setEpreuves(eps); setDefaults(defs); setDefautsEnregistres(defs); setSurveillants(survs); })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [planningId]);
@@ -13670,11 +13673,26 @@ function SallesSection() {
     if (!planningId) return;
     setSavingDefaults(true);
     try {
-      await put(`plannings/${planningId}/salle-defaults`, defaults);
-      const r = await post<{ updated: number }>(`plannings/${planningId}/salle-defaults/apply`, {});
-      toast.success(`${r.updated} épreuve(s) mise(s) à jour`);
-      const eps = await get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`);
+      // Enregistre le tableau et l'applique en une requête ; « — Aucune — » à la place d'une
+      // valeur enregistrée retire cette valeur des épreuves qui l'ont encore
+      const r = await post<{ updated: number; retirees?: number; renseignes?: number }>(
+        `plannings/${planningId}/salle-defaults/apply`, { defauts: defaults }
+      );
+      const retirees = r.retirees ?? 0;
+      if (r.updated === 0) {
+        toast.success(r.renseignes
+          ? "Aucune épreuve modifiée : elles avaient déjà ces salles et surveillants."
+          : "Aucune épreuve modifiée : le tableau est vide.");
+      } else {
+        toast.success(`${r.updated} épreuve(s) modifiée(s)${retirees ? `, dont ${retirees} vidée(s) des valeurs retirées du tableau` : ""}`);
+      }
+      const [eps, defs] = await Promise.all([
+        get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`),
+        get<SalleDefaut[]>(`plannings/${planningId}/salle-defaults`),
+      ]);
       setEpreuves(eps);
+      setDefaults(defs);
+      setDefautsEnregistres(defs);
     } catch (e) { toast.error(e instanceof Error ? e.message : "Erreur"); }
     finally { setSavingDefaults(false); }
   }
@@ -13951,9 +13969,21 @@ function SallesSection() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Salles par défaut par matière</p>
-                  <p className="text-[11px] text-gray-700 mt-0.5">Appliquées automatiquement à la génération et à l'ajout de créneau</p>
+                  <p className="text-[11px] text-gray-700 mt-0.5">
+                    Choisissez une salle ou un surveillant par matière, puis « Appliquer à toutes les épreuves ». Appliquées aussi
+                    automatiquement à la génération et à l&apos;ajout de créneau. Remettre « — Aucune — » à la place d&apos;une valeur
+                    appliquée la retire des épreuves qui l&apos;ont encore (les affectations faites à la main sont gardées).
+                    Pour affecter seulement certains créneaux, utilisez la sélection plus bas.
+                  </p>
                 </div>
-                <button onClick={applyDefaults} disabled={savingDefaults} className="text-xs px-3 py-1.5 rounded-lg text-white font-medium hover:opacity-90 transition disabled:opacity-40 flex items-center gap-1.5" style={{ backgroundColor: RED }}>
+                <button
+                  onClick={applyDefaults}
+                  disabled={savingDefaults || (
+                    !defaults.some((d) => d.salle_id != null || d.salle_preparation_id != null || d.surveillant_id != null || d.surveillant2_id != null)
+                    && !defautsEnregistres.some((d) => d.salle_id != null || d.salle_preparation_id != null || d.surveillant_id != null || d.surveillant2_id != null)
+                  )}
+                  title="Choisissez d'abord au moins une salle ou un surveillant dans le tableau"
+                  className="text-xs px-3 py-1.5 rounded-lg text-white font-medium hover:opacity-90 transition disabled:opacity-40 flex items-center gap-1.5" style={{ backgroundColor: RED }}>
                   {savingDefaults && <Loader2 className="h-3 w-3 animate-spin" />}
                   Appliquer à toutes les épreuves
                 </button>
