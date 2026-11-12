@@ -5577,7 +5577,8 @@ function CandidatsSection() {
   const handleDeleteAll = async () => {
     if (!planningId || candidats.length === 0) return;
     if (!await confirm(`Supprimer les ${candidats.length} candidat(s) de ce planning ? Cette action est irréversible.`, { confirmLabel: "Tout supprimer", danger: true })) return;
-    await Promise.allSettled(candidats.map((c) => del(`candidats/${c.id}`)));
+    // Une seule requête (une par candidat saturait le navigateur sur un gros planning)
+    await del(`candidats/planning/${planningId}/all`);
     toast.success(`${candidats.length} candidat(s) supprimé(s)`);
     loadCandidats();
   };
@@ -13718,9 +13719,7 @@ function SallesSection() {
   async function validerGroupe(epreuveIds: number[]) {
     setSaving(-1);
     try {
-      await Promise.all(
-        epreuveIds.map((id) => patch(`plannings/${planningId}/epreuves/${id}`, { salle_verifiee: true }))
-      );
+      await post(`plannings/${planningId}/epreuves/affecter-groupe`, { epreuve_ids: epreuveIds, salle_verifiee: true });
       setEpreuves((prev) => prev.map((e) => (epreuveIds.includes(e.id) ? { ...e, salle_verifiee: true } : e)));
       toast.success("Doublon validé");
     } catch (e) {
@@ -13760,31 +13759,29 @@ function SallesSection() {
     if (selected.size === 0) return;
     setSaving(-1);
     try {
-      await Promise.all(
-        Array.from(selected).flatMap((key) => {
-          const [date, matiere, heure_debut] = key.split("||");
-          const targets = epreuves.filter((e) => e.date === date && e.matiere === matiere && e.heure_debut === heure_debut && estDansRang(e));
-          return targets.flatMap((e) => {
-            const calls = [];
-            if (bulkSalleId !== "") calls.push(patch(`plannings/${planningId}/epreuves/${e.id}`, { salle_id: bulkSalleId ? Number(bulkSalleId) : null }));
-            if (bulkSallePrepId !== "") calls.push(patch(`plannings/${planningId}/epreuves/${e.id}`, { salle_preparation_id: bulkSallePrepId ? Number(bulkSallePrepId) : null }));
-            if (bulkSurvId !== "") calls.push(patch(`plannings/${planningId}/epreuves/${e.id}`, { surveillant_id: bulkSurvId === "null" ? null : Number(bulkSurvId) }));
-            if (bulkSurv2Id !== "") calls.push(patch(`plannings/${planningId}/epreuves/${e.id}`, { surveillant2_id: bulkSurv2Id === "null" ? null : Number(bulkSurv2Id) }));
-            return calls;
-          });
-        })
-      );
+      // Une seule requête pour toutes les épreuves (une par épreuve et par champ saturait
+      // le navigateur : ERR_INSUFFICIENT_RESOURCES)
+      const ids = epreuves
+        .filter((e) => selected.has(`${e.date}||${e.matiere}||${e.heure_debut}`) && estDansRang(e))
+        .map((e) => e.id);
+      const champs: Record<string, number | null> = {};
+      if (bulkSalleId !== "") champs.salle_id = bulkSalleId && bulkSalleId !== "null" ? Number(bulkSalleId) : null;
+      if (bulkSallePrepId !== "") champs.salle_preparation_id = bulkSallePrepId && bulkSallePrepId !== "null" ? Number(bulkSallePrepId) : null;
+      if (bulkSurvId !== "") champs.surveillant_id = bulkSurvId === "null" ? null : Number(bulkSurvId);
+      if (bulkSurv2Id !== "") champs.surveillant2_id = bulkSurv2Id === "null" ? null : Number(bulkSurv2Id);
+      if (ids.length > 0) await post(`plannings/${planningId}/epreuves/affecter-groupe`, { epreuve_ids: ids, ...champs });
       setEpreuves((prev) =>
         prev.map((e) => {
           const key = `${e.date}||${e.matiere}||${e.heure_debut}`;
           if (!selected.has(key) || !estDansRang(e)) return e;
           const updates: Partial<EpreuveFlat> = {};
           if (bulkSalleId !== "") {
-            updates.salle_id = bulkSalleId ? Number(bulkSalleId) : null;
+            updates.salle_id = bulkSalleId !== "null" ? Number(bulkSalleId) : null;
             updates.salle_intitule = salles.find((s) => s.id === Number(bulkSalleId))?.intitule ?? null;
+            updates.salle_verifiee = false;
           }
           if (bulkSallePrepId !== "") {
-            updates.salle_preparation_id = bulkSallePrepId ? Number(bulkSallePrepId) : null;
+            updates.salle_preparation_id = bulkSallePrepId !== "null" ? Number(bulkSallePrepId) : null;
             updates.salle_preparation_intitule = salles.find((s) => s.id === Number(bulkSallePrepId))?.intitule ?? null;
           }
           if (bulkSurvId !== "") {

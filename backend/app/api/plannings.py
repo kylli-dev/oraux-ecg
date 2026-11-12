@@ -345,6 +345,48 @@ def patch_epreuve(
     return {"epreuve_id": e.id, "statut": e.statut, "matiere": e.matiere}
 
 
+class AffectationGroupeeIn(BaseModel):
+    """
+    Même valeur appliquée à plusieurs épreuves en UNE requête (onglet Salles) — remplace
+    l'envoi d'une requête par épreuve et par champ, qui saturait le navigateur
+    (ERR_INSUFFICIENT_RESOURCES) dès quelques centaines de créneaux. Seuls les champs
+    envoyés sont modifiés ; null retire l'affectation.
+    """
+    epreuve_ids: List[int] = Field(min_length=1, max_length=20000)
+    salle_id: Optional[int] = None
+    salle_preparation_id: Optional[int] = None
+    surveillant_id: Optional[int] = None
+    surveillant2_id: Optional[int] = None
+    salle_verifiee: Optional[bool] = None
+
+
+@router.post("/{planning_id}/epreuves/affecter-groupe")
+def affecter_groupe(planning_id: int, body: AffectationGroupeeIn, db: Session = Depends(get_db)):
+    champs = {
+        f: getattr(body, f)
+        for f in ("salle_id", "salle_preparation_id", "surveillant_id", "surveillant2_id", "salle_verifiee")
+        if f in body.model_fields_set
+    }
+    if not champs:
+        raise HTTPException(status_code=422, detail="Aucun champ à modifier")
+    if champs.get("salle_verifiee") is None:
+        champs.pop("salle_verifiee", None)
+    # Comme patch_epreuve : changer la salle d'examen annule la validation du doublon
+    if "salle_id" in champs and "salle_verifiee" not in champs:
+        champs["salle_verifiee"] = False
+    epreuves = (
+        db.query(Epreuve)
+        .join(DemiJournee, Epreuve.demi_journee_id == DemiJournee.id)
+        .filter(DemiJournee.planning_id == planning_id, Epreuve.id.in_(set(body.epreuve_ids)))
+        .all()
+    )
+    for e in epreuves:
+        for champ, valeur in champs.items():
+            setattr(e, champ, valeur)
+    db.commit()
+    return {"modifiees": len(epreuves)}
+
+
 # ── Salles par défaut (par matière) ───────────────────────────────────────────
 
 class SalleDefautIn(BaseModel):
