@@ -18,6 +18,7 @@ import {
   Plus,
   Trash2,
   KeyRound,
+  RotateCcw,
   X,
   Loader2,
   RefreshCw,
@@ -13633,6 +13634,12 @@ function SallesSection() {
   // Tableau tel qu'enregistré : une valeur présente ici et vidée dans `defaults` sera
   // retirée des épreuves qui l'ont encore (voir apply_salle_defaults)
   const [defautsEnregistres, setDefautsEnregistres] = useState<SalleDefaut[]>([]);
+  // Réinitialisation : quoi vider, et sur quelles épreuves
+  const [showReinit, setShowReinit] = useState(false);
+  const [reinitChamps, setReinitChamps] = useState({ salle_id: true, salle_preparation_id: true, surveillant_id: false, surveillant2_id: false });
+  const [reinitDefauts, setReinitDefauts] = useState(true);
+  const [reinitPortee, setReinitPortee] = useState<"tout" | "affiches">("tout");
+  const [reinitEnCours, setReinitEnCours] = useState(false);
   const [savingDefaults, setSavingDefaults] = useState(false);
   const [surveillants, setSurveillants] = useState<SurveillantItem[]>([]);
 
@@ -13891,6 +13898,39 @@ function SallesSection() {
 
   const activeSalles = salles.filter((s) => s.active);
 
+  // Réinitialisation : vide les champs cochés sur tout le planning ou sur les créneaux
+  // affichés (filtres), en une requête, et vide si demandé le tableau des salles par défaut
+  const epreuvesAffichees = groupsAffiches.flatMap((g) => g.epreuves);
+  const ciblesReinit = reinitPortee === "tout" ? epreuves : epreuvesAffichees;
+  const champsReinit = (Object.keys(reinitChamps) as (keyof typeof reinitChamps)[]).filter((c) => reinitChamps[c]);
+  async function reinitialiser() {
+    if (!planningId) return;
+    setReinitEnCours(true);
+    try {
+      if (champsReinit.length > 0 && ciblesReinit.length > 0) {
+        await post(`plannings/${planningId}/epreuves/affecter-groupe`, {
+          epreuve_ids: ciblesReinit.map((e) => e.id),
+          ...Object.fromEntries(champsReinit.map((c) => [c, null])),
+        });
+      }
+      if (reinitDefauts) await put(`plannings/${planningId}/salle-defaults`, []);
+      const [eps, defs] = await Promise.all([
+        get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`),
+        get<SalleDefaut[]>(`plannings/${planningId}/salle-defaults`),
+      ]);
+      setEpreuves(eps);
+      setDefaults(defs);
+      setDefautsEnregistres(defs);
+      setSelected(new Set());
+      setShowReinit(false);
+      toast.success(`Réinitialisation faite${champsReinit.length ? ` sur ${ciblesReinit.length} épreuve(s)` : ""}${reinitDefauts ? ", salles par défaut vidées" : ""}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setReinitEnCours(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
@@ -14067,6 +14107,56 @@ function SallesSection() {
             </div>
           )}
 
+          <Modal open={showReinit} onClose={() => setShowReinit(false)} title="Réinitialiser les affectations">
+            <div className="space-y-4 text-sm text-gray-900">
+              <div>
+                <p className="font-semibold mb-1.5">À vider</p>
+                {([
+                  ["salle_id", "Salles d'examen"],
+                  ["salle_preparation_id", "Salles de préparation"],
+                  ["surveillant_id", "Surveillants"],
+                  ["surveillant2_id", "Surveillants 2"],
+                ] as const).map(([c, libelle]) => (
+                  <label key={c} className="flex items-center gap-2 py-0.5 cursor-pointer">
+                    <input type="checkbox" checked={reinitChamps[c]}
+                      onChange={(e) => setReinitChamps((prev) => ({ ...prev, [c]: e.target.checked }))} />
+                    {libelle}
+                  </label>
+                ))}
+                <label className="flex items-center gap-2 py-0.5 cursor-pointer">
+                  <input type="checkbox" checked={reinitDefauts} onChange={(e) => setReinitDefauts(e.target.checked)} />
+                  Tableau « Salles par défaut par matière »
+                </label>
+              </div>
+              <div>
+                <p className="font-semibold mb-1.5">Sur quelles épreuves</p>
+                <label className="flex items-center gap-2 py-0.5 cursor-pointer">
+                  <input type="radio" checked={reinitPortee === "tout"} onChange={() => setReinitPortee("tout")} />
+                  Tout le planning ({epreuves.length} épreuve{epreuves.length > 1 ? "s" : ""})
+                </label>
+                <label className="flex items-center gap-2 py-0.5 cursor-pointer">
+                  <input type="radio" checked={reinitPortee === "affiches"} onChange={() => setReinitPortee("affiches")} />
+                  Seulement les créneaux affichés avec les filtres actuels ({epreuvesAffichees.length} épreuve{epreuvesAffichees.length > 1 ? "s" : ""})
+                </label>
+              </div>
+              <p className="text-xs text-gray-800 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+                Les inscriptions des candidats ne sont pas touchées. Les créneaux libres sans salle ou sans
+                surveillant ne sont plus visibles des candidats tant qu&apos;ils ne sont pas réaffectés.
+              </p>
+              <div className="flex justify-end gap-2">
+                <Btn label="Annuler" variant="ghost" small onClick={() => setShowReinit(false)} />
+                <Btn
+                  label={reinitEnCours ? "Réinitialisation…" : "Réinitialiser"}
+                  icon={reinitEnCours ? Loader2 : RotateCcw}
+                  variant="danger"
+                  small
+                  disabled={reinitEnCours || (!reinitDefauts && (champsReinit.length === 0 || ciblesReinit.length === 0))}
+                  onClick={reinitialiser}
+                />
+              </div>
+            </div>
+          </Modal>
+
           {/* Sélection planning + filtre matière */}
           <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-4 flex gap-3 flex-wrap">
             <div className="flex-1 min-w-[180px]">
@@ -14152,6 +14242,11 @@ function SallesSection() {
                   <input type="checkbox" checked={filterAVerifier} onChange={(e) => setFilterAVerifier(e.target.checked)} className="cursor-pointer" />
                   Doublons à vérifier
                 </label>
+              </div>
+            )}
+            {planningId !== "" && (
+              <div className="flex items-end pb-0.5 ml-auto">
+                <Btn label="Réinitialiser…" icon={RotateCcw} variant="danger" onClick={() => setShowReinit(true)} />
               </div>
             )}
           </div>
