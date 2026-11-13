@@ -317,22 +317,24 @@ type TripletDisponible = {
   cle?: string | null;
   // Numéro du triplet dans la matrice de la journée type (T5 → 5), absent en rotation
   numero?: number | null;
-  // Libre mais invisible des candidats (salle, examinateur ou surveillant manquant)
+  // Libre mais invisible des candidats (salle, examinateur, surveillant ou planche manquant)
   manques_publication?: string[];
 };
 
 // Ce qui manque à une épreuve LIBRE pour être proposée aux candidats — même règle que
-// backend/app/services/publication.py (salle, examinateur 1 ou 2, surveillant 1 ou 2)
+// backend/app/services/publication.py (salle, examinateur 1 ou 2, surveillant 1 ou 2, planche)
 function manquesPublication(e: {
   statut?: string; salle_id?: number | null;
   examinateur_id?: number | null; examinateur2_id?: number | null;
   surveillant_id?: number | null; surveillant2_id?: number | null;
+  planche_id?: number | null;
 }): string[] {
   if (e.statut !== "LIBRE") return [];
   const manques: string[] = [];
   if (!e.salle_id) manques.push("salle");
   if (!e.examinateur_id && !e.examinateur2_id) manques.push("examinateur");
   if (!e.surveillant_id && !e.surveillant2_id) manques.push("surveillant");
+  if (!e.planche_id) manques.push("planche");
   return manques;
 }
 
@@ -343,10 +345,11 @@ let intentionCandidats: IntentionCandidats | null = null;
 
 // ── Liens vers l'affectation manquante ──
 // Un clic sur « salle », « examinateur » ou « surveillant » ouvre l'écran d'affectation
-// correspondant (Salles, Examinateurs > Affectation, Surveillants > Planning), déjà filtré
+// correspondant (Salles, Examinateurs > Affectation, Surveillants > Planning, Planches >
+// Assignation), déjà filtré
 // sur le planning, le jour, la matière et l'heure du créneau, et sur les créneaux sans
 // cette affectation. L'intention est gardée ici le temps que l'écran cible la lise.
-type AffectationManquante = "salle" | "examinateur" | "surveillant";
+type AffectationManquante = "salle" | "examinateur" | "surveillant" | "planche";
 type IntentionAffectation = {
   manque: AffectationManquante;
   planningId: number;
@@ -358,11 +361,19 @@ const SECTION_AFFECTATION: Record<AffectationManquante, SectionKey> = {
   salle: "salles",
   examinateur: "examinateurs",
   surveillant: "surveillants",
+  planche: "planches",
 };
 let intentionAffectation: IntentionAffectation | null = null;
 const lireIntention = (manque: AffectationManquante) =>
   intentionAffectation?.manque === manque ? intentionAffectation : null;
 const NavAffectationContext = React.createContext<(i: IntentionAffectation) => void>(() => {});
+
+const ECRAN_AFFECTATION: Record<AffectationManquante, string> = {
+  salle: "Salles",
+  examinateur: "Examinateurs > Affectation",
+  surveillant: "Surveillants > Planning",
+  planche: "Planches > Assignation",
+};
 
 // L'écran cible lit l'intention à son montage, puis l'efface
 function useIntentionAffectation(manque: AffectationManquante) {
@@ -377,7 +388,7 @@ function LienAffectation({ manque, ...creneau }: IntentionAffectation) {
     <button
       type="button"
       onClick={(ev) => { ev.stopPropagation(); aller({ manque, ...creneau }); }}
-      title={`Affecter : ouvre l'écran ${manque === "salle" ? "Salles" : manque === "examinateur" ? "Examinateurs > Affectation" : "Surveillants > Planning"}, filtré sur ce créneau`}
+      title={`Affecter : ouvre l'écran ${ECRAN_AFFECTATION[manque]}, filtré sur ce créneau`}
       className="font-semibold underline decoration-dotted underline-offset-2 hover:decoration-solid"
     >
       {manque}
@@ -1817,7 +1828,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
         {nbNonVisibles > 0 && (
           <span
             className="text-orange-800"
-            title="Créneaux libres sans salle, examinateur ou surveillant : les candidats ne les voient pas"
+            title="Créneaux libres sans salle, examinateur, surveillant ou planche : les candidats ne les voient pas"
           >
             dont <span className="font-semibold">{nbNonVisibles}</span> non visible{nbNonVisibles > 1 ? "s" : ""} des candidats
           </span>
@@ -2021,7 +2032,7 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                                   ) : manquesPublication(e).length > 0 ? (
                                     <span
                                       className="text-[11px] font-semibold text-orange-800"
-                                      title="Créneau libre invisible des candidats tant que salle, examinateur et surveillant ne sont pas affectés"
+                                      title="Créneau libre invisible des candidats tant que salle, examinateur, surveillant et planche ne sont pas affectés"
                                     >
                                       Non visible · manque{" "}
                                       <LiensManques manques={manquesPublication(e)} planningId={planningId} date={e.date} matiere={e.matiere} heure={e.heure_debut} />
@@ -12550,7 +12561,8 @@ function PlanchesSection() {
   const toast = useToast();
   const confirm = useConfirm();
   const matieres = useMatieres();
-  const [tab, setTab] = useState<"sujets" | "assignation" | "impression" | "historique">("sujets");
+  const intention = useIntentionAffectation("planche");
+  const [tab, setTab] = useState<"sujets" | "assignation" | "impression" | "historique">(intention ? "assignation" : "sujets");
 
   // ── Onglet Sujets ────────────────────────────────────────────────────────────
   const [planches, setPlanches] = useState<PlancheItem[]>([]);
@@ -12614,17 +12626,17 @@ function PlanchesSection() {
 
   // ── Onglet Assignation ───────────────────────────────────────────────────────
   const [plannings, setPlannings] = useState<Planning[]>([]);
-  const [planningId, setPlanningId] = useState<number | "">("");
+  const [planningId, setPlanningId] = useState<number | "">(intention?.planningId ?? "");
   const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
   const [loadingEp, setLoadingEp] = useState(false);
   const [assignModal, setAssignModal] = useState<EpreuveFlat | null>(null);
-  const [filterMatAss, setFilterMatAss] = useState("");
-  const [filterDateAss, setFilterDateAss] = useState("");
-  const [filterHeureAss, setFilterHeureAss] = useState("");
+  const [filterMatAss, setFilterMatAss] = useState(intention?.matiere ?? "");
+  const [filterDateAss, setFilterDateAss] = useState(intention?.date ?? "");
+  const [filterHeureAss, setFilterHeureAss] = useState(intention?.heure ? hm(intention.heure) : "");
   // "" = tous, "avec" / "sans" candidat, sinon l'id du candidat
   const [filterCandAss, setFilterCandAss] = useState("");
   // "" = toutes, "assignee" / "non_assignee", sinon le nom de la planche
-  const [filterPlancheAss, setFilterPlancheAss] = useState("");
+  const [filterPlancheAss, setFilterPlancheAss] = useState(intention ? "non_assignee" : "");
   const [rechercheAss, setRechercheAss] = useState("");
   // "" = tous, "aucun" = sans examinateur, sinon l'id de l'examinateur (1er ou 2e)
   const [filterExamAss, setFilterExamAss] = useState("");

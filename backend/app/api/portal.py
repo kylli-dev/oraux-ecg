@@ -483,7 +483,7 @@ def get_triplets(
 
         seen: set = set()
         for groupe in groupes_pour_profil(all_day_epreuves_raw, profil_upper, matiere_exclue):
-            # Seules les épreuves avec salle, examinateur et surveillant sont proposées
+            # Seules les épreuves avec salle, examinateur, surveillant et planche sont proposées
             choisies = choisir_epreuves(groupe, ("LIBRE",), epreuve_publiable)
             if not choisies:
                 continue

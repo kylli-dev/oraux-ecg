@@ -473,8 +473,8 @@ def _triplets_depuis_groupes(groupes: list, date, seen_global: set, inclure_inco
                     if manques_publication(e)
                 ]
                 motif = (
-                    "Triplet libre mais invisible des candidats : il manque une salle, un examinateur "
-                    "ou un surveillant. L'admin peut tout de même y inscrire un candidat."
+                    "Triplet libre mais invisible des candidats : il manque une salle, un examinateur, "
+                    "un surveillant ou une planche. L'admin peut tout de même y inscrire un candidat."
                 )
         elif statuts == {"PRERESERVEE"}:
             type_slot = "PRERESERVEE"

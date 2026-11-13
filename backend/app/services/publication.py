@@ -1,7 +1,7 @@
 """
 Publication des épreuves aux candidats : une épreuve LIBRE n'est proposée aux candidats
-(portail : triplets, inscription, liste d'attente) que si elle a une salle, un examinateur
-et un surveillant. L'admin, lui, peut toujours inscrire un candidat sur n'importe quel créneau.
+(portail : triplets, inscription, liste d'attente) que si elle a une salle, un examinateur,
+un surveillant et une planche (sujet). L'admin, lui, peut toujours inscrire un candidat sur n'importe quel créneau.
 """
 from __future__ import annotations
 
@@ -21,6 +21,8 @@ def manques_publication(e) -> List[str]:
         manques.append("examinateur")
     if not (e.surveillant_id or e.surveillant2_id):
         manques.append("surveillant")
+    if not e.planche_id:
+        manques.append("planche")
     return manques
 
 
@@ -34,4 +36,5 @@ def condition_publiable():
         Epreuve.salle_id.isnot(None),
         or_(Epreuve.examinateur_id.isnot(None), Epreuve.examinateur2_id.isnot(None)),
         or_(Epreuve.surveillant_id.isnot(None), Epreuve.surveillant2_id.isnot(None)),
+        Epreuve.planche_id.isnot(None),
     )
