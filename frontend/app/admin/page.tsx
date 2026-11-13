@@ -1640,6 +1640,8 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
   const [loading, setLoading] = useState(true);
   const [filterDate, setFilterDate] = useState<string>("");
   const [filterStatut, setFilterStatut] = useState<string>("");
+  // "" = tous, "__sans" = épreuves sans numéro de matrice, sinon « T5 »
+  const [filterTriplet, setFilterTriplet] = useState<string>("");
   const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set());
   const [deletingDays, setDeletingDays] = useState(false);
 
@@ -1721,7 +1723,10 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
   // Filtrage
   const filtered = epreuves
     .filter((e) => !filterDate || e.date === filterDate)
-    .filter((e) => !filterStatut || e.statut === filterStatut);
+    .filter((e) => !filterStatut || e.statut === filterStatut)
+    .filter((e) => !filterTriplet || (filterTriplet === "__sans" ? !e.triplet : e.triplet === filterTriplet));
+  const triplets = [...new Set(epreuves.flatMap((e) => (e.triplet ? [e.triplet] : [])))]
+    .sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)));
 
   // Construction des lignes : (date, heure_debut) → byMat
   type SlotRow = { date: string; heure_debut: string; heure_fin: string; byMat: Record<string, EpreuveFlat[]> };
@@ -1887,6 +1892,16 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
           <option value="ATTRIBUEE">Réservé</option>
           <option value="EN_EVALUATION">En évaluation</option>
           <option value="FINALISEE">Finalisé</option>
+        </select>
+        <select
+          value={filterTriplet}
+          onChange={(e) => setFilterTriplet(e.target.value)}
+          title="Triplet de la matrice de la journée type ; à combiner avec la date"
+          className="px-3 py-1.5 rounded-lg border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
+        >
+          <option value="">Tous les triplets</option>
+          {triplets.map((tr) => <option key={tr} value={tr}>{tr}</option>)}
+          {epreuves.some((e) => !e.triplet) && <option value="__sans">Sans triplet</option>}
         </select>
         <span className="text-xs text-gray-700 ml-auto">{filtered.length} créneau(x)</span>
         <Btn label="Exporter (Excel / CSV)" icon={Download} small variant="ghost" onClick={exporter} disabled={filtered.length === 0} />
