@@ -4548,7 +4548,6 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
   const [dragOver, setDragOver] = useState<{ rowIdx: number; matIdx: number } | null>(null);
   // Dernier échange refusé ou accepté malgré une exception
   const [alerteEchange, setAlerteEchange] = useState<{ refus: boolean; texte: string } | null>(null);
-  const confirmer = useConfirm();
 
   const toggleBlocMatiere = (blocIdx: number, intitule: string) => {
     setP(prev => ({
@@ -5122,16 +5121,10 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
     if (!ca || !cb) return;
     const { refus, exceptions } = verifierEchange(cases, ca, cb);
     if (refus) { setAlerteEchange({ refus: true, texte: refus }); return; }
-    if (exceptions.length) {
-      const ok = await confirmer(
-        `Cet échange ne respecte pas les ${MARGE_ENTRE_EPREUVES} min entre deux épreuves d'un même candidat :\n${exceptions.join("\n")}\n\nÉchanger quand même ?`,
-        { confirmLabel: "Échanger quand même", danger: true }
-      );
-      if (!ok) return;
-      setAlerteEchange({ refus: false, texte: `Échange fait malgré l'exception :\n${exceptions.join("\n")}` });
-    } else {
-      setAlerteEchange(null);
-    }
+    // Chevauchement ou moins de 30 min : l'échange est fait, avec une alerte
+    setAlerteEchange(exceptions.length
+      ? { refus: false, texte: `Échange fait — à vérifier :\n${exceptions.join("\n")}` }
+      : null);
     setMatrix(prev => {
       const next = prev.map(r => ({ ...r, candidates: [...r.candidates] }));
       const va = next[a.rowIdx].candidates[a.matIdx];
@@ -5206,7 +5199,7 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
       </div>
       {editMode && (
         <p className="text-[11px] text-gray-700 -mt-2">
-          Glissez un triplet vers une autre cellule de la même matière pour l'échanger (les échanges horizontaux sont refusés). Une alerte s&apos;affiche si un candidat n&apos;a plus {MARGE_ENTRE_EPREUVES} min entre deux épreuves. Les positions sont gardées à l'enregistrement de la journée type, et les triplets proposés aux candidats les suivent pour les dates générées ensuite.
+          Glissez un triplet vers une autre cellule de la même matière pour l'échanger. Aucun échange n&apos;est bloqué : une alerte s&apos;affiche si un candidat a deux épreuves qui se chevauchent ou moins de {MARGE_ENTRE_EPREUVES} min entre deux épreuves. Les positions sont gardées à l'enregistrement de la journée type, et les triplets proposés aux candidats les suivent pour les dates générées ensuite.
         </p>
       )}
       {exceptionsActuelles.length > 0 && (

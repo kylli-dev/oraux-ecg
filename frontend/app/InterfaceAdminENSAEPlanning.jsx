@@ -14,7 +14,6 @@ import {
 } from "@dnd-kit/core";
 import { arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useConfirm } from "./admin/Toast";
 import { MARGE_ENTRE_EPREUVES, exceptionsMatrice, minutes, verifierEchange } from "./admin/echangeTriplets";
 import { corpsBlocModifie } from "./admin/blocsGabarit";
 import { gabaritsParDate, resumeGabarits } from "./admin/gabaritsAppliques";
@@ -1024,7 +1023,6 @@ export default function InterfaceAdminENSAEPlanning() {
     });
   }, []);
 
-  const confirmer = useConfirm();
   // Dernier échange refusé ou accepté malgré une exception
   const [alerteEchange, setAlerteEchange] = useState(null);
   // Exceptions de la matrice affichée, relues après chaque rendu : les blocs enregistrent
@@ -1035,7 +1033,7 @@ export default function InterfaceAdminENSAEPlanning() {
     setExceptionsActuelles((prev) => (prev.join("|") === liste.join("|") ? prev : liste));
   });
 
-  const handleDragEnd = async ({ active, over }) => {
+  const handleDragEnd = ({ active, over }) => {
     setActiveDrag(null);
     const ad = active.data.current;
     const od = over?.data.current;
@@ -1053,16 +1051,10 @@ export default function InterfaceAdminENSAEPlanning() {
       if (!ca || !cb) return;
       const { refus, exceptions } = verifierEchange(toutes, ca, cb);
       if (refus) { setAlerteEchange({ refus: true, texte: refus }); return; }
-      if (exceptions.length) {
-        const ok = await confirmer(
-          `Cet échange ne respecte pas les ${MARGE_ENTRE_EPREUVES} min entre deux épreuves d'un même candidat :\n${exceptions.join("\n")}\n\nÉchanger quand même ?`,
-          { confirmLabel: "Échanger quand même", danger: true }
-        );
-        if (!ok) return;
-        setAlerteEchange({ refus: false, texte: `Échange fait malgré l'exception :\n${exceptions.join("\n")}` });
-      } else {
-        setAlerteEchange(null);
-      }
+      // Chevauchement ou moins de 30 min : l'échange est fait, avec une alerte
+      setAlerteEchange(exceptions.length
+        ? { refus: false, texte: `Échange fait — à vérifier :\n${exceptions.join("\n")}` }
+        : null);
       blocs.get(ad.blocId)?.setCell(ad.rowIdx, ad.matIdx, od.k);
       blocs.get(od.blocId)?.setCell(od.rowIdx, od.matIdx, ad.k);
     }
@@ -1218,7 +1210,7 @@ export default function InterfaceAdminENSAEPlanning() {
                       <>
                         <p className="text-xs text-gray-700">
                           Glissez un triplet vers une case de la même matière pour l'échanger, y compris entre le matin et l'après-midi.
-                          Les échanges horizontaux sont refusés, et une alerte s&apos;affiche si un candidat n&apos;a plus {MARGE_ENTRE_EPREUVES} min entre deux épreuves.
+                          Aucun échange n&apos;est bloqué : une alerte s&apos;affiche si un candidat a deux épreuves qui se chevauchent ou moins de {MARGE_ENTRE_EPREUVES} min entre deux épreuves.
                           Les positions sont gardées avec la journée type : les triplets proposés aux candidats (et la Vue triplets du planning) suivent
                           cette matrice pour les dates générées après l'enregistrement. Pour une date déjà générée, réappliquez la journée type.
                         </p>

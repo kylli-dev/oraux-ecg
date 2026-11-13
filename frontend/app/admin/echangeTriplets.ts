@@ -1,6 +1,6 @@
 // Contrôles d'un échange de triplets, communs à l'assistant de journée type (étape 2) et à la
-// Matrice oraux : on refuse ce qui casserait un triplet, on signale ce qui ne respecte plus
-// la marge entre deux passages d'un même candidat.
+// Matrice oraux : on refuse seulement ce qui casserait un triplet (deux fois la même matière) ;
+// chevauchements et écarts de moins de 30 min sont permis, avec une simple alerte.
 
 // Même marge que MARGIN_TRANSITION_MINUTES (generation.py, triplets.py, buildMatrix)
 export const MARGE_ENTRE_EPREUVES = 30;
@@ -22,16 +22,12 @@ export const minutes = (s: string) => {
   return h * 60 + (m || 0);
 };
 
-// Échanges interdits : deux matières différentes (le triplet aurait deux fois la même
-// matière) ou deux cases à la même heure (échange horizontal, entre jurys en parallèle).
+// Seul échange interdit : entre deux matières différentes (le triplet aurait deux fois la
+// même matière et plus du tout l'autre).
 export function refusEchange(a: CaseTriplet, b: CaseTriplet): string | null {
   if (a.matiere !== b.matiere) {
     return `Échange refusé : T${a.k + 1} (${a.matiere}) et T${b.k + 1} (${b.matiere}) ne sont pas dans la même matière. ` +
       `Un triplet doit garder une épreuve par matière : échangez seulement à l'intérieur d'une même colonne.`;
-  }
-  if (a.debExam === b.debExam) {
-    return `Échange refusé : T${a.k + 1} et T${b.k + 1} passent ${a.matiere} à la même heure (${hm(a.debExam)}). ` +
-      `Les échanges horizontaux sont interdits.`;
   }
   return null;
 }
@@ -73,17 +69,20 @@ export function exceptionsMatrice(cases: CaseTriplet[]): string[] {
   return [...chevauchements, ...ecartsCourts];
 }
 
-// Décision pour un échange : refus (message) ou exceptions à faire confirmer (liste, vide si
-// tout va bien). Seules comptent les exceptions que l'échange CRÉE : celles déjà présentes
-// dans la matrice sont signalées à part (exceptionsMatrice).
+// Décision pour un échange : refus (matières différentes) ou exceptions à signaler, sans
+// bloquer (chevauchements et écarts courts ; liste vide si tout va bien). Seules comptent
+// les exceptions que l'échange CRÉE : celles déjà présentes dans la matrice sont signalées
+// à part (exceptionsMatrice).
 export function verifierEchange(cases: CaseTriplet[], a: CaseTriplet, b: CaseTriplet): { refus: string | null; exceptions: string[] } {
   const refus = refusEchange(a, b);
   if (refus) return { refus, exceptions: [] };
   const avant = controleEcarts(cases, [a.k, b.k]);
   const apres = controleEcarts(apresEchange(cases, a, b), [a.k, b.k]);
-  const chevauchements = apres.chevauchements.filter((m) => !avant.chevauchements.includes(m));
-  if (chevauchements.length) {
-    return { refus: `Échange refusé : un candidat serait à deux endroits en même temps.\n${chevauchements.join("\n")}`, exceptions: [] };
-  }
-  return { refus: null, exceptions: apres.ecartsCourts.filter((m) => !avant.ecartsCourts.includes(m)) };
+  return {
+    refus: null,
+    exceptions: [
+      ...apres.chevauchements.filter((m) => !avant.chevauchements.includes(m)),
+      ...apres.ecartsCourts.filter((m) => !avant.ecartsCourts.includes(m)),
+    ],
+  };
 }
