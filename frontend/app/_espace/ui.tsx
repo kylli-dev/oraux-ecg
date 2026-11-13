@@ -5,8 +5,9 @@
 // #C62828, fond gris clair, texte foncé (pas de gris clair, voir lisibilité).
 
 import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowLeft, GraduationCap, Loader2, LogOut, CheckCircle2, AlertTriangle, AlertCircle, Info } from "lucide-react";
+import { ArrowLeft, GraduationCap, Loader2, LogOut, User, CheckCircle2, AlertTriangle, AlertCircle, Info } from "lucide-react";
 
 export const RED = "#C62828";
 
@@ -21,12 +22,81 @@ export const inputStyle = { "--tw-ring-color": RED } as React.CSSProperties;
 export const primaryButtonClass =
   "w-full py-2.5 rounded-lg text-white text-sm font-semibold shadow-sm transition hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2";
 
-// En-tête rouge d'un espace. Le bouton « Se déconnecter » n'apparaît pas sur les pages
-// publiques (connexion, mot de passe oublié…).
+// Pastille ronde aux initiales de la personne connectée ; un clic ouvre un menu avec son
+// nom et « Se déconnecter ». Le nom vient de meUrl (…/me) ; tant qu'il n'est pas chargé, la
+// pastille montre une icône.
+function MenuProfil({ tokenKey, base, meUrl }: { tokenKey: string; base: string; meUrl: string }) {
+  const router = useRouter();
+  const [ouvert, setOuvert] = useState(false);
+  const [moi, setMoi] = useState<{ prenom?: string; nom?: string } | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const token = sessionStorage.getItem(tokenKey);
+    if (!token) return;
+    fetch(meUrl, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setMoi({ prenom: d.prenom, nom: d.nom }))
+      .catch(() => {});
+  }, [meUrl, tokenKey]);
+
+  useEffect(() => {
+    if (!ouvert) return;
+    const clic = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOuvert(false); };
+    const touche = (e: KeyboardEvent) => { if (e.key === "Escape") setOuvert(false); };
+    document.addEventListener("mousedown", clic);
+    document.addEventListener("keydown", touche);
+    return () => { document.removeEventListener("mousedown", clic); document.removeEventListener("keydown", touche); };
+  }, [ouvert]);
+
+  const initiales = `${moi?.prenom?.trim()[0] ?? ""}${moi?.nom?.trim()[0] ?? ""}`.toUpperCase();
+  const nomComplet = [moi?.prenom, moi?.nom].filter(Boolean).join(" ");
+
+  return (
+    <div ref={ref} className="relative shrink-0 lg:justify-self-end">
+      <button
+        type="button"
+        onClick={() => setOuvert((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={ouvert}
+        title={nomComplet || "Mon profil"}
+        className="h-10 w-10 rounded-full bg-white flex items-center justify-center text-sm font-bold shadow-sm ring-2 ring-white/40 hover:ring-white transition"
+        style={{ color: RED }}
+      >
+        {initiales || <User className="h-5 w-5" />}
+      </button>
+      {ouvert && (
+        <div role="menu" className="absolute right-0 mt-2 w-60 rounded-xl bg-white shadow-lg border border-black/10 py-1 z-50">
+          {nomComplet && (
+            <div className="px-4 py-2.5 border-b border-black/5">
+              <p className="text-sm font-semibold text-gray-900 truncate">{nomComplet}</p>
+            </div>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              sessionStorage.removeItem(tokenKey);
+              router.push(base);
+            }}
+            className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-gray-900 hover:bg-red-50 transition"
+          >
+            <LogOut className="h-4 w-4" style={{ color: RED }} />
+            Se déconnecter
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// En-tête rouge d'un espace. Le menu profil (initiales, déconnexion) n'apparaît pas sur les
+// pages publiques (connexion, mot de passe oublié…).
 export function EspaceHeader({
   libelle,
   base,
   tokenKey,
+  meUrl,
   pagesPubliques,
   logoEnsae = false,
   onglets = [],
@@ -34,12 +104,12 @@ export function EspaceHeader({
   libelle: string;
   base: string;
   tokenKey: string;
+  meUrl: string;
   pagesPubliques: string[];
   logoEnsae?: boolean;
   onglets?: { href: string; label: string }[];
 }) {
   const pathname = usePathname().replace(/\/$/, "");
-  const router = useRouter();
   const connecte = !pagesPubliques.includes(pathname);
 
   return (
@@ -87,18 +157,7 @@ export function EspaceHeader({
             })}
           </nav>
         )}
-        {connecte && (
-          <button
-            onClick={() => {
-              sessionStorage.removeItem(tokenKey);
-              router.push(base);
-            }}
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-white px-3 py-1.5 rounded-lg border border-white/40 hover:bg-white/15 transition shrink-0 lg:justify-self-end"
-          >
-            <LogOut className="h-4 w-4" />
-            <span className="hidden sm:inline">Se déconnecter</span>
-          </button>
-        )}
+        {connecte && <MenuProfil tokenKey={tokenKey} base={base} meUrl={meUrl} />}
       </div>
     </header>
   );

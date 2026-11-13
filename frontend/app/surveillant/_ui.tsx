@@ -13,6 +13,7 @@ export function SurveillantHeader() {
       libelle="Espace surveillant"
       base="/surveillant"
       tokenKey="surveillant_token"
+      meUrl={`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002"}/surveillant/me`}
       pagesPubliques={["/surveillant", "/surveillant/mot-de-passe-oublie", "/surveillant/reinitialiser-mot-de-passe"]}
       logoEnsae
       onglets={[

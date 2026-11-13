@@ -13,6 +13,7 @@ export function ExaminateurHeader() {
       libelle="Espace examinateur"
       base="/examinateur"
       tokenKey="examinateur_token"
+      meUrl={`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002"}/examinateur/me`}
       pagesPubliques={[
         "/examinateur",
         "/examinateur/mot-de-passe-oublie",

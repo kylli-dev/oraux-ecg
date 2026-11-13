@@ -13,6 +13,7 @@ export function CandidatHeader() {
       libelle="Espace candidat"
       base="/candidat"
       tokenKey="candidat_token"
+      meUrl={`${process.env.NEXT_PUBLIC_PORTAL_API_URL ?? "http://localhost:8000"}/portal/me`}
       pagesPubliques={["/candidat", "/candidat/mot-de-passe-oublie", "/candidat/reinitialiser-mot-de-passe"]}
       logoEnsae
       onglets={[
