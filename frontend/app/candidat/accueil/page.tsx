@@ -167,9 +167,15 @@ export default function AccueilCandidatPage() {
 
       {/* ── Consignes ── */}
       {consignes && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 mb-6 text-sm text-amber-900">
-          <p className="font-semibold mb-2 flex items-center gap-2">
-            <Info className="h-4 w-4 shrink-0" />
+        // Même style que les cartes d'accès rapide ci-dessous (fond blanc, pastille rouge)
+        <div className="bg-white border border-black/5 shadow-sm rounded-2xl p-5 mb-6 text-sm text-gray-800">
+          <p className="font-semibold text-gray-900 mb-3 flex items-center gap-3">
+            <span
+              className="flex-shrink-0 flex items-center justify-center h-8 w-8 rounded-lg"
+              style={{ backgroundColor: RED + "14", color: RED }}
+            >
+              <Info className="h-4 w-4" />
+            </span>
             Consignes importantes
           </p>
           <div
