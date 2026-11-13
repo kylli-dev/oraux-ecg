@@ -18,7 +18,8 @@ export function SurveillantHeader() {
       logoEnsae
       onglets={[
         { href: "/surveillant/accueil", label: "Accueil" },
-        { href: "/surveillant/planning", label: "Mon planning" },
+        { href: "/surveillant/planning", label: "Liste & présences" },
+        { href: "/surveillant/emploi-du-temps", label: "Emploi du temps" },
         { href: "/surveillant/changer-mot-de-passe", label: "Mot de passe" },
       ]}
     />

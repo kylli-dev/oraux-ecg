@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { CalendarDays, ChevronRight, KeyRound, Mail } from "lucide-react";
+import { CalendarRange, ChevronRight, KeyRound, ListChecks, Mail } from "lucide-react";
 import { RED, PageLoader } from "../_ui";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
@@ -24,9 +24,15 @@ function formatDate(d: string) {
 const actions = [
   {
     href: "/surveillant/planning",
-    icon: <CalendarDays className="h-5 w-5" />,
-    label: "Mon planning",
-    desc: "Consultez vos créneaux de surveillance et enregistrez les présences.",
+    icon: <ListChecks className="h-5 w-5" />,
+    label: "Liste & présences",
+    desc: "Vos créneaux un par un, pour enregistrer les absences.",
+  },
+  {
+    href: "/surveillant/emploi-du-temps",
+    icon: <CalendarRange className="h-5 w-5" />,
+    label: "Emploi du temps",
+    desc: "Vue d'ensemble de vos créneaux de surveillance, jour par jour.",
   },
   {
     href: "/surveillant/changer-mot-de-passe",
