@@ -180,6 +180,8 @@ type EpreuveFlat = {
   surveillant2_prenom: string | null;
   planche_id: number | null;
   planche_nom: string | null;
+  // Triplet de la matrice de la journée type (« T5 »), null si journée sans matrice
+  triplet?: string | null;
 };
 
 type PlancheItem = {
@@ -8151,6 +8153,12 @@ function AffectationTab({ planningId, examinateurs, filtresInitiaux }: {
                   <thead>
                     <tr className="border-b bg-black/[0.02]">
                       {selectedExId && <th className="w-8 px-3 py-2" />}
+                      <th
+                        className="text-left px-4 py-2 font-medium text-gray-700 text-xs"
+                        title="Triplet de la matrice de la journée type (Journée-types > Matrice oraux)"
+                      >
+                        Triplet
+                      </th>
                       <th className="text-left px-4 py-2 font-medium text-gray-700 text-xs">Horaire</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-700 text-xs">Matière</th>
                       <th className="text-left px-4 py-2 font-medium text-gray-700 text-xs">Candidat</th>
@@ -8189,6 +8197,13 @@ function AffectationTab({ planningId, examinateurs, filtresInitiaux }: {
                               )}
                             </td>
                           )}
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            {ep.triplet ? (
+                              <span className="text-xs font-bold px-2 py-0.5 rounded bg-gray-100 text-gray-900 tabular-nums">{ep.triplet}</span>
+                            ) : (
+                              <span className="text-xs text-gray-700" title="Journée générée sans matrice de journée type">—</span>
+                            )}
+                          </td>
                           <td className="px-4 py-3 font-mono text-xs text-gray-800 whitespace-nowrap">
                             {ep.heure_debut.slice(0,5)} – {ep.heure_fin.slice(0,5)}
                             {indispo && (

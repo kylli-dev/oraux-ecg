@@ -201,6 +201,16 @@ def list_epreuves_planning(
     planches     = {p.id: p for p in db.query(PlancheModel).filter(PlancheModel.id.in_(planche_ids)).all()} if planche_ids else {}
     surveillants = {s.id: s for s in db.query(SurveillantModel).filter(SurveillantModel.id.in_(surveillant_ids)).all()} if surveillant_ids else {}
 
+    # Triplet de la matrice de la journée type (« T5 ») : Epreuve.triplet_num ; une épreuve
+    # sans numéro ajoutée à la main dans une case numérotée (salle en parallèle) prend le
+    # numéro de sa case, comme dans services/triplets.groupes_du_jour. None = journée
+    # générée sans matrice.
+    num_case: dict = {}
+    for e, dj in rows:
+        if e.triplet_num is not None:
+            cle_case = (dj.date, e.matiere, e.heure_debut)
+            num_case[cle_case] = min(num_case.get(cle_case, e.triplet_num), e.triplet_num)
+
     # Épreuves rattachées à une inscription ACTIVE : une épreuve avec un candidat mais hors
     # de toute inscription (attribution directe, ex. ancien onglet « Affectation aux
     # épreuves ») n'apparaît pas dans la fiche du candidat — on la signale (hors_inscription).
@@ -215,6 +225,9 @@ def list_epreuves_planning(
 
     result = []
     for epreuve, dj in rows:
+        num = epreuve.triplet_num
+        if num is None:
+            num = num_case.get((dj.date, epreuve.matiere, epreuve.heure_debut))
         candidat     = candidats.get(epreuve.candidat_id)
         examinateur  = examinateurs.get(epreuve.examinateur_id)
         examinateur2 = examinateurs.get(epreuve.examinateur2_id)
@@ -255,6 +268,7 @@ def list_epreuves_planning(
             "surveillant2_prenom": surveillant2.prenom if surveillant2 else None,
             "planche_id": planche.id if planche else None,
             "planche_nom": planche.nom if planche else None,
+            "triplet": f"T{num}" if num is not None else None,
         })
     return result
 
