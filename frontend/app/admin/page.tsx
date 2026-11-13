@@ -7833,6 +7833,8 @@ function AffectationTab({ planningId, examinateurs, filtresInitiaux }: {
   const [filterMatiere, setFilterMatiere] = useState(filtresInitiaux?.matiere ?? "");
   const [filterSession, setFilterSession] = useState<"" | "MATIN" | "APRES_MIDI">("");
   const [filterHeure, setFilterHeure] = useState(filtresInitiaux?.heure ?? "");
+  // "" = tous, "__sans" = épreuves sans numéro de matrice, sinon « T5 »
+  const [filterTriplet, setFilterTriplet] = useState("");
   const [filterEtat, setFilterEtat] = useState<"" | "sans" | "avec" | "lui">(filtresInitiaux ? "sans" : "");
   // 2ᵉ examinateur : "" = tous, "__avec" / "__sans", ou l'id d'un examinateur précis
   const [filterEx2, setFilterEx2] = useState("");
@@ -7887,6 +7889,8 @@ function AffectationTab({ planningId, examinateurs, filtresInitiaux }: {
     if (filterDate && ep.date !== filterDate) return false;
     if (filterSession && ep.demi_journee_type !== filterSession) return false;
     if (filterHeure && ep.heure_debut !== filterHeure) return false;
+    if (filterTriplet === "__sans" && ep.triplet) return false;
+    if (filterTriplet && filterTriplet !== "__sans" && ep.triplet !== filterTriplet) return false;
     const aExaminateur = ep.examinateur_id != null || ep.examinateur2_id != null;
     if (filterEtat === "sans" && aExaminateur) return false;
     if (filterEtat === "avec" && !aExaminateur) return false;
@@ -8015,7 +8019,22 @@ function AffectationTab({ planningId, examinateurs, filtresInitiaux }: {
             </select>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-800 mb-1">Triplet</label>
+            <select
+              value={filterTriplet}
+              onChange={(e) => setFilterTriplet(e.target.value)}
+              title="Triplet de la matrice de la journée type ; à combiner avec la date"
+              className="w-full border rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#C62828]/30"
+            >
+              <option value="">Tous les triplets</option>
+              {Array.from(new Set(epreuves.flatMap((e) => (e.triplet ? [e.triplet] : []))))
+                .sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)))
+                .map((tr) => <option key={tr} value={tr}>{tr}</option>)}
+              {epreuves.some((e) => !e.triplet) && <option value="__sans">Sans triplet</option>}
+            </select>
+          </div>
           <div>
             <label className="block text-xs font-medium text-gray-800 mb-1">Session</label>
             <select
@@ -8068,11 +8087,11 @@ function AffectationTab({ planningId, examinateurs, filtresInitiaux }: {
             </select>
           </div>
         </div>
-        {(filterMatiere || filterDate || filterSession || filterHeure || filterEtat || filterEx2) && (
+        {(filterMatiere || filterDate || filterSession || filterHeure || filterTriplet || filterEtat || filterEx2) && (
           <div className="flex items-center gap-3 text-xs text-gray-800">
             <span>{filtered.length} épreuve{filtered.length > 1 ? "s" : ""} affichée{filtered.length > 1 ? "s" : ""} sur {epreuves.length}</span>
             <button
-              onClick={() => { setFilterMatiere(""); setFilterDate(""); setFilterSession(""); setFilterHeure(""); setFilterEtat(""); setFilterEx2(""); }}
+              onClick={() => { setFilterMatiere(""); setFilterDate(""); setFilterSession(""); setFilterHeure(""); setFilterTriplet(""); setFilterEtat(""); setFilterEx2(""); }}
               className="text-[#C62828] hover:underline"
             >
               Réinitialiser les filtres
