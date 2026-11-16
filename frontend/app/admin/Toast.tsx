@@ -5,8 +5,7 @@
  *
  * Exports :
  *   ToastProvider    — à placer autour de la page admin (wraps children)
- *   useToast()       — { success, error, warning, info } ; success(msg, action) ajoute un
- *                      bouton (ex. « Annuler ») et laisse le message affiché plus longtemps
+ *   useToast()       — { success, error, warning, info }
  *   useConfirm()     — confirmFn(message, opts?) → Promise<boolean>
  */
 
@@ -24,20 +23,14 @@ import { CheckCircle2, XCircle, AlertTriangle, Info, X } from "lucide-react";
 
 type ToastKind = "success" | "error" | "warning" | "info";
 
-export interface ToastAction {
-  label: string;
-  onClick: () => void;
-}
-
 interface Toast {
   id: number;
   kind: ToastKind;
   message: string;
-  action?: ToastAction;
 }
 
 interface ToastApi {
-  success: (msg: string, action?: ToastAction) => void;
+  success: (msg: string) => void;
   error: (msg: string) => void;
   warning: (msg: string) => void;
   info: (msg: string) => void;
@@ -90,9 +83,6 @@ const STYLES: Record<ToastKind, { bg: string; border: string; text: string; icon
   },
 };
 
-// Message avec un bouton (« Annuler ») : le temps de le lire et de cliquer
-const DURATION_ACTION = 12000;
-
 const DURATION: Record<ToastKind, number> = {
   success: 3000,
   error: 5000,
@@ -120,14 +110,6 @@ function ToastContainer({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id
             >
               <Icon className="h-4 w-4 shrink-0 mt-0.5" />
               <span className="flex-1 leading-snug">{t.message}</span>
-              {t.action && (
-                <button
-                  onClick={() => { t.action!.onClick(); onDismiss(t.id); }}
-                  className="shrink-0 rounded-md border border-current px-2 py-0.5 text-xs font-semibold hover:bg-white/60 transition"
-                >
-                  {t.action.label}
-                </button>
-              )}
               <button
                 onClick={() => onDismiss(t.id)}
                 className="opacity-50 hover:opacity-100 transition shrink-0 mt-0.5"
@@ -193,14 +175,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const push = useCallback((kind: ToastKind, message: string, action?: ToastAction) => {
+  const push = useCallback((kind: ToastKind, message: string) => {
     const id = ++counter.current;
-    setToasts((prev) => [...prev, { id, kind, message, action }]);
-    setTimeout(() => dismiss(id), action ? DURATION_ACTION : DURATION[kind]);
+    setToasts((prev) => [...prev, { id, kind, message }]);
+    setTimeout(() => dismiss(id), DURATION[kind]);
   }, [dismiss]);
 
   const toast: ToastApi = {
-    success: (msg, action) => push("success", msg, action),
+    success: (msg) => push("success", msg),
     error: (msg) => push("error", msg),
     warning: (msg) => push("warning", msg),
     info: (msg) => push("info", msg),

@@ -35,7 +35,6 @@ from app.models import (  # noqa: F401
     Admin,  # noqa: F401
     AuditLog,  # noqa: F401
     NotificationAdmin,  # noqa: F401
-    Annulation,  # noqa: F401
 )
 
 from app.api.plannings import router as plannings_router
@@ -58,7 +57,6 @@ from app.api.admin_auth import router as admin_auth_router
 from app.api.admins import router as admins_router
 from app.api.monitoring import router as monitoring_router
 from app.api.notifications import router as notifications_router
-from app.api.annulations import router as annulations_router
 from app.services.monitoring import JournalActiviteMiddleware
 
 app = FastAPI(title="Oraux Platform")
@@ -100,7 +98,6 @@ app.include_router(admin_auth_router)
 app.include_router(admins_router)
 app.include_router(monitoring_router)
 app.include_router(notifications_router)
-app.include_router(annulations_router)
 
 
 @app.api_route("/", methods=["GET", "HEAD"])
