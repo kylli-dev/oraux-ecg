@@ -14628,6 +14628,14 @@ export default function AdminPage() {
 
   // Notification « liste d'attente » : Candidats > Liste d'attente du planning, candidat présélectionné
   const ouvrirNotification = useCallback((n: NotificationAdmin) => {
+    if (n.type === "ACTIVITE") {
+      setSection("monitoring");
+      localStorage.setItem("admin_section", "monitoring");
+      setSelectedPlanning(null);
+      setMobileSidebar(false);
+      setCleNavigation((c) => c + 1);
+      return;
+    }
     if (n.type !== "LISTE_ATTENTE" || !n.planning_id) return;
     intentionCandidats = { planningId: n.planning_id, tab: "liste_attente", candidatId: n.candidat_id };
     setSection("candidats");

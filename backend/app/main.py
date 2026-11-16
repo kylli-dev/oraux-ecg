@@ -233,6 +233,10 @@ def _run_migrations():
         "ALTER TABLE demi_journee ADD COLUMN gabarit_applique_le TIMESTAMP",
         # Monitoring : précision lisible de l'action (ex. gabarit appliqué et date)
         "ALTER TABLE audit_log ADD COLUMN detail VARCHAR(300)",
+        # Notifications : alertes d'activité réservées aux super-admins
+        "ALTER TABLE notification_admin ADD COLUMN reservee_super_admin BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE notification_admin ADD COLUMN acteur_admin_id INTEGER",
+        "ALTER TABLE notification_admin ADD COLUMN nombre INTEGER NOT NULL DEFAULT 1",
     ]
     with engine.connect() as conn:
         for sql in migrations:

@@ -6,6 +6,9 @@ Le middleware `JournalActiviteMiddleware` enregistre dans `audit_log` :
   - au plus une « consultation » (GET) toutes les INTERVALLE_CONSULTATION par personne
     identifiée, ce qui suffit pour savoir qui est en ligne et quand la plateforme est utilisée.
 Rien n'est enregistré pour /health (ping du cron) ni pour les requêtes anonymes en lecture.
+
+Certaines actions des admins (affectations, application de gabarit, connexions, suppressions)
+donnent aussi une alerte dans la cloche des super-admins (voir categorie_alerte).
 L'écriture se fait hors du traitement de la requête : un échec du journal ne bloque jamais
 l'utilisateur.
 """
@@ -89,6 +92,98 @@ def _a_journaliser(methode: str, acteur: Optional[Acteur]) -> bool:
     return True
 
 
+# ── Alertes pour les super-admins ─────────────────────────────────────────────
+
+REGROUPEMENT = timedelta(minutes=10)  # même action répétée : une seule ligne « × N »
+
+_AFFECTATIONS = {
+    "POST /admin/plannings/{planning_id}/epreuves/affecter-groupe",
+    "PATCH /admin/plannings/{planning_id}/epreuves/{epreuve_id}",
+    "POST /admin/plannings/{planning_id}/salle-defaults/apply",
+    "POST /admin/examinateurs/epreuves/{epreuve_id}/assigner",
+    "POST /admin/examinateurs/assign-bulk",
+    "POST /admin/planches/epreuves/{epreuve_id}/assigner",
+    "DELETE /admin/planches/epreuves/{epreuve_id}/assigner",
+    "POST /admin/gestion-candidats/candidat/{candidat_id}/epreuve/{epreuve_id}/assigner",
+}
+_SUPPRESSIONS_POST = {
+    "POST /admin/epreuves/supprimer-triplet",
+    "POST /admin/epreuves/supprimer-creneau",
+}
+# DELETE qui ne sont pas des suppressions (annulation d'une absence)
+_DELETE_NON_SUPPRESSION = {
+    "DELETE /admin/gestion-candidats/candidat/{candidat_id}/epreuve/{epreuve_id}/marquer-absent",
+}
+TITRES_ALERTE = {
+    "AFFECTATION": "Affectation",
+    "GABARIT": "Gabarit appliqué",
+    "AUTHENTIFICATION": "Connexion admin",
+    "SUPPRESSION": "Suppression",
+}
+
+
+def categorie_alerte(methode: str, route: Optional[str], statut_http: int) -> Optional[str]:
+    """Catégorie d'alerte d'une action admin, ou None. Les échecs ne comptent que pour la
+    connexion (tentative refusée)."""
+    if not route:
+        return None
+    cle = f"{methode} {route}"
+    if cle == "POST /admin/auth/login":
+        return "AUTHENTIFICATION"
+    if statut_http >= 400:
+        return None
+    if cle in ("POST /admin/auth/change-password", "POST /admin/auth/reset-password"):
+        return "AUTHENTIFICATION"
+    if cle == "POST /admin/plannings/{planning_id}/apply-journee-type":
+        return "GABARIT"
+    if cle in _AFFECTATIONS:
+        return "AFFECTATION"
+    if cle in _SUPPRESSIONS_POST or (
+        methode == "DELETE" and route.startswith("/admin") and cle not in _DELETE_NON_SUPPRESSION
+    ):
+        return "SUPPRESSION"
+    return None
+
+
+def _alerte(ligne: dict) -> Optional[dict]:
+    categorie = categorie_alerte(ligne["methode"], ligne["route"], ligne["statut_http"])
+    if not categorie:
+        return None
+    nom = ligne["acteur_nom"] or "Un admin"
+    if categorie == "AUTHENTIFICATION" and ligne["route"] == "/admin/auth/login":
+        if ligne["statut_http"] >= 400:
+            return dict(titre="Connexion refusée", message=ligne["detail"] or "Tentative de connexion admin refusée",
+                        acteur_admin_id=None)
+        message = f"Connexion de {nom}"
+    else:
+        action = ligne["detail"] or libelle_action(ligne["methode"], ligne["route"], ligne["chemin"])
+        message = f"{nom} : {action}"
+    return dict(titre=TITRES_ALERTE[categorie], message=message[:1000], acteur_admin_id=ligne["acteur_id"])
+
+
+def _notifier_super_admins(db, alerte: dict, quand: datetime) -> None:
+    from app.models.notification_admin import NotificationAdmin
+    precedente = (
+        db.query(NotificationAdmin)
+        .filter(
+            NotificationAdmin.type == "ACTIVITE",
+            NotificationAdmin.titre == alerte["titre"],
+            NotificationAdmin.message == alerte["message"],
+            NotificationAdmin.lue_le.is_(None),
+            NotificationAdmin.created_at > quand - REGROUPEMENT,
+        )
+        .order_by(NotificationAdmin.id.desc())
+        .first()
+    )
+    if precedente:
+        precedente.nombre = (precedente.nombre or 1) + 1
+        precedente.created_at = quand
+        return
+    db.add(NotificationAdmin(
+        created_at=quand, type="ACTIVITE", reservee_super_admin=True, nombre=1, **alerte,
+    ))
+
+
 def _enregistrer(ligne: dict) -> None:
     from app.db.session import SessionLocal
     from app.models.audit_log import AuditLog
@@ -98,6 +193,9 @@ def _enregistrer(ligne: dict) -> None:
     db = SessionLocal()
     try:
         db.add(AuditLog(**ligne))
+        alerte = _alerte(ligne) if ligne["acteur_type"] in ("admin", "anonyme") else None
+        if alerte:
+            _notifier_super_admins(db, alerte, ligne["created_at"])
         # Purge au plus une fois par jour
         if time.monotonic() - _derniere_purge > 24 * 3600:
             _derniere_purge = time.monotonic()
@@ -170,6 +268,7 @@ _LIBELLES = {
     "PUT /admin/plannings/{planning_id}/salle-defaults": "Salles par défaut",
     "POST /admin/plannings/{planning_id}/salle-defaults/apply": "Application des salles par défaut",
     "PATCH /admin/plannings/{planning_id}/epreuves/{epreuve_id}": "Modification d'une épreuve",
+    "POST /admin/plannings/{planning_id}/epreuves/affecter-groupe": "Affectation groupée (salles, surveillants)",
     "POST /admin/demi-journees/{dj_id}/generate": "Génération d'une demi-journée",
     "DELETE /admin/demi-journees/{dj_id}": "Suppression d'une demi-journée",
     "POST /admin/epreuves/dupliquer-triplet": "Ajout d'un triplet",
@@ -239,6 +338,8 @@ _LIBELLES = {
     "PUT /admin/parametrages/message-types/{code}": "Modification d'un message-type",
     "POST /admin/planches/upload": "Ajout de planches",
     "POST /admin/planches/epreuves/{epreuve_id}/assigner": "Planche assignée",
+    "DELETE /admin/planches/epreuves/{epreuve_id}/assigner": "Planche retirée d'une épreuve",
+    "DELETE /admin/planches/{planche_id}": "Suppression d'une planche",
 }
 
 _GENERIQUES = [

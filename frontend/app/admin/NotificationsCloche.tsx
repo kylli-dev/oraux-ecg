@@ -1,6 +1,8 @@
 "use client";
 
-// Cloche des notifications admin (ex. candidat mis en liste d'attente), en bas du menu.
+// Cloche des notifications admin (ex. candidat mis en liste d'attente ; pour les super-admins,
+// les alertes d'activité des autres admins : affectations, gabarits, connexions, suppressions),
+// en bas du menu.
 // Données : /admin/notifications (backend/app/api/notifications.py), relues toutes les minutes.
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
@@ -14,6 +16,7 @@ export type NotificationAdmin = {
   planning_id: number | null;
   candidat_id: number | null;
   lue: boolean;
+  nombre?: number; // action répétée, regroupée en une ligne
 };
 
 type Reponse = { non_lues: number; notifications: NotificationAdmin[] };
@@ -122,7 +125,10 @@ export default function NotificationsCloche({
                   <div className="flex items-start gap-2">
                     {!n.lue && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-amber-500" />}
                     <div className="min-w-0">
-                      <p className={`text-sm ${n.lue ? "text-gray-800" : "font-semibold text-gray-900"}`}>{n.titre}</p>
+                      <p className={`text-sm ${n.lue ? "text-gray-800" : "font-semibold text-gray-900"}`}>
+                        {n.titre}
+                        {(n.nombre ?? 1) > 1 && <span className="ml-1.5 text-xs font-semibold text-gray-700">× {n.nombre}</span>}
+                      </p>
                       <p className="text-xs text-gray-800 mt-0.5">{n.message}</p>
                       <p className="text-[11px] text-gray-700 mt-1">{quand(n.date)}</p>
                     </div>

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
-from app.services.monitoring import signaler_acteur
+from app.services.monitoring import signaler_acteur, signaler_detail
 from sqlalchemy.orm import Session
 
 from app.core.admin_guard import require_admin
@@ -28,6 +28,7 @@ def login(body: AdminLoginIn, request: Request, db: Session = Depends(get_db)):
     """Vérifie les identifiants d'un compte admin (username + mot de passe)."""
     a = db.query(Admin).filter_by(username=body.username.strip()).first()
     if not a or not a.actif or not verify_password(body.password, a.password_hash):
+        signaler_detail(request, f"Connexion refusée pour l'identifiant « {body.username.strip()[:100]} »")
         raise HTTPException(status_code=401, detail="Identifiants incorrects")
     signaler_acteur(request, "admin", a.id, a.username)
     return a

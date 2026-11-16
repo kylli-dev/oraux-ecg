@@ -375,7 +375,7 @@ class AffectationGroupeeIn(BaseModel):
 
 
 @router.post("/{planning_id}/epreuves/affecter-groupe")
-def affecter_groupe(planning_id: int, body: AffectationGroupeeIn, db: Session = Depends(get_db)):
+def affecter_groupe(planning_id: int, body: AffectationGroupeeIn, request: Request, db: Session = Depends(get_db)):
     champs = {
         f: getattr(body, f)
         for f in ("salle_id", "salle_preparation_id", "surveillant_id", "surveillant2_id", "salle_verifiee")
@@ -398,6 +398,13 @@ def affecter_groupe(planning_id: int, body: AffectationGroupeeIn, db: Session = 
         for champ, valeur in champs.items():
             setattr(e, champ, valeur)
     db.commit()
+    noms = {"salle_id": "salle d'examen", "salle_preparation_id": "salle de préparation",
+            "surveillant_id": "surveillant", "surveillant2_id": "2ᵉ surveillant"}
+    vides = all(champs[f] is None for f in champs if f in noms)
+    signaler_detail(request, (
+        f"{'Retrait' if vides else 'Affectation'} ({', '.join(noms[f] for f in champs if f in noms) or 'validation des salles'}) "
+        f"sur {len(epreuves)} épreuve(s)"
+    ))
     return {"modifiees": len(epreuves)}
 
 
