@@ -347,8 +347,8 @@ let intentionCandidats: IntentionCandidats | null = null;
 
 // ── Liens vers l'affectation manquante ──
 // Un clic sur « salle », « examinateur » ou « surveillant » ouvre l'écran d'affectation
-// correspondant (Salles, Examinateurs > Affectation, Surveillants > Planning, Planches >
-// Assignation), déjà filtré
+// correspondant (Salles — aussi pour les surveillants —, Examinateurs > Affectation,
+// Planches > Assignation), déjà filtré
 // sur le planning, le jour, la matière et l'heure du créneau, et sur les créneaux sans
 // cette affectation. L'intention est gardée ici le temps que l'écran cible la lise.
 type AffectationManquante = "salle" | "examinateur" | "surveillant" | "planche";
@@ -362,7 +362,8 @@ type IntentionAffectation = {
 const SECTION_AFFECTATION: Record<AffectationManquante, SectionKey> = {
   salle: "salles",
   examinateur: "examinateurs",
-  surveillant: "surveillants",
+  // Les surveillants s'affectent dans Salles (avec la salle qu'ils surveillent)
+  surveillant: "salles",
   planche: "planches",
 };
 let intentionAffectation: IntentionAffectation | null = null;
@@ -373,7 +374,7 @@ const NavAffectationContext = React.createContext<(i: IntentionAffectation) => v
 const ECRAN_AFFECTATION: Record<AffectationManquante, string> = {
   salle: "Salles",
   examinateur: "Examinateurs > Affectation",
-  surveillant: "Surveillants > Planning",
+  surveillant: "Salles",
   planche: "Planches > Assignation",
 };
 
@@ -11411,6 +11412,7 @@ function SurveillantsSection() {
   const toast = useToast();
   const confirm = useConfirm();
   const intention = useIntentionAffectation("surveillant");
+  const allerAffecter = React.useContext(NavAffectationContext);
   const [plannings, setPlannings] = useState<Planning[]>([]);
   const [selectedPlanningId, setSelectedPlanningId] = useState<number | null>(intention?.planningId ?? null);
   const [surveillants, setSurvaillants] = useState<Surveillant[]>([]);
@@ -11803,8 +11805,20 @@ function SurveillantsSection() {
                               {ep.surveillant_nom ? (
                                 <span className="text-gray-900">{ep.surveillant_nom} {ep.surveillant_prenom}</span>
                               ) : (
-                                <span className="flex items-center gap-1 text-amber-500">
-                                  <AlertTriangle className="h-3 w-3" /> Non assigné
+                                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                  <span className="flex items-center gap-1 text-amber-700">
+                                    <AlertTriangle className="h-3 w-3" /> Non assigné
+                                  </span>
+                                  {selectedPlanningId && (
+                                    <button
+                                      type="button"
+                                      onClick={() => allerAffecter({ manque: "surveillant", planningId: selectedPlanningId, date: ep.date, matiere: ep.matiere, heure: ep.heure_debut })}
+                                      title="Ouvre l'écran Salles, filtré sur ce créneau et les épreuves sans surveillant"
+                                      className="font-semibold text-gray-900 underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                                    >
+                                      Affecter dans Salles
+                                    </button>
+                                  )}
                                 </span>
                               )}
                             </td>
@@ -13654,7 +13668,9 @@ function SyncedScrollX({ children }: { children: React.ReactNode }) {
 function SallesSection() {
   const toast = useToast();
   const confirm = useConfirm();
-  const intention = useIntentionAffectation("salle");
+  const intentionSalle = useIntentionAffectation("salle");
+  const intentionSurv = useIntentionAffectation("surveillant");
+  const intention = intentionSalle ?? intentionSurv;
   const [plannings, setPlannings] = useState<Planning[]>([]);
   const [planningId, setPlanningId] = useState<number | "">(intention?.planningId ?? "");
   const [salles, setSalles] = useState<Salle[]>([]);
@@ -13668,7 +13684,9 @@ function SallesSection() {
   const [filterDate, setFilterDate] = useState(intention?.date ?? "");
   const [filterHeure, setFilterHeure] = useState(intention?.heure ?? "");
   // "" = toutes, "none" = non affectée, sinon l'id de la salle (en string)
-  const [filterSalle, setFilterSalle] = useState(intention ? "none" : "");
+  const [filterSalle, setFilterSalle] = useState(intentionSalle ? "none" : "");
+  // "" = tous, "none" = sans surveillant (ni 1er ni 2ᵉ), sinon l'id du surveillant
+  const [filterSurvSalle, setFilterSurvSalle] = useState(intentionSurv ? "none" : "");
   // Ne montrer que les doublons (créneau avec plusieurs épreuves en parallèle) dont les
   // salles ne sont pas toutes distinctes — pas encore vérifiés/différenciés, donc à risque
   // (2 candidats pourraient se retrouver affectés à la même salle physique).
@@ -13915,6 +13933,11 @@ function SallesSection() {
       if (!filterSalle) return true;
       if (filterSalle === "none") return e.salle_id == null;
       return e.salle_id === Number(filterSalle);
+    })
+    .filter((e) => {
+      if (!filterSurvSalle) return true;
+      if (filterSurvSalle === "none") return e.surveillant_id == null && e.surveillant2_id == null;
+      return e.surveillant_id === Number(filterSurvSalle) || e.surveillant2_id === Number(filterSurvSalle);
     });
 
   // Grouper par (date, matière, heure) — granularité à l'heure plutôt qu'à la demi-journée :
@@ -14283,6 +14306,22 @@ function SallesSection() {
                   <option value="none">Non affectée</option>
                   {activeSalles.map((s) => (
                     <option key={s.id} value={s.id}>{s.intitule}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {epreuves.length > 0 && (
+              <div className="flex-1 min-w-[160px]">
+                <label className="text-xs text-gray-700 mb-1 block">Filtrer par surveillant</label>
+                <select
+                  value={filterSurvSalle}
+                  onChange={(e) => setFilterSurvSalle(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-black/15"
+                >
+                  <option value="">Tous</option>
+                  <option value="none">Sans surveillant</option>
+                  {surveillants.map((s) => (
+                    <option key={s.id} value={s.id}>{s.nom} {s.prenom}{s.actif ? "" : " (inactif)"}</option>
                   ))}
                 </select>
               </div>
