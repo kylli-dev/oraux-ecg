@@ -59,6 +59,7 @@ import {
   Eye,
   EyeOff,
   Activity,
+  LayoutTemplate,
 } from "lucide-react";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -372,9 +373,9 @@ const lireIntention = (manque: AffectationManquante) =>
 const NavAffectationContext = React.createContext<(i: IntentionAffectation) => void>(() => {});
 
 const ECRAN_AFFECTATION: Record<AffectationManquante, string> = {
-  salle: "Salles",
+  salle: "Salles & surveillants",
   examinateur: "Examinateurs > Affectation",
-  surveillant: "Salles",
+  surveillant: "Salles & surveillants",
   planche: "Planches > Assignation",
 };
 
@@ -11813,7 +11814,7 @@ function SurveillantsSection() {
                                     <button
                                       type="button"
                                       onClick={() => allerAffecter({ manque: "surveillant", planningId: selectedPlanningId, date: ep.date, matiere: ep.matiere, heure: ep.heure_debut })}
-                                      title="Ouvre l'écran Salles, filtré sur ce créneau et les épreuves sans surveillant"
+                                      title="Ouvre l'écran Salles & surveillants, filtré sur ce créneau et les épreuves sans surveillant"
                                       className="font-semibold text-gray-900 underline decoration-dotted underline-offset-2 hover:decoration-solid"
                                     >
                                       Affecter dans Salles
@@ -11981,18 +11982,32 @@ function Sidebar({
       .then((data) => setSuperAdmin(data?.role === "super_admin"))
       .catch(() => {});
   }, []);
-  const items: { key: SectionKey; label: string; icon: React.ElementType; badge?: number }[] =
-    [
-      { key: "plannings", label: "Planning", icon: CalendarDays },
-      { key: "journeeTypes", label: "Journées types", icon: Settings2 },
-      { key: "candidats", label: "Candidats", icon: Users },
-      { key: "examinateurs", label: "Examinateurs", icon: GraduationCap },
-      { key: "surveillants", label: "Surveillants", icon: Shield },
+  // Menu rangé dans l'ordre de travail d'une session d'oraux : on prépare (planning, puis
+  // ses journées types), on affecte, on suit. Paramétrages et Monitoring, peu fréquents,
+  // sont en bas, séparés par un trait.
+  type ItemMenu = { key: SectionKey; label: string; icon: React.ElementType; badge?: number };
+  const groupes: { titre: string | null; items: ItemMenu[] }[] = [
+    { titre: null, items: [
       { key: "dashboard", label: "Tableau de bord", icon: BarChart3 },
-      { key: "conflits", label: "Conflits", icon: AlertTriangle, badge: nbConflits },
+    ] },
+    { titre: "Préparer", items: [
+      { key: "plannings", label: "Planning", icon: CalendarDays },
+      { key: "journeeTypes", label: "Journées types", icon: LayoutTemplate },
+    ] },
+    { titre: "Affecter", items: [
+      { key: "salles", label: "Salles & surveillants", icon: Building2 },
+      { key: "examinateurs", label: "Examinateurs", icon: GraduationCap },
       { key: "planches", label: "Planches", icon: FileText },
-      { key: "salles", label: "Salles", icon: Building2 },
+    ] },
+    { titre: "Suivre", items: [
+      { key: "candidats", label: "Candidats", icon: Users },
       { key: "notes", label: "Notes", icon: FileSpreadsheet },
+      { key: "surveillants", label: "Surveillants", icon: Shield },
+      { key: "conflits", label: "Conflits", icon: AlertTriangle, badge: nbConflits },
+    ] },
+  ];
+  const basMenu: ItemMenu[] =
+    [
       { key: "parametrages", label: "Paramétrages", icon: Settings2 },
       ...(superAdmin ? [{ key: "monitoring" as const, label: "Monitoring", icon: Activity }] : []),
     ];
@@ -12016,27 +12031,24 @@ function Sidebar({
         </div>
       </div>
 
-      <nav className="px-3 flex-1">
-        <div className="px-3 py-2 text-[10px] uppercase tracking-widest text-white/50 font-medium mb-1">
-          Organisation
-        </div>
-        {items.map(({ key, label, icon: Icon, badge }) => (
-          <button
-            key={key}
-            onClick={() => onSelect(key)}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition text-sm mb-0.5 text-left ${
-              active === key
-                ? "bg-white/15 font-semibold"
-                : "hover:bg-black/10 text-white/80"
-            }`}
-          >
-            <Icon className="h-4 w-4 shrink-0" />
-            <span className="flex-1">{label}</span>
-            {badge !== undefined && badge > 0 && (
-              <span className="h-2 w-2 rounded-full bg-amber-400 shrink-0" />
+      <nav className="px-3 flex-1 overflow-y-auto">
+        {groupes.map(({ titre, items }) => (
+          <div key={titre ?? "accueil"} className="mb-2">
+            {titre && (
+              <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-widest text-white/70 font-semibold">
+                {titre}
+              </div>
             )}
-          </button>
+            {items.map((item) => (
+              <BoutonMenu key={item.key} item={item} active={active} onSelect={onSelect} />
+            ))}
+          </div>
         ))}
+        <div className="border-t border-white/15 mt-2 pt-2">
+          {basMenu.map((item) => (
+            <BoutonMenu key={item.key} item={item} active={active} onSelect={onSelect} />
+          ))}
+        </div>
       </nav>
 
       <div className="p-3 border-t border-white/10 flex items-center gap-2">
@@ -12046,6 +12058,29 @@ function Sidebar({
         <NotificationsCloche get={get} post={post} onOuvrir={onNotification} />
       </div>
     </aside>
+  );
+}
+
+function BoutonMenu({ item: { key, label, icon: Icon, badge }, active, onSelect }: {
+  item: { key: SectionKey; label: string; icon: React.ElementType; badge?: number };
+  active: SectionKey;
+  onSelect: (k: SectionKey) => void;
+}) {
+  return (
+    <button
+      onClick={() => onSelect(key)}
+      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition text-sm mb-0.5 text-left ${
+        active === key
+          ? "bg-white/15 font-semibold"
+          : "hover:bg-black/10 text-white/80"
+      }`}
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      <span className="flex-1">{label}</span>
+      {badge !== undefined && badge > 0 && (
+        <span className="h-2 w-2 rounded-full bg-amber-400 shrink-0" />
+      )}
+    </button>
   );
 }
 
@@ -14015,7 +14050,7 @@ function SallesSection() {
           <Building2 className="h-5 w-5" />
         </div>
         <div>
-          <h2 className="text-xl font-bold text-gray-900">Gestion des salles</h2>
+          <h2 className="text-xl font-bold text-gray-900">Salles &amp; surveillants</h2>
           <p className="text-xs text-gray-700">Affectez une salle d'examen et une salle de préparation à chaque créneau</p>
         </div>
       </div>
@@ -14633,7 +14668,8 @@ function SallesSection() {
 
 // ── Main ───────────────────────────────────────────────────────────────────────
 export default function AdminPage() {
-  const [section, setSection] = useState<SectionKey>("plannings");
+  // Première connexion : Tableau de bord ; ensuite, la dernière section ouverte
+  const [section, setSection] = useState<SectionKey>("dashboard");
 
   useEffect(() => {
     const saved = localStorage.getItem("admin_section") as SectionKey;
