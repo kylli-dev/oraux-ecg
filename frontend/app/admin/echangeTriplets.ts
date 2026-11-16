@@ -1,6 +1,7 @@
-// Contrôles d'un échange de triplets, communs à l'assistant de journée type (étape 2) et à la
-// Matrice oraux : on refuse seulement ce qui casserait un triplet (deux fois la même matière) ;
-// chevauchements et écarts de moins de 30 min sont permis, avec une simple alerte.
+// Contrôles d'un échange de triplets dans la Matrice oraux, seul écran où l'on déplace les
+// triplets (l'assistant de journée type ne fait que les afficher, avec exceptionsMatrice) :
+// on refuse seulement ce qui casserait un triplet (deux fois la même matière) ; chevauchements
+// et écarts de moins de 30 min sont permis, avec une simple alerte.
 
 // Même marge que MARGIN_TRANSITION_MINUTES (generation.py, triplets.py, buildMatrix)
 export const MARGE_ENTRE_EPREUVES = 30;

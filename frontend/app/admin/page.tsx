@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import InterfaceAdminENSAEPlanning from "../InterfaceAdminENSAEPlanning";
 import { useRouter } from "next/navigation";
 import { ToastProvider, useToast, useConfirm } from "./Toast";
-import { type CaseTriplet, MARGE_ENTRE_EPREUVES, exceptionsMatrice, minutes, verifierEchange } from "./echangeTriplets";
+import { type CaseTriplet, MARGE_ENTRE_EPREUVES, exceptionsMatrice, minutes } from "./echangeTriplets";
 import { corpsBlocModifie } from "./blocsGabarit";
 import MonitoringSection from "./MonitoringSection";
 import NotificationsCloche, { type NotificationAdmin } from "./NotificationsCloche";
@@ -4656,11 +4656,6 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
   const [avisDisposition, setAvisDisposition] = useState(() => dispositionInitiale().perdue ? AVIS_DISPOSITION_PERDUE : "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [editMode, setEditMode] = useState(false);
-  const [dragSrc, setDragSrc] = useState<{ rowIdx: number; matIdx: number } | null>(null);
-  const [dragOver, setDragOver] = useState<{ rowIdx: number; matIdx: number } | null>(null);
-  // Dernier échange refusé ou accepté malgré une exception
-  const [alerteEchange, setAlerteEchange] = useState<{ refus: boolean; texte: string } | null>(null);
 
   const toggleBlocMatiere = (blocIdx: number, intitule: string) => {
     setP(prev => ({
@@ -5225,29 +5220,6 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
 
   const pausesEtape2 = pausesEntreBlocs();
 
-  const swapCells = async (a: { rowIdx: number; matIdx: number }, b: { rowIdx: number; matIdx: number }) => {
-    if (a.rowIdx === b.rowIdx && a.matIdx === b.matIdx) return;
-    if (matrix[a.rowIdx].candidates[a.matIdx] < 0 || matrix[b.rowIdx].candidates[b.matIdx] < 0) return;
-    const cases = casesMatrice();
-    const ca = cases.find(c => c.id === `${a.rowIdx}-${a.matIdx}`);
-    const cb = cases.find(c => c.id === `${b.rowIdx}-${b.matIdx}`);
-    if (!ca || !cb) return;
-    const { refus, exceptions } = verifierEchange(cases, ca, cb);
-    if (refus) { setAlerteEchange({ refus: true, texte: refus }); return; }
-    // Chevauchement ou moins de 30 min : l'échange est fait, avec une alerte
-    setAlerteEchange(exceptions.length
-      ? { refus: false, texte: `Échange fait — à vérifier :\n${exceptions.join("\n")}` }
-      : null);
-    setMatrix(prev => {
-      const next = prev.map(r => ({ ...r, candidates: [...r.candidates] }));
-      const va = next[a.rowIdx].candidates[a.matIdx];
-      const vb = next[b.rowIdx].candidates[b.matIdx];
-      next[a.rowIdx].candidates[a.matIdx] = vb;
-      next[b.rowIdx].candidates[b.matIdx] = va;
-      return next;
-    });
-  };
-
   const blocLabel = (heure_debut: string, heure_fin: string) => {
       const debutH = parseInt(heure_debut);
       const finH = parseInt(heure_fin);
@@ -5300,21 +5272,13 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
           Chaque triplet T<em>k</em> = un candidat passant {maxBlocN} épreuve(s) à des horaires décalés.
           {p.salles_par_matiere > 1 && <> · {capacite} candidats au total.</>}
         </p>
-        <button
-          type="button"
-          onClick={() => { setEditMode(e => !e); setDragSrc(null); setDragOver(null); }}
-          className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition ${
-            editMode ? "bg-black text-white border-black" : "bg-white text-gray-800 border-black/15 hover:border-black/30"
-          }`}
-        >
-          {editMode ? "✓ Mode édition actif" : "Modifier manuellement"}
-        </button>
       </div>
-      {editMode && (
-        <p className="text-[11px] text-gray-700 -mt-2">
-          Glissez un triplet vers une autre cellule de la même matière pour l'échanger. Aucun échange n&apos;est bloqué : une alerte s&apos;affiche si un candidat a deux épreuves qui se chevauchent ou moins de {MARGE_ENTRE_EPREUVES} min entre deux épreuves. Les positions sont gardées à l'enregistrement de la journée type, et les triplets proposés aux candidats les suivent pour les dates générées ensuite.
-        </p>
-      )}
+      {/* Les échanges de triplets se font dans un seul écran, la Matrice oraux : l'assistant
+          garde les positions enregistrées (appliquerDisposition) mais ne les modifie pas */}
+      <p className="text-[11px] text-gray-700 -mt-2">
+        Pour déplacer des triplets à la main, enregistrez la journée type puis ouvrez l&apos;onglet
+        <strong> Matrice oraux</strong> : les positions déjà déplacées y sont conservées.
+      </p>
       {exceptionsActuelles.length > 0 && (
         <details className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-900">
           <summary className="cursor-pointer font-semibold">
@@ -5324,12 +5288,6 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
             {exceptionsActuelles.map((m) => <li key={m}>{m}</li>)}
           </ul>
         </details>
-      )}
-      {alerteEchange && (
-        <div className={`flex items-start gap-2 rounded-lg border px-4 py-2.5 text-xs whitespace-pre-line ${alerteEchange.refus ? "border-red-200 bg-red-50 text-red-800" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
-          <span className="flex-1">{alerteEchange.texte}</span>
-          <button onClick={() => setAlerteEchange(null)} className="shrink-0 font-semibold" title="Fermer">✕</button>
-        </div>
       )}
 
       {/* Matrice */}
@@ -5398,30 +5356,13 @@ function CreateJourneeTypeForm({ onSuccess, editJt }: { onSuccess: () => void; e
                           </td>
                         );
                       }
-                      const isOver = dragOver?.rowIdx === i && dragOver?.matIdx === localJ;
-                      const isDragging = dragSrc?.rowIdx === i && dragSrc?.matIdx === localJ;
                       return (
-                        <td
-                          key={globalJ}
-                          className={`px-3 py-1 text-center transition ${isOver ? "bg-blue-50" : ""}`}
-                          onDragOver={editMode ? (e) => { e.preventDefault(); setDragOver({ rowIdx: i, matIdx: localJ }); } : undefined}
-                          onDragLeave={editMode ? () => setDragOver(null) : undefined}
-                          onDrop={editMode ? (e) => {
-                            e.preventDefault();
-                            if (dragSrc) swapCells(dragSrc, { rowIdx: i, matIdx: localJ });
-                            setDragSrc(null); setDragOver(null);
-                          } : undefined}
-                        >
+                        <td key={globalJ} className="px-3 py-1 text-center">
                           <span
-                            draggable={editMode}
-                            onDragStart={editMode ? () => setDragSrc({ rowIdx: i, matIdx: localJ }) : undefined}
-                            onDragEnd={editMode ? () => { setDragSrc(null); setDragOver(null); } : undefined}
-                            className={`inline-block px-2 py-0.5 rounded-full font-semibold text-[11px] text-gray-700 transition ${
-                              editMode ? "cursor-grab active:cursor-grabbing" : ""
-                            } ${isDragging ? "opacity-40 scale-95" : ""} ${isOver ? "ring-2 ring-blue-400" : ""}`}
+                            className="inline-block px-2 py-0.5 rounded-full font-semibold text-[11px] text-gray-700"
                             style={{
                               backgroundColor: TRIPLET_BG[k % TRIPLET_BG.length],
-                              outline: isOver ? "none" : `1.5px solid ${TRIPLET_RING[k % TRIPLET_RING.length]}`,
+                              outline: `1.5px solid ${TRIPLET_RING[k % TRIPLET_RING.length]}`,
                             }}
                           >
                             T{k + 1}
