@@ -1620,6 +1620,76 @@ function CreatePlanningForm({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
+// ── Journées sans numéro de triplet ──
+// Journées générées avant la numérotation des triplets : la colonne Triplet affiche « — ».
+// Le bouton les numérote d'après leur journée type, sans régénérer les épreuves
+// (POST plannings/{id}/numeroter-triplets) ; une simulation annonce d'abord le résultat.
+type BilanNumerotation = {
+  numerotees: string[]; epreuves: number;
+  sans_gabarit: string[]; gabarit_modifie: string[]; avec_reservations: string[];
+};
+
+function BandeauTripletsSansNumero({ planningId, epreuves, onFait }: {
+  planningId: number; epreuves: EpreuveFlat[]; onFait: () => void;
+}) {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const [enCours, setEnCours] = useState(false);
+  const datesSans = Array.from(new Set(epreuves.filter((e) => !e.triplet && e.statut !== "ANNULEE").map((e) => e.date)));
+  if (datesSans.length === 0) return null;
+
+  const jour = (d: string) => new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+  const liste = (ds: string[]) => ds.map(jour).join(", ");
+
+  async function numeroter() {
+    setEnCours(true);
+    try {
+      const sim = await post<BilanNumerotation>(`plannings/${planningId}/numeroter-triplets?simulation=true`, {});
+      const restes = [
+        sim.sans_gabarit.length ? `• Sans journée type enregistrée (${liste(sim.sans_gabarit)}) : réappliquez la journée type à ces dates.` : "",
+        sim.gabarit_modifie.length ? `• Épreuves ajoutées/supprimées à la main, ou journée type modifiée depuis (${liste(sim.gabarit_modifie)}) : laissées telles quelles.` : "",
+        sim.avec_reservations.length ? `• Créneaux déjà préréservés ou attribués (${liste(sim.avec_reservations)}) : laissées telles quelles, pour ne pas changer les triplets réservés.` : "",
+      ].filter(Boolean).join("\n");
+      if (sim.numerotees.length === 0) {
+        toast.error(`Aucune journée ne peut être numérotée automatiquement. ${restes.replace(/\n/g, " ")}`);
+        return;
+      }
+      const ok = await confirm(
+        `${sim.numerotees.length} journée(s) seront numérotées d'après leur journée type (${liste(sim.numerotees)}), ` +
+        `sans toucher aux épreuves ni aux affectations.${restes ? `\n\nNon numérotées :\n${restes}` : ""}`,
+        { confirmLabel: "Numéroter" },
+      );
+      if (!ok) return;
+      const r = await post<BilanNumerotation>(`plannings/${planningId}/numeroter-triplets`, {});
+      toast.success(`${r.numerotees.length} journée(s) numérotée(s) (${r.epreuves} épreuves)`);
+      onFait();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setEnCours(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-black/10 bg-white px-4 py-3 text-sm text-gray-900 shadow-sm">
+      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-700" />
+      <span className="flex-1 min-w-[240px]">
+        <strong>{datesSans.length} journée(s)</strong> sans numéro de triplet ({liste(datesSans.sort())}) :
+        elles ont été générées avant la numérotation, la colonne Triplet y affiche « — ».
+      </span>
+      <button
+        type="button"
+        onClick={numeroter}
+        disabled={enCours}
+        className="inline-flex items-center gap-1.5 rounded-lg bg-black px-3 py-1.5 text-xs font-semibold text-white hover:bg-black/80 disabled:opacity-50"
+      >
+        {enCours ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+        Numéroter depuis la journée type
+      </button>
+    </div>
+  );
+}
+
 // ── Vue tableau complet du planning ───────────────────────────────────────────
 function hmToMin(hm: string): number {
   const [h, m] = hm.split(":").map(Number);
@@ -1843,6 +1913,9 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
 
   return (
     <div>
+      <div className="mb-3">
+        <BandeauTripletsSansNumero planningId={planningId} epreuves={epreuves} onFait={loadEpreuves} />
+      </div>
       {/* Bilan d'attribution */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1 mb-3 text-sm text-gray-900">
         <span>
@@ -8012,6 +8085,7 @@ function AffectationTab({ planningId, examinateurs, filtresInitiaux }: {
 
   return (
     <div className="space-y-4">
+      <BandeauTripletsSansNumero planningId={planningId} epreuves={epreuves} onFait={load} />
       {/* Controls */}
       <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

@@ -240,6 +240,7 @@ def generate_in_range(
     bonus_slots: int = 0,
     triplet_offset: Optional[int] = None,
     custom_matrix: Optional[List[List[int]]] = None,
+    collecte: Optional[list] = None,
 ) -> int:
     """
     Génère et persiste les épreuves dans la plage [debut, fin[.
@@ -252,6 +253,9 @@ def generate_in_range(
     matieres_config (optionnel) : liste de dicts {"nom", "duree_minutes", "preparation_minutes"}
     pour des durées variables par matière. La rotation utilise max(duree) comme avance
     de créneau ; chaque épreuve est créée avec sa propre heure_fin et preparation_minutes.
+
+    collecte (avec db=None) : les épreuves sont ajoutées à cette liste au lieu d'être
+    persistées — simulation, voir numeros_triplets_journee_type.
 
     Retourne le nombre d'épreuves créées.
     """
@@ -330,7 +334,7 @@ def generate_in_range(
         for j, (nom, duree_j, prep_j, salles_j) in enumerate(zip(names, durees, preps, salles_list)):
             exam_end_j = exam_start + timedelta(minutes=duree_j)
             for _ in range(salles_j):
-                db.add(Epreuve(
+                (db.add if db is not None else collecte.append)(Epreuve(
                     demi_journee_id=demi_journee_id,
                     matiere=nom,
                     heure_debut=exam_start.time(),
@@ -366,7 +370,7 @@ def generate_in_range(
         for nom, duree_j, prep_j, salles_j in zip(names, durees, preps, salles_list):
             exam_end_j = exam_start + timedelta(minutes=duree_j)
             for _ in range(salles_j):
-                db.add(Epreuve(
+                (db.add if db is not None else collecte.append)(Epreuve(
                     demi_journee_id=demi_journee_id,
                     matiere=nom,
                     heure_debut=exam_start.time(),
@@ -465,6 +469,105 @@ def _apply_periode_plan(
             warnings.append(warn)
 
     return total, warnings
+
+
+# ── Numérotation après coup des triplets ─────────────────────────────────────
+
+def numeros_triplets_journee_type(journee_type: JourneeType) -> dict:
+    """
+    Numéros de triplet de chaque case (demi-journée, matière, heure de début) tels que la
+    journée type les génère aujourd'hui — simulation de apply_journee_type, sans base.
+    Une case peut recevoir plusieurs épreuves (salles en parallèle, blocs parallèles) :
+    la liste suit l'ordre de création, donc l'ordre des id des épreuves réelles.
+    """
+    numeros: dict = {}
+    for plan in build_journee_plan(journee_type):
+        for bloc in plan.blocs:
+            eps: list = []
+            generate_in_range(
+                db=None, demi_journee_id=0,
+                debut=bloc.heure_debut, fin=bloc.heure_fin, matieres=bloc.matieres,
+                duree_minutes=bloc.duree_minutes, pause_minutes=bloc.pause_minutes,
+                preparation_minutes=bloc.preparation_minutes, statut_initial="LIBRE",
+                salles_par_matiere=bloc.salles_par_matiere, matieres_config=bloc.matieres_config,
+                nb_slots=bloc.nb_slots, bonus_slots=bloc.bonus_slots,
+                triplet_offset=bloc.triplet_offset, custom_matrix=bloc.custom_matrix,
+                collecte=eps,
+            )
+            # None = case sans numéro (créneau bonus, bloc sans numérotation)
+            for e in eps:
+                numeros.setdefault((plan.type_dj, e.matiere, e.heure_debut), []).append(e.triplet_num)
+    return numeros
+
+
+def numeroter_triplets(db: Session, planning_id: int, simulation: bool = False) -> dict:
+    """
+    Donne leur numéro de triplet (T1…Tn) aux journées qui n'en ont pas, d'après la journée
+    type qui les a générées — SANS régénérer les épreuves (réappliquer la journée type les
+    supprimerait, inscriptions comprises).
+
+    Une date n'est numérotée que si ses épreuves correspondent exactement aux cases de
+    la journée type (ni ajout ni retrait à la main), et si aucune n'est préréservée ou
+    attribuée : ces réservations ont été faites sur la composition actuelle des triplets
+    (rotation), que la numérotation changerait.
+    Retourne, par motif, les dates numérotées ou laissées telles quelles.
+    """
+    djs = db.query(DemiJournee).filter(DemiJournee.planning_id == planning_id).all()
+    par_date: dict = {}
+    for dj in djs:
+        par_date.setdefault(dj.date, []).append(dj)
+
+    resultat = {"numerotees": [], "epreuves": 0, "sans_gabarit": [], "gabarit_modifie": [], "avec_reservations": []}
+    cache_jt: dict = {}
+    for jour in sorted(par_date):
+        eps_par_dj = {dj.id: db.query(Epreuve).filter(Epreuve.demi_journee_id == dj.id).all() for dj in par_date[jour]}
+        tous = [e for eps in eps_par_dj.values() for e in eps]
+        # Journée déjà (même partiellement) numérotée : laissée telle quelle
+        if not tous or any(e.triplet_num is not None for e in tous):
+            continue
+        if any(e.statut not in ("LIBRE", "CREE", "ANNULEE") for e in tous):
+            resultat["avec_reservations"].append(jour)
+            continue
+        numeros_du_jour = {}
+        motif = None
+        for dj in par_date[jour]:
+            if not dj.journee_type_id:
+                motif = "sans_gabarit"
+                break
+            if dj.journee_type_id not in cache_jt:
+                jt_obj = db.get(JourneeType, dj.journee_type_id)
+                cache_jt[dj.journee_type_id] = numeros_triplets_journee_type(jt_obj) if jt_obj else None
+            attendus = cache_jt[dj.journee_type_id]
+            if attendus is None:
+                motif = "sans_gabarit"
+                break
+            par_case: dict = {}
+            for e in sorted(eps_par_dj[dj.id], key=lambda e: e.id):
+                par_case.setdefault((dj.type, e.matiere, e.heure_debut), []).append(e)
+            cases_gabarit = {c: n for c, n in attendus.items() if c[0] == dj.type}
+            # La demi-journée doit correspondre exactement à ce que génère la journée type
+            if set(par_case) != set(cases_gabarit) or any(len(par_case[c]) != len(cases_gabarit[c]) for c in par_case):
+                motif = "gabarit_modifie"
+                break
+            for c, eps in par_case.items():
+                for e, num in zip(eps, cases_gabarit[c]):
+                    if num is not None:
+                        numeros_du_jour[e.id] = (e, num)
+        if motif:
+            resultat[motif].append(jour)
+            continue
+        if not numeros_du_jour:
+            # Journée type sans numérotation (ex. bloc avec plages exclues) : rien à faire
+            resultat["sans_gabarit"].append(jour)
+            continue
+        if not simulation:
+            for e, num in numeros_du_jour.values():
+                e.triplet_num = num
+        resultat["numerotees"].append(jour)
+        resultat["epreuves"] += len(numeros_du_jour)
+    if not simulation:
+        db.commit()
+    return resultat
 
 
 # ── Application automatique des salles par défaut ────────────────────────────

@@ -20,7 +20,7 @@ from app.schemas.epreuve import EpreuveUpdate
 from app.schemas.generation import GenerateEpreuvesIn, SkipRange
 from app.schemas.planning import PlanningCreate, PlanningOut, PlanningUpdate
 from app.services.excel import export_planning, export_template, import_epreuves
-from app.services.generation import apply_journee_type, generate_for_demi_journee
+from app.services.generation import apply_journee_type, generate_for_demi_journee, numeroter_triplets
 from app.services.inscriptions import annuler_inscriptions_orphelines
 from app.services.monitoring import signaler_detail
 
@@ -139,6 +139,21 @@ def apply_jt(planning_id: int, body: ApplyJourneeTypeIn, request: Request, db: S
     result = apply_journee_type(db, planning_id, jt, body.date)
     signaler_detail(request, f"Gabarit « {jt.nom} » appliqué au {body.date.strftime('%d/%m/%Y')} ({p.nom})")
     return {"planning_id": planning_id, "date": body.date, **result}
+
+
+@router.post("/{planning_id}/numeroter-triplets")
+def numeroter_triplets_planning(
+    planning_id: int, request: Request, simulation: bool = Query(False), db: Session = Depends(get_db),
+):
+    """Numérote (T1…Tn) les journées sans numéro de triplet, d'après leur journée type,
+    sans régénérer les épreuves. simulation=true : ce qui serait fait, sans rien modifier."""
+    p = db.get(Planning, planning_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Planning not found")
+    r = numeroter_triplets(db, planning_id, simulation=simulation)
+    if not simulation and r["numerotees"]:
+        signaler_detail(request, f"Numérotation des triplets : {len(r['numerotees'])} journée(s) ({p.nom})")
+    return r
 
 
 @router.get("/{planning_id}/gabarits-appliques")
