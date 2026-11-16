@@ -1096,23 +1096,28 @@ function ErrorMsg({ msg }: { msg: string }) {
   );
 }
 
+// Couleur et libellé lisible de chaque statut (planning, épreuve, candidat)
+const STATUT_BADGE: Record<string, [string, string]> = {
+  BROUILLON:     ["bg-gray-100 text-gray-700",   "Brouillon"],
+  OUVERT:        ["bg-green-100 text-green-700",  "Ouvert"],
+  CLOS:          ["bg-black/10 text-gray-800",    "Clos"],
+  LIBRE:         ["bg-green-100 text-green-700",  "Libre"],
+  PRERESERVEE:   ["bg-amber-100 text-amber-700",  "Préréservé"],
+  ABSENT:        ["bg-red-100 text-red-700",      "Absent"],
+  CREE:          ["bg-gray-100 text-gray-700",    "Créé"],
+  ATTRIBUEE:     ["bg-blue-100 text-blue-700",    "Réservé"],
+  EN_EVALUATION: ["bg-yellow-100 text-yellow-700","En éval."],
+  FINALISEE:     ["bg-purple-100 text-purple-700","Finalisé"],
+  ANNULEE:       ["bg-red-100 text-red-500",      "Annulé"],
+  IMPORTE:       ["bg-gray-100 text-gray-700",    "À placer"],
+  INSCRIT:       ["bg-green-100 text-green-700",  "Inscrit"],
+  CONFIRME:      ["bg-blue-100 text-blue-700",    "Confirmé"],
+  ANNULE:        ["bg-red-100 text-red-500",      "Annulé"],
+};
+const libelleStatut = (statut: string) => STATUT_BADGE[statut]?.[1] ?? statut;
+
 function StatutBadge({ statut }: { statut: string }) {
-  const map: Record<string, [string, string]> = {
-    BROUILLON:     ["bg-gray-100 text-gray-700",   "Brouillon"],
-    OUVERT:        ["bg-green-100 text-green-700",  "Ouvert"],
-    CLOS:          ["bg-black/10 text-gray-800",    "Clos"],
-    LIBRE:         ["bg-green-100 text-green-700",  "Libre"],
-    CREE:          ["bg-gray-100 text-gray-700",    "Créé"],
-    ATTRIBUEE:     ["bg-blue-100 text-blue-700",    "Réservé"],
-    EN_EVALUATION: ["bg-yellow-100 text-yellow-700","En éval."],
-    FINALISEE:     ["bg-purple-100 text-purple-700","Finalisé"],
-    ANNULEE:       ["bg-red-100 text-red-500",      "Annulé"],
-    IMPORTE:       ["bg-gray-100 text-gray-700",    "À placer"],
-    INSCRIT:       ["bg-green-100 text-green-700",  "Inscrit"],
-    CONFIRME:      ["bg-blue-100 text-blue-700",    "Confirmé"],
-    ANNULE:        ["bg-red-100 text-red-500",      "Annulé"],
-  };
-  const [cls, label] = map[statut] ?? ["bg-gray-100 text-gray-700", statut];
+  const [cls, label] = STATUT_BADGE[statut] ?? ["bg-gray-100 text-gray-700", statut];
   return (
     <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>
       {label}
@@ -8307,13 +8312,7 @@ function AffectationTab({ planningId, examinateurs, filtresInitiaux }: {
                             ) : <span className="text-gray-700">—</span>}
                           </td>
                           <td className="px-4 py-3">
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                              ep.statut === "LIBRE" ? "bg-green-100 text-green-700" :
-                              ep.statut === "ATTRIBUEE" ? "bg-blue-100 text-blue-700" :
-                              ep.statut === "PRERESERVEE" ? "bg-purple-100 text-purple-700" :
-                              ep.statut === "CREE" ? "bg-gray-100 text-gray-700" :
-                              "bg-gray-100 text-gray-700"
-                            }`}>{ep.statut}</span>
+                            <StatutBadge statut={ep.statut} />
                           </td>
                         </tr>
                       );
@@ -9497,7 +9496,7 @@ function DashboardSection() {
                 {Object.entries(data.by_statut).map(([statut, count]) => (
                   <div key={statut}>
                     <div className="flex items-center justify-between text-xs mb-1">
-                      <span className="font-medium">{statut}</span>
+                      <span className="font-medium">{libelleStatut(statut)}</span>
                       <span className="text-gray-700">{count}</span>
                     </div>
                     <ProgressBar value={count} max={data.total_epreuves} color={STATUT_COLORS[statut] ?? "#666"} />
@@ -11859,14 +11858,7 @@ function SurveillantsSection() {
                               {ep.candidat_nom ? `${ep.candidat_nom} ${ep.candidat_prenom}` : <span className="text-gray-700">—</span>}
                             </td>
                             <td className="px-4 py-2.5">
-                              <span className={`inline-block px-2 py-0.5 rounded-full font-medium text-[10px] ${
-                                ep.statut === "ATTRIBUEE" ? "bg-green-100 text-green-700" :
-                                ep.statut === "LIBRE" ? "bg-gray-100 text-gray-700" :
-                                ep.statut === "PRERESERVEE" ? "bg-amber-100 text-amber-700" :
-                                "bg-gray-50 text-gray-700"
-                              }`}>
-                                {ep.statut}
-                              </span>
+                              <StatutBadge statut={ep.statut} />
                             </td>
                           </tr>
                         ))}
