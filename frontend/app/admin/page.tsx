@@ -341,6 +341,21 @@ function manquesPublication(e: {
   return manques;
 }
 
+// ── Planning actif, partagé entre les sections ──
+// Le dernier planning choisi (dans n'importe quelle section, ou ouvert dans Planning) est
+// retenu : chaque section s'ouvre dessus au lieu de redemander le choix.
+const CLE_PLANNING_ACTIF = "admin_planning_actif";
+function planningMemorise(ps: { id: number }[]): number | null {
+  try {
+    const id = Number(localStorage.getItem(CLE_PLANNING_ACTIF));
+    return id && ps.some((p) => p.id === id) ? id : null;
+  } catch { return null; }
+}
+function memoriserPlanning(id: number | string | null | undefined) {
+  if (!id) return;
+  try { localStorage.setItem(CLE_PLANNING_ACTIF, String(id)); } catch {}
+}
+
 // ── Ouverture de Candidats depuis une notification ──
 // Planning, onglet et candidat à présélectionner, lus par CandidatsSection à son montage.
 type IntentionCandidats = { planningId: number; tab: "liste_attente"; candidatId: number | null };
@@ -3925,10 +3940,11 @@ function ApplyJourneeTypeToPlanning({ jt, onClose }: { jt: JourneeType; onClose:
     get<Planning[]>("plannings/")
       .then((ps) => {
         setPlannings(ps);
-        if (ps.length > 0) setPlanningId(ps[0].id);
+        if (ps.length > 0) setPlanningId(planningMemorise(ps) ?? ps[0].id);
       })
       .finally(() => setLoading(false));
   }, []);
+  useEffect(() => memoriserPlanning(planningId), [planningId]);
 
   if (loading) {
     return <div className="flex justify-center py-8"><Spinner /></div>;
@@ -5566,9 +5582,13 @@ function CandidatsSection() {
 
   useEffect(() => {
     get<Planning[]>("plannings/")
-      .then(setPlannings)
+      .then((ps) => {
+        setPlannings(ps);
+        setPlanningId((cur) => cur || planningMemorise(ps) || cur);
+      })
       .catch(() => {});
   }, []);
+  useEffect(() => memoriserPlanning(planningId), [planningId]);
 
   const loadCandidats = useCallback(async () => {
     if (!planningId) return;
@@ -9111,9 +9131,10 @@ function ExaminateursSection() {
   useEffect(() => {
     get<Planning[]>("plannings/").then((ps) => {
       setPlannings(ps);
-      if (ps.length > 0) setSelectedPlanningId((cur) => cur ?? ps[0].id);
+      if (ps.length > 0) setSelectedPlanningId((cur) => cur ?? planningMemorise(ps) ?? ps[0].id);
     }).catch(() => {});
   }, []);
+  useEffect(() => memoriserPlanning(selectedPlanningId), [selectedPlanningId]);
 
   const loadExaminateurs = useCallback(async () => {
     if (!selectedPlanningId) return;
@@ -9393,9 +9414,10 @@ function DashboardSection() {
   useEffect(() => {
     get<Planning[]>("plannings/").then((ps) => {
       setPlannings(ps);
-      if (ps.length > 0) setSelectedPlanningId(ps[0].id);
+      if (ps.length > 0) setSelectedPlanningId(planningMemorise(ps) ?? ps[0].id);
     }).catch(() => {});
   }, []);
+  useEffect(() => memoriserPlanning(selectedPlanningId), [selectedPlanningId]);
 
   useEffect(() => {
     if (!selectedPlanningId) return;
@@ -9625,8 +9647,12 @@ function NotesSection() {
   const [savingHarm, setSavingHarm] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
-    get<Planning[]>("plannings/").then(setPlannings).catch(() => {});
+    get<Planning[]>("plannings/").then((ps) => {
+      setPlannings(ps);
+      setPlanningId((cur) => cur || planningMemorise(ps) || cur);
+    }).catch(() => {});
   }, []);
+  useEffect(() => memoriserPlanning(planningId), [planningId]);
 
   useEffect(() => {
     if (!planningId) { setTableau(null); return; }
@@ -11440,9 +11466,10 @@ function SurveillantsSection() {
   useEffect(() => {
     get<Planning[]>("plannings/").then((ps) => {
       setPlannings(ps);
-      if (ps.length > 0) setSelectedPlanningId((cur) => cur ?? ps[0].id);
+      if (ps.length > 0) setSelectedPlanningId((cur) => cur ?? planningMemorise(ps) ?? ps[0].id);
     }).catch(() => {});
   }, []);
+  useEffect(() => memoriserPlanning(selectedPlanningId), [selectedPlanningId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -12507,7 +12534,13 @@ function HistoriquePlanches() {
   const [fMatiere, setFMatiere] = useState("");
   const [fDate, setFDate] = useState("");
 
-  useEffect(() => { get<Planning[]>("plannings/").then(setPlannings).catch(() => {}); }, []);
+  useEffect(() => {
+    get<Planning[]>("plannings/").then((ps) => {
+      setPlannings(ps);
+      setPlanningId((cur) => cur || String(planningMemorise(ps) ?? ""));
+    }).catch(() => {});
+  }, []);
+  useEffect(() => memoriserPlanning(planningId), [planningId]);
   useEffect(() => {
     setLoading(true);
     get<PlancheHistoriqueItem[]>(`planches/historique${planningId ? `?planning_id=${planningId}` : ""}`)
@@ -12758,9 +12791,18 @@ function PlanchesSection() {
 
   useEffect(() => {
     loadPlanches();
-    get<Planning[]>("plannings/").then(setPlannings).catch(() => {});
+    get<Planning[]>("plannings/").then((ps) => {
+      setPlannings(ps);
+      const id = planningMemorise(ps);
+      if (id) {
+        setPlanningId((cur) => cur || id);
+        setImpPlanningId((cur) => cur || id);
+      }
+    }).catch(() => {});
     get<Examinateur[]>("examinateurs/").then(setExaminateurs).catch(() => {});
   }, [loadPlanches]);
+  useEffect(() => memoriserPlanning(planningId), [planningId]);
+  useEffect(() => memoriserPlanning(impPlanningId), [impPlanningId]);
 
   useEffect(() => {
     if (!planningId) { setEpreuves([]); return; }
@@ -13722,9 +13764,7 @@ function manquesEpreuve(e: EpreuveFlat): AffectationManquante[] {
 function PretAPublierSection() {
   const allerAffecter = React.useContext(NavAffectationContext);
   const [plannings, setPlannings] = useState<Planning[]>([]);
-  const [planningId, setPlanningId] = useState<number | "">(() => {
-    try { return Number(localStorage.getItem("admin_publication_planning")) || ""; } catch { return ""; }
-  });
+  const [planningId, setPlanningId] = useState<number | "">("");
   const [filtreDate, setFiltreDate] = useState("");
   const [seulementIncomplets, setSeulementIncomplets] = useState(true);
 
@@ -13732,7 +13772,7 @@ function PretAPublierSection() {
     get<Planning[]>("plannings/").then((ps) => {
       setPlannings(ps);
       // Planning retenu introuvable (supprimé) ou aucun : on prend le premier
-      setPlanningId((id) => (id && ps.some((p) => p.id === id) ? id : ps[0]?.id ?? ""));
+      setPlanningId(planningMemorise(ps) ?? ps[0]?.id ?? "");
     }).catch(() => {});
   }, []);
 
@@ -13746,7 +13786,7 @@ function PretAPublierSection() {
     get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`)
       .then((eps) => { if (!annule) setDonnees({ pid: planningId, epreuves: eps }); })
       .catch(() => { if (!annule) setDonnees({ pid: planningId, epreuves: [] }); });
-    try { localStorage.setItem("admin_publication_planning", String(planningId)); } catch {}
+    memoriserPlanning(planningId);
     return () => { annule = true; };
   }, [planningId, version]);
   const epreuves = donnees && donnees.pid === planningId ? donnees.epreuves : [];
@@ -14005,9 +14045,13 @@ function SallesSection() {
   }, []);
 
   useEffect(() => {
-    get<Planning[]>("plannings/").then(setPlannings).catch(() => {});
+    get<Planning[]>("plannings/").then((ps) => {
+      setPlannings(ps);
+      setPlanningId((cur) => cur || planningMemorise(ps) || cur);
+    }).catch(() => {});
     reloadSalles();
   }, [reloadSalles]);
+  useEffect(() => memoriserPlanning(planningId), [planningId]);
 
   useEffect(() => {
     if (!planningId) { setEpreuves([]); setDefaults([]); setSurveillants([]); return; }
@@ -14926,6 +14970,7 @@ export default function AdminPage() {
     if (saved) setSection(saved);
   }, []);
   const [selectedPlanning, setSelectedPlanning] = useState<Planning | null>(null);
+  useEffect(() => memoriserPlanning(selectedPlanning?.id), [selectedPlanning]);
   const [journeeTypes, setJourneeTypes] = useState<JourneeType[]>([]);
   const [mobileSidebar, setMobileSidebar] = useState(false);
   const [nbConflits, setNbConflits] = useState(0);
