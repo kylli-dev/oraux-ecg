@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { AnimatePresence, motion } from "framer-motion";
 import InterfaceAdminENSAEPlanning from "../InterfaceAdminENSAEPlanning";
 import RechercheGlobale, { type ResultatRecherche } from "./RechercheGlobale";
+import { BoutonAnnulations, FournisseurAnnulation, useActionAnnuler } from "./Annulations";
 import { useRouter } from "next/navigation";
 import { ToastProvider, useToast, useConfirm } from "./Toast";
 import { type CaseTriplet, MARGE_ENTRE_EPREUVES, exceptionsMatrice, minutes } from "./echangeTriplets";
@@ -1674,7 +1675,7 @@ function CreatePlanningForm({ onSuccess }: { onSuccess: () => void }) {
 // Le bouton les numérote d'après leur journée type, sans régénérer les épreuves
 // (POST plannings/{id}/numeroter-triplets) ; une simulation annonce d'abord le résultat.
 type BilanNumerotation = {
-  numerotees: string[]; epreuves: number;
+  numerotees: string[]; epreuves: number; annulation_id?: number | null;
   sans_gabarit: string[]; gabarit_modifie: string[]; avec_reservations: string[];
 };
 
@@ -1683,6 +1684,7 @@ function BandeauTripletsSansNumero({ planningId, epreuves, onFait }: {
 }) {
   const toast = useToast();
   const confirm = useConfirm();
+  const actionAnnuler = useActionAnnuler();
   const [enCours, setEnCours] = useState(false);
   const datesSans = Array.from(new Set(epreuves.filter((e) => !e.triplet && e.statut !== "ANNULEE").map((e) => e.date)));
   if (datesSans.length === 0) return null;
@@ -1710,7 +1712,8 @@ function BandeauTripletsSansNumero({ planningId, epreuves, onFait }: {
       );
       if (!ok) return;
       const r = await post<BilanNumerotation>(`plannings/${planningId}/numeroter-triplets`, {});
-      toast.success(`${r.numerotees.length} journée(s) numérotée(s) (${r.epreuves} épreuves)`);
+      toast.success(`${r.numerotees.length} journée(s) numérotée(s) (${r.epreuves} épreuves)`,
+        actionAnnuler(r.annulation_id, "la numérotation des triplets"));
       onFait();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur");
@@ -1776,6 +1779,7 @@ function rowStatut(byMat: Record<string, EpreuveFlat[]>): string {
 
 function PlanningTableauView({ planningId, planning }: { planningId: number; planning: Planning }) {
   const toast = useToast();
+  const actionAnnuler = useActionAnnuler();
   const confirm = useConfirm();
   const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1840,10 +1844,11 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
     if (!ok) return;
     setDeletingDays(true);
     try {
-      await Promise.all(
-        Array.from(selectedDates).map((d) => del(`plannings/${planningId}/day?date=${d}`))
+      const rs = await Promise.all(
+        Array.from(selectedDates).map((d) => del(`plannings/${planningId}/day?date=${d}`) as Promise<{ annulation_id?: number | null } | null>)
       );
-      toast.success(`${selectedDates.size} journée(s) supprimée(s)`);
+      toast.success(`${selectedDates.size} journée(s) supprimée(s)`,
+        actionAnnuler(rs.map((r) => r?.annulation_id), `la suppression de ${selectedDates.size} journée(s)`));
       setSelectedDates(new Set());
       await loadEpreuves();
     } catch (e: unknown) {
@@ -3416,6 +3421,8 @@ function ApplyForm({
   // l'utilisateur : elle ne doit pas être cochée d'office en mode « Plusieurs dates »
   precocherDate?: boolean;
 }) {
+  const toast = useToast();
+  const actionAnnuler = useActionAnnuler();
   const [jtId, setJtId] = useState(journeeTypes[0]?.id ?? 0);
   const [mode, setMode] = useState<"single" | "multi">("single");
   const [singleDate, setSingleDate] = useState(date);
@@ -3469,12 +3476,14 @@ function ApplyForm({
       date: d,
       message: `en dehors de la période du planning (du ${formatDateCourte(dateDebut)} au ${formatDateCourte(dateFin)})`,
     }));
+    const annulationIds: number[] = [];
     for (const d of dates.filter((x) => !horsPeriode.includes(x))) {
       try {
         const r = await post<any>(`plannings/${planningId}/apply-journee-type`, {
           journee_type_id: jtId,
           date: d,
         });
+        if (r.annulation_id) annulationIds.push(r.annulation_id);
         newResults.push({
           date: d,
           demi_journees_created: r.demi_journees_created,
@@ -3488,6 +3497,10 @@ function ApplyForm({
     setResults(newResults);
     setFailed(newFailed);
     setLoading(false);
+    if (newResults.length) {
+      toast.success(`Gabarit appliqué à ${newResults.length} date(s)`,
+        actionAnnuler(annulationIds, `l'application du gabarit à ${newResults.length} date(s)`));
+    }
   };
 
   if (results) {
@@ -3839,6 +3852,7 @@ function BlocTimeline({
 // ── JourneeTypeEditor ─────────────────────────────────────────────────────────
 function JourneeTypeEditor({ jt, onRename }: { jt: JourneeType; onRename?: (newNom: string) => void }) {
   const toast = useToast();
+  const actionAnnuler = useActionAnnuler();
   const confirm = useConfirm();
   const [blocs, setBlocs] = useState<Bloc[]>([]);
   const [selectedBlocId, setSelectedBlocId] = useState<number | null>(null);
@@ -3892,11 +3906,12 @@ function JourneeTypeEditor({ jt, onRename }: { jt: JourneeType; onRename?: (newN
     setApplyError("");
     setApplyResult(null);
     try {
-      const res = await post<{ epreuves_created: number; demi_journees_created: number }>(
+      const res = await post<{ epreuves_created: number; demi_journees_created: number; annulation_id?: number | null }>(
         `plannings/${selPlanning.id}/apply-journee-type`,
         { journee_type_id: jt.id, date: applyDate }
       );
       setApplyResult(res);
+      toast.success(`Gabarit « ${jt.nom} » appliqué`, actionAnnuler(res.annulation_id, `l'application du gabarit « ${jt.nom} »`));
     } catch (e: any) {
       setApplyError(e.message);
     } finally {
@@ -12118,6 +12133,7 @@ function Sidebar({
         <div className="flex-1 min-w-0">
           <ProfilMenu />
         </div>
+        <BoutonAnnulations get={get} />
         <NotificationsCloche get={get} post={post} onOuvrir={onNotification} />
       </div>
     </aside>
@@ -14027,6 +14043,7 @@ function PretAPublierSection() {
 
 function SallesSection() {
   const toast = useToast();
+  const actionAnnuler = useActionAnnuler();
   const confirm = useConfirm();
   const intentionSalle = useIntentionAffectation("salle");
   const intentionSurv = useIntentionAffectation("surveillant");
@@ -14118,16 +14135,17 @@ function SallesSection() {
     try {
       // Enregistre le tableau et l'applique en une requête ; « — Aucune — » à la place d'une
       // valeur enregistrée retire cette valeur des épreuves qui l'ont encore
-      const r = await post<{ updated: number; retirees?: number; renseignes?: number }>(
+      const r = await post<{ updated: number; retirees?: number; renseignes?: number; annulation_id?: number | null }>(
         `plannings/${planningId}/salle-defaults/apply`, { defauts: defaults }
       );
+      const annuler = actionAnnuler(r.annulation_id, "l'application des salles par défaut");
       const retirees = r.retirees ?? 0;
       if (r.updated === 0) {
         toast.success(r.renseignes
           ? "Aucune épreuve modifiée : elles avaient déjà ces salles et surveillants."
           : "Aucune épreuve modifiée : le tableau est vide.");
       } else {
-        toast.success(`${r.updated} épreuve(s) modifiée(s)${retirees ? `, dont ${retirees} vidée(s) des valeurs retirées du tableau` : ""}`);
+        toast.success(`${r.updated} épreuve(s) modifiée(s)${retirees ? `, dont ${retirees} vidée(s) des valeurs retirées du tableau` : ""}`, annuler);
       }
       const [eps, defs] = await Promise.all([
         get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`),
@@ -14348,13 +14366,20 @@ function SallesSection() {
     if (!planningId) return;
     setReinitEnCours(true);
     try {
+      const annulationIds: (number | null | undefined)[] = [];
       if (champsReinit.length > 0 && ciblesReinit.length > 0) {
-        await post(`plannings/${planningId}/epreuves/affecter-groupe`, {
+        const r = await post<{ annulation_id?: number | null }>(`plannings/${planningId}/epreuves/affecter-groupe`, {
           epreuve_ids: ciblesReinit.map((e) => e.id),
           ...Object.fromEntries(champsReinit.map((c) => [c, null])),
         });
+        annulationIds.push(r.annulation_id);
       }
-      if (reinitDefauts) await put(`plannings/${planningId}/salle-defaults`, []);
+      if (reinitDefauts && defautsEnregistres.length) {
+        await put(`plannings/${planningId}/salle-defaults`, []);
+        // La route renvoie le tableau, pas l'action : c'est la plus récente de la liste
+        const [derniere] = await get<{ id: number; libelle: string; planning_id: number }[]>("annulations/?limite=1");
+        if (derniere?.planning_id === planningId && derniere.libelle === "Salles par défaut vidées") annulationIds.push(derniere.id);
+      }
       const [eps, defs] = await Promise.all([
         get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`),
         get<SalleDefaut[]>(`plannings/${planningId}/salle-defaults`),
@@ -14364,7 +14389,8 @@ function SallesSection() {
       setDefautsEnregistres(defs);
       setSelected(new Set());
       setShowReinit(false);
-      toast.success(`Réinitialisation faite${champsReinit.length ? ` sur ${ciblesReinit.length} épreuve(s)` : ""}${reinitDefauts ? ", salles par défaut vidées" : ""}`);
+      toast.success(`Réinitialisation faite${champsReinit.length ? ` sur ${ciblesReinit.length} épreuve(s)` : ""}${reinitDefauts ? ", salles par défaut vidées" : ""}`,
+        actionAnnuler(annulationIds, "la réinitialisation"));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur");
     } finally {
@@ -15049,6 +15075,9 @@ export default function AdminPage() {
     setMobileSidebar(false);
     setCleNavigation((c) => c + 1);
   }, []);
+  // Après une annulation : l'écran affiché est remonté pour relire les données
+  const rafraichirApresAnnulation = useCallback(() => setCleNavigation((c) => c + 1), []);
+
   // ── Recherche globale (Ctrl+K / Cmd+K) ──
   const [rechercheOuverte, setRechercheOuverte] = useState(false);
   useEffect(() => {
@@ -15100,6 +15129,7 @@ export default function AdminPage() {
 
   return (
     <ToastProvider>
+    <FournisseurAnnulation post={post} onAnnule={rafraichirApresAnnulation}>
     <BackendWakingBanner />
     {rechercheOuverte && (
       <RechercheGlobale get={get} sections={SECTIONS_RECHERCHE} onChoisir={allerRecherche} onFermer={() => setRechercheOuverte(false)} />
@@ -15181,6 +15211,7 @@ export default function AdminPage() {
         </main>
       </div>
     </div>
+    </FournisseurAnnulation>
     </ToastProvider>
   );
 }

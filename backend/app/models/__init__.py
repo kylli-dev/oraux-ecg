@@ -22,6 +22,7 @@ from app.models.etablissement import Etablissement
 from app.models.admin import Admin
 from app.models.audit_log import AuditLog
 from app.models.notification_admin import NotificationAdmin
+from app.models.annulation import Annulation
 
 __all__ = [
     "Planning",

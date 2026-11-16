@@ -23,6 +23,7 @@ from app.services.excel import export_planning, export_template, import_epreuves
 from app.services.generation import apply_journee_type, generate_for_demi_journee, numeroter_triplets
 from app.services.inscriptions import annuler_inscriptions_orphelines
 from app.services.monitoring import signaler_detail
+from app.services import annulations
 
 
 class CreateSessionIn(BaseModel):
@@ -136,9 +137,12 @@ def apply_jt(planning_id: int, body: ApplyJourneeTypeIn, request: Request, db: S
                 "Modifiez les dates du planning pour l'inclure."
             ),
         )
+    avant = annulations.instantane_date(db, planning_id, body.date)
     result = apply_journee_type(db, planning_id, jt, body.date)
-    signaler_detail(request, f"Gabarit « {jt.nom} » appliqué au {body.date.strftime('%d/%m/%Y')} ({p.nom})")
-    return {"planning_id": planning_id, "date": body.date, **result}
+    libelle = f"Gabarit « {jt.nom} » appliqué au {body.date.strftime('%d/%m/%Y')}"
+    a = annulations.enregistrer_date(db, request, planning_id, body.date, avant, libelle)
+    signaler_detail(request, f"{libelle} ({p.nom})")
+    return {"planning_id": planning_id, "date": body.date, **result, "annulation_id": a.id}
 
 
 @router.post("/{planning_id}/numeroter-triplets")
@@ -150,8 +154,17 @@ def numeroter_triplets_planning(
     p = db.get(Planning, planning_id)
     if not p:
         raise HTTPException(status_code=404, detail="Planning not found")
-    r = numeroter_triplets(db, planning_id, simulation=simulation)
-    if not simulation and r["numerotees"]:
+    if simulation:
+        return numeroter_triplets(db, planning_id, simulation=True)
+    eps = lambda: db.query(Epreuve).join(DemiJournee).filter(DemiJournee.planning_id == planning_id).all()
+    avant = annulations.valeurs(eps(), ["triplet_num"])
+    r = numeroter_triplets(db, planning_id)
+    if r["numerotees"]:
+        a = annulations.enregistrer_champs(
+            db, request, planning_id, f"Numérotation des triplets : {len(r['numerotees'])} journée(s)",
+            avant, annulations.valeurs(eps(), ["triplet_num"]),
+        )
+        r["annulation_id"] = a.id if a else None
         signaler_detail(request, f"Numérotation des triplets : {len(r['numerotees'])} journée(s) ({p.nom})")
     return r
 
@@ -409,6 +422,7 @@ def affecter_groupe(planning_id: int, body: AffectationGroupeeIn, request: Reque
         .filter(DemiJournee.planning_id == planning_id, Epreuve.id.in_(set(body.epreuve_ids)))
         .all()
     )
+    avant = annulations.valeurs(epreuves, champs)
     for e in epreuves:
         for champ, valeur in champs.items():
             setattr(e, champ, valeur)
@@ -416,11 +430,13 @@ def affecter_groupe(planning_id: int, body: AffectationGroupeeIn, request: Reque
     noms = {"salle_id": "salle d'examen", "salle_preparation_id": "salle de préparation",
             "surveillant_id": "surveillant", "surveillant2_id": "2ᵉ surveillant"}
     vides = all(champs[f] is None for f in champs if f in noms)
-    signaler_detail(request, (
+    libelle = (
         f"{'Retrait' if vides else 'Affectation'} ({', '.join(noms[f] for f in champs if f in noms) or 'validation des salles'}) "
         f"sur {len(epreuves)} épreuve(s)"
-    ))
-    return {"modifiees": len(epreuves)}
+    )
+    a = annulations.enregistrer_champs(db, request, planning_id, libelle, avant, annulations.valeurs(epreuves, champs))
+    signaler_detail(request, libelle)
+    return {"modifiees": len(epreuves), "annulation_id": a.id if a else None}
 
 
 # ── Salles par défaut (par matière) ───────────────────────────────────────────
@@ -471,9 +487,20 @@ def get_salle_defaults(planning_id: int, db: Session = Depends(get_db)):
 def upsert_salle_defaults(
     planning_id: int,
     body: List[SalleDefautIn],
+    request: Request,
     db: Session = Depends(get_db),
 ):
     """Remplace entièrement les défauts de salles/surveillant pour ce planning."""
+    avant = annulations.defauts(db, planning_id)
+    _remplacer_defauts(planning_id, body, db)
+    annulations.enregistrer_champs(
+        db, request, planning_id, "Tableau des salles par défaut modifié" if body else "Salles par défaut vidées",
+        {}, {}, avant, annulations.defauts(db, planning_id),
+    )
+    return get_salle_defaults(planning_id, db)
+
+
+def _remplacer_defauts(planning_id: int, body: List[SalleDefautIn], db: Session) -> None:
     db.query(PlanningMatiereSalleDefaut).filter_by(planning_id=planning_id).delete()
     for item in body:
         if item.matiere.strip():
@@ -486,7 +513,6 @@ def upsert_salle_defaults(
                 surveillant2_id=item.surveillant2_id,
             ))
     db.commit()
-    return get_salle_defaults(planning_id, db)
 
 
 class AppliquerDefautsIn(BaseModel):
@@ -497,6 +523,7 @@ class AppliquerDefautsIn(BaseModel):
 @router.post("/{planning_id}/salle-defaults/apply", status_code=200)
 def apply_salle_defaults(
     planning_id: int,
+    request: Request,
     body: Optional[AppliquerDefautsIn] = None,
     db: Session = Depends(get_db),
 ):
@@ -511,12 +538,25 @@ def apply_salle_defaults(
     vidées ; `renseignes` = nombre de valeurs par défaut remplies.
     """
     champs = ("salle_id", "salle_preparation_id", "surveillant_id", "surveillant2_id")
+    champs_annulation = champs + ("salle_verifiee",)
+    defauts_avant = annulations.defauts(db, planning_id)
+    toutes = lambda: db.query(Epreuve).join(DemiJournee).filter(DemiJournee.planning_id == planning_id).all()
+    valeurs_avant = annulations.valeurs(toutes(), champs_annulation)
+
+    def resultat(r: dict) -> dict:
+        a = annulations.enregistrer_champs(
+            db, request, planning_id, f"Salles par défaut appliquées ({r['updated']} épreuve(s))",
+            valeurs_avant, annulations.valeurs(toutes(), champs_annulation),
+            defauts_avant, annulations.defauts(db, planning_id),
+        )
+        return {**r, "annulation_id": a.id if a else None}
+
     anciens = {
         r.matiere: {c: getattr(r, c) for c in champs}
         for r in db.query(PlanningMatiereSalleDefaut).filter_by(planning_id=planning_id).all()
     }
     if body is not None and body.defauts is not None:
-        upsert_salle_defaults(planning_id, body.defauts, db)
+        _remplacer_defauts(planning_id, body.defauts, db)
     defaults = {
         r.matiere: r
         for r in db.query(PlanningMatiereSalleDefaut).filter_by(planning_id=planning_id).all()
@@ -547,7 +587,7 @@ def apply_salle_defaults(
     modifiees |= videes
     if not renseignes:
         db.commit()
-        return {"updated": len(modifiees), "retirees": len(videes), "renseignes": 0}
+        return resultat({"updated": len(modifiees), "retirees": len(videes), "renseignes": 0})
 
     for e in epreuves:
         d = defaults.get(e.matiere)
@@ -562,7 +602,7 @@ def apply_salle_defaults(
                     e.salle_verifiee = False  # comme patch_epreuve
 
     db.commit()
-    return {"updated": len(modifiees), "retirees": len(videes), "renseignes": renseignes}
+    return resultat({"updated": len(modifiees), "retirees": len(videes), "renseignes": renseignes})
 
 
 # ── Import / Export Excel ──────────────────────────────────────────────────────
@@ -668,7 +708,7 @@ def day_view(planning_id: int, date: Date = Query(...), db: Session = Depends(ge
 
 
 @router.delete("/{planning_id}/day")
-def delete_day(planning_id: int, date: Date = Query(...), db: Session = Depends(get_db)):
+def delete_day(planning_id: int, request: Request, date: Date = Query(...), db: Session = Depends(get_db)):
     """
     Supprime toutes les demi-journées (et leurs épreuves — cascade FK) d'une date donnée
     dans ce planning. Les épreuves déjà attribuées à un candidat sont supprimées avec le
@@ -680,6 +720,7 @@ def delete_day(planning_id: int, date: Date = Query(...), db: Session = Depends(
     if not p:
         raise HTTPException(status_code=404, detail="Planning not found")
 
+    avant = annulations.instantane_date(db, planning_id, date)
     demi_journees = db.query(DemiJournee).filter_by(planning_id=planning_id, date=date).all()
     epreuves_supprimees = sum(
         db.query(Epreuve).filter_by(demi_journee_id=dj.id).count() for dj in demi_journees
@@ -690,10 +731,14 @@ def delete_day(planning_id: int, date: Date = Query(...), db: Session = Depends(
     # inscription (sinon elle restait ACTIVE et vide → fiche/portail en erreur 500).
     annuler_inscriptions_orphelines(db)
     db.commit()
+    a = annulations.enregistrer_date(
+        db, request, planning_id, date, avant, f"Journée du {date.strftime('%d/%m/%Y')} supprimée",
+    ) if avant["demi_journees"] else None
     return {
         "date": str(date),
         "demi_journees_supprimees": len(demi_journees),
         "epreuves_supprimees": epreuves_supprimees,
+        "annulation_id": a.id if a else None,
     }
 
 
