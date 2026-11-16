@@ -11508,13 +11508,172 @@ function CredentialsModal({
   );
 }
 
+// ── Charge par surveillant ────────────────────────────────────────────────────
+// Nombre de créneaux surveillés par personne (1er et 2ᵉ surveillant), pour équilibrer la
+// charge. Lecture seule : l'affectation se fait dans Salles & surveillants.
+function ChargeSurveillants({ planningId, surveillants }: { planningId: number; surveillants: Surveillant[] }) {
+  const allerAffecter = React.useContext(NavAffectationContext);
+  const [donnees, setDonnees] = useState<{ pid: number; epreuves: EpreuveFlat[] } | null>(null);
+  const [filtreDate, setFiltreDate] = useState("");
+  const [ouvert, setOuvert] = useState<number | null>(null);
+
+  useEffect(() => {
+    let annule = false;
+    get<EpreuveFlat[]>(`plannings/${planningId}/epreuves`)
+      .then((eps) => { if (!annule) setDonnees({ pid: planningId, epreuves: eps }); })
+      .catch(() => { if (!annule) setDonnees({ pid: planningId, epreuves: [] }); });
+    return () => { annule = true; };
+  }, [planningId]);
+
+  if (!donnees || donnees.pid !== planningId) return <div className="p-8 text-center"><Spinner /></div>;
+
+  const actives = donnees.epreuves.filter((e) => e.statut !== "ANNULEE");
+  const dates = Array.from(new Set(actives.map((e) => e.date))).sort();
+  const eps = actives.filter((e) => !filtreDate || e.date === filtreDate);
+  const sansSurveillant = eps.filter((e) => e.surveillant_id == null && e.surveillant2_id == null).length;
+  const hm = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+
+  type Ligne = { s: Surveillant; premier: EpreuveFlat[]; second: EpreuveFlat[]; jours: number; chevauchements: number };
+  const lignes: Ligne[] = surveillants
+    .filter((s) => s.actif && s.actif_planning !== false)
+    .map((s) => {
+      const premier = eps.filter((e) => e.surveillant_id === s.id);
+      const second = eps.filter((e) => e.surveillant2_id === s.id && e.surveillant_id !== s.id);
+      const tous = [...premier, ...second];
+      // Deux créneaux qui se recouvrent dans deux salles différentes : impossible à tenir
+      let chevauchements = 0;
+      for (let i = 0; i < tous.length; i++) for (let j = i + 1; j < tous.length; j++) {
+        const a = tous[i], b = tous[j];
+        if (a.date === b.date && a.salle_id !== b.salle_id
+          && hm(a.heure_debut) < hm(b.heure_fin) && hm(b.heure_debut) < hm(a.heure_fin)) chevauchements++;
+      }
+      return { s, premier, second, jours: new Set(tous.map((e) => e.date)).size, chevauchements };
+    })
+    .sort((a, b) => (b.premier.length + b.second.length) - (a.premier.length + a.second.length)
+      || a.s.nom.localeCompare(b.s.nom));
+
+  const totaux = lignes.map((l) => l.premier.length + l.second.length);
+  const max = Math.max(1, ...totaux);
+  const moyenne = lignes.length ? totaux.reduce((a, b) => a + b, 0) / lignes.length : 0;
+  const fmtJour = (d: string) => new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <select
+          value={filtreDate}
+          onChange={(e) => setFiltreDate(e.target.value)}
+          className="border rounded-lg px-3 py-1.5 text-sm bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-black/15"
+        >
+          <option value="">Tout le planning</option>
+          {dates.map((d) => <option key={d} value={d}>{fmtJour(d)}</option>)}
+        </select>
+        <span className="text-sm text-gray-800">
+          Moyenne : <strong>{moyenne.toFixed(1)}</strong> créneau(x) par surveillant actif
+        </span>
+        {sansSurveillant > 0 && (
+          <button
+            type="button"
+            onClick={() => allerAffecter({ manque: "surveillant", planningId, date: filtreDate || undefined })}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+            title="Ouvre Salles & surveillants, filtré sur les épreuves sans surveillant"
+          >
+            <AlertTriangle className="h-3.5 w-3.5" /> {sansSurveillant} épreuve(s) sans surveillant — affecter
+          </button>
+        )}
+      </div>
+
+      {lignes.length === 0 ? (
+        <Empty message="Aucun surveillant actif sur ce planning" />
+      ) : (
+        <div className="bg-white rounded-2xl border border-black/5 shadow-sm overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-black/5 bg-black/[0.02] text-xs">
+                <th className="text-left px-4 py-2 text-gray-700 font-medium">Surveillant</th>
+                <th className="text-left px-4 py-2 text-gray-700 font-medium w-[40%]">Créneaux</th>
+                <th className="text-right px-4 py-2 text-gray-700 font-medium">1er</th>
+                <th className="text-right px-4 py-2 text-gray-700 font-medium">2ᵉ</th>
+                <th className="text-right px-4 py-2 text-gray-700 font-medium">Journées</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lignes.map((l) => {
+                const total = l.premier.length + l.second.length;
+                const ecart = total - moyenne;
+                const detail = [...l.premier.map((e) => ({ e, role: "1er" })), ...l.second.map((e) => ({ e, role: "2ᵉ" }))]
+                  .sort((a, b) => a.e.date.localeCompare(b.e.date) || a.e.heure_debut.localeCompare(b.e.heure_debut));
+                return (
+                  <React.Fragment key={l.s.id}>
+                    <tr
+                      onClick={() => setOuvert(ouvert === l.s.id ? null : l.s.id)}
+                      className="border-b border-black/[0.04] cursor-pointer hover:bg-black/[0.02]"
+                    >
+                      <td className="px-4 py-2.5 text-gray-900">
+                        <span className="inline-flex items-center gap-1.5">
+                          <ChevronRight className={`h-3.5 w-3.5 text-gray-700 transition ${ouvert === l.s.id ? "rotate-90" : ""}`} />
+                          <span className="font-medium">{l.s.nom} {l.s.prenom}</span>
+                        </span>
+                        {l.chevauchements > 0 && (
+                          <span className="ml-2 inline-flex items-center gap-1 text-xs font-semibold text-red-700" title="Créneaux qui se recouvrent dans des salles différentes">
+                            <AlertTriangle className="h-3 w-3" /> {l.chevauchements} chevauchement(s)
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-2 rounded-full bg-black/5 overflow-hidden">
+                            <div
+                              className={`h-full ${total === 0 ? "" : Math.abs(ecart) <= Math.max(1, moyenne * 0.2) ? "bg-emerald-500" : ecart > 0 ? "bg-amber-500" : "bg-sky-500"}`}
+                              style={{ width: `${(total / max) * 100}%` }}
+                            />
+                          </div>
+                          <span className="w-8 text-right font-semibold text-gray-900">{total}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-gray-800">{l.premier.length}</td>
+                      <td className="px-4 py-2.5 text-right text-gray-800">{l.second.length}</td>
+                      <td className="px-4 py-2.5 text-right text-gray-800">{l.jours}</td>
+                    </tr>
+                    {ouvert === l.s.id && (
+                      <tr className="border-b border-black/[0.04] bg-black/[0.015]">
+                        <td colSpan={5} className="px-4 py-3">
+                          {detail.length === 0 ? (
+                            <p className="text-xs text-gray-700">Aucun créneau{filtreDate ? " ce jour-là" : ""}.</p>
+                          ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 text-xs text-gray-900">
+                              {detail.map(({ e, role }) => (
+                                <div key={`${e.id}-${role}`} className="flex items-center gap-2 rounded-lg bg-white border border-black/5 px-2.5 py-1.5">
+                                  <span className="capitalize w-24 shrink-0 text-gray-800">{fmtJour(e.date)}</span>
+                                  <span className="font-mono">{e.heure_debut.slice(0, 5)}</span>
+                                  <span className="font-medium truncate">{e.matiere}</span>
+                                  <span className="ml-auto text-gray-700 truncate">{e.salle_intitule ?? "sans salle"} · {role}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="px-4 py-2 text-xs text-gray-700 border-t border-black/5">
+            Barre verte : proche de la moyenne · orange : au-dessus · bleue : en dessous. Cliquez sur un nom pour voir ses créneaux.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SurveillantsSection() {
   const toast = useToast();
   const confirm = useConfirm();
-  const intention = useIntentionAffectation("surveillant");
-  const allerAffecter = React.useContext(NavAffectationContext);
   const [plannings, setPlannings] = useState<Planning[]>([]);
-  const [selectedPlanningId, setSelectedPlanningId] = useState<number | null>(intention?.planningId ?? null);
+  const [selectedPlanningId, setSelectedPlanningId] = useState<number | null>(null);
   const [surveillants, setSurvaillants] = useState<Surveillant[]>([]);
   const [loading, setLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -11524,17 +11683,7 @@ function SurveillantsSection() {
   } | null>(null);
   const [filterActif, setFilterActif] = useState<"tous" | "actif" | "inactif">("tous");
   const [search, setSearch] = useState("");
-  const [view, setView] = useState<"annuaire" | "planning">(intention ? "planning" : "annuaire");
-  const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
-  const [loadingEp, setLoadingEp] = useState(false);
-  const [filterDate, setFilterDate] = useState(intention?.date ?? "");
-  const [filterSurv, setFilterSurv] = useState<string>(intention ? "0" : "");
-  // 2ᵉ surveillant : "" = tous, "__avec" / "__sans", ou l'id d'un surveillant précis
-  const [filterSurv2, setFilterSurv2] = useState("");
-  const [filterMatiereS, setFilterMatiereS] = useState(intention?.matiere ?? "");
-  const [filterSessionS, setFilterSessionS] = useState<"" | "MATIN" | "APRES_MIDI">("");
-  const [filterHeureS, setFilterHeureS] = useState(intention?.heure ?? "");
-  const [filterStatutS, setFilterStatutS] = useState("");
+  const [view, setView] = useState<"annuaire" | "charge">("annuaire");
 
   useEffect(() => {
     get<Planning[]>("plannings/").then((ps) => {
@@ -11555,20 +11704,6 @@ function SurveillantsSection() {
       setLoading(false);
     }
   }, [selectedPlanningId]);
-
-  const loadEpreuves = useCallback(async () => {
-    if (!selectedPlanningId) return;
-    setLoadingEp(true);
-    try {
-      setEpreuves(await get<EpreuveFlat[]>(`plannings/${selectedPlanningId}/epreuves`));
-    } finally {
-      setLoadingEp(false);
-    }
-  }, [selectedPlanningId]);
-
-  useEffect(() => {
-    if (view === "planning") loadEpreuves();
-  }, [view, loadEpreuves]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -11626,41 +11761,6 @@ function SurveillantsSection() {
     return true;
   });
 
-  // ── Vue planning ─────────────────────────────────────────────────────────────
-  const dates = Array.from(new Set(epreuves.map((e) => e.date))).sort();
-  // « Surveillant » : 1er OU 2ᵉ surveillant ; « 0 » = créneaux sans aucun surveillant
-  // (comparait auparavant "" à "0" : ne renvoyait jamais rien).
-  const epFiltered = epreuves
-    .filter((e) => !filterDate || e.date === filterDate)
-    .filter((e) => !filterSurv || (filterSurv === "0"
-      ? e.surveillant_id == null && e.surveillant2_id == null
-      : e.surveillant_id === Number(filterSurv) || e.surveillant2_id === Number(filterSurv)))
-    .filter((e) => filterSurv2 !== "__avec" || e.surveillant2_id != null)
-    .filter((e) => filterSurv2 !== "__sans" || e.surveillant2_id == null)
-    .filter((e) => !filterSurv2 || filterSurv2.startsWith("__") || e.surveillant2_id === Number(filterSurv2))
-    .filter((e) => !filterMatiereS || e.matiere === filterMatiereS)
-    .filter((e) => !filterSessionS || e.demi_journee_type === filterSessionS)
-    .filter((e) => !filterHeureS || e.heure_debut === filterHeureS)
-    .filter((e) => !filterStatutS || e.statut === filterStatutS);
-  const filtresPlanningActifs = !!(filterDate || filterSurv || filterSurv2 || filterMatiereS || filterSessionS || filterHeureS || filterStatutS);
-  const resetFiltresPlanning = () => {
-    setFilterDate(""); setFilterSurv(""); setFilterSurv2(""); setFilterMatiereS("");
-    setFilterSessionS(""); setFilterHeureS(""); setFilterStatutS("");
-  };
-
-  const epByDate = dates
-    .filter((d) => !filterDate || d === filterDate)
-    .map((d) => ({
-      date: d,
-      rows: epFiltered.filter((e) => e.date === d)
-        .sort((a, b) => a.heure_debut.localeCompare(b.heure_debut) || a.matiere.localeCompare(b.matiere)),
-    }))
-    .filter((g) => g.rows.length > 0);
-
-  const fmtDate = (d: string) => new Date(d + "T12:00:00").toLocaleDateString("fr-FR", {
-    weekday: "long", day: "numeric", month: "long",
-  });
-
   return (
     <div className="max-w-5xl mx-auto space-y-4">
       {/* Header */}
@@ -11669,7 +11769,7 @@ function SurveillantsSection() {
           <Shield className="h-5 w-5 text-[#C62828]" />
           <div>
             <h2 className="text-xl font-semibold">Surveillants</h2>
-            <p className="text-sm text-gray-700">Gestion et planning des surveillants</p>
+            <p className="text-sm text-gray-700">Annuaire, comptes et charge des surveillants — l&apos;affectation se fait dans Salles &amp; surveillants</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -11690,11 +11790,11 @@ function SurveillantsSection() {
       {/* Onglets */}
       {selectedPlanningId && (
         <div className="flex rounded-xl border overflow-hidden w-fit text-xs font-medium">
-          {(["annuaire", "planning"] as const).map((v) => (
+          {(["annuaire", "charge"] as const).map((v) => (
             <button key={v} onClick={() => setView(v)}
               className={`px-4 py-2 transition ${view === v ? "bg-black text-white" : "bg-white text-gray-800 hover:bg-black/5"}`}
             >
-              {v === "annuaire" ? "Annuaire" : "Planning des créneaux"}
+              {v === "annuaire" ? "Annuaire" : "Charge par surveillant"}
             </button>
           ))}
         </div>
@@ -11798,153 +11898,9 @@ function SurveillantsSection() {
         </>
       )}
 
-      {/* ── Vue Planning ── */}
-      {view === "planning" && (
-        <>
-          {/* Filtres */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <select
-              value={filterDate}
-              onChange={(e) => setFilterDate(e.target.value)}
-              className="border rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-black/15"
-            >
-              <option value="">Toutes les journées</option>
-              {dates.map((d) => (
-                <option key={d} value={d}>{fmtDate(d)}</option>
-              ))}
-            </select>
-            <select
-              value={filterSurv}
-              onChange={(e) => setFilterSurv(e.target.value)}
-              className="border rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-black/15"
-            >
-              <option value="">Tous les surveillants</option>
-              <option value="0">— Sans surveillant —</option>
-              {surveillants.filter((s) => s.actif).map((s) => (
-                <option key={s.id} value={String(s.id)}>{s.nom} {s.prenom}</option>
-              ))}
-            </select>
-            <select value={filterSurv2} onChange={(e) => setFilterSurv2(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-black/15" title="2ᵉ surveillant">
-              <option value="">2ᵉ surveillant : tous</option>
-              <option value="__avec">Avec 2ᵉ surveillant</option>
-              <option value="__sans">Sans 2ᵉ surveillant</option>
-              {surveillants.filter((s) => s.actif).map((s) => (
-                <option key={s.id} value={String(s.id)}>2ᵉ : {s.nom} {s.prenom}</option>
-              ))}
-            </select>
-            <select value={filterMatiereS} onChange={(e) => setFilterMatiereS(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-black/15" title="Matière">
-              <option value="">Toutes les matières</option>
-              {Array.from(new Set(epreuves.map((e) => e.matiere))).sort((a, b) => a.localeCompare(b, "fr")).map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-            <select value={filterSessionS} onChange={(e) => setFilterSessionS(e.target.value as "" | "MATIN" | "APRES_MIDI")} className="border rounded-lg px-3 py-1.5 text-sm bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-black/15" title="Session">
-              <option value="">Matin et après-midi</option>
-              <option value="MATIN">Matin</option>
-              <option value="APRES_MIDI">Après-midi</option>
-            </select>
-            <select value={filterHeureS} onChange={(e) => setFilterHeureS(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-black/15" title="Horaire">
-              <option value="">Tous les horaires</option>
-              {Array.from(new Set(epreuves.map((e) => e.heure_debut))).sort().map((h) => (
-                <option key={h} value={h}>{h}</option>
-              ))}
-            </select>
-            <select value={filterStatutS} onChange={(e) => setFilterStatutS(e.target.value)} className="border rounded-lg px-3 py-1.5 text-sm bg-white text-gray-900 focus:outline-none focus:ring-1 focus:ring-black/15" title="Statut du créneau">
-              <option value="">Tous les statuts</option>
-              <option value="ATTRIBUEE">Attribué (candidat inscrit)</option>
-              <option value="LIBRE">Libre</option>
-              <option value="PRERESERVEE">Préréservé</option>
-              <option value="ABSENT">Absent</option>
-            </select>
-            {filtresPlanningActifs && (
-              <>
-                <span className="text-xs text-gray-800">{epFiltered.length} créneau{epFiltered.length > 1 ? "x" : ""} sur {epreuves.length}</span>
-                <button onClick={resetFiltresPlanning} className="text-xs text-[#C62828] hover:underline">Réinitialiser les filtres</button>
-              </>
-            )}
-          </div>
-
-          {loadingEp ? (
-            <div className="p-8 text-center"><Spinner /></div>
-          ) : !selectedPlanningId ? (
-            <Empty message="Sélectionnez un planning" />
-          ) : epByDate.length === 0 ? (
-            <Empty message="Aucun créneau" sub="Appliquez un gabarit pour générer les créneaux." />
-          ) : (
-            <div className="space-y-4">
-              {epByDate.map(({ date, rows }) => {
-                const nonAssignes = rows.filter((r) => !r.surveillant_id && !r.surveillant2_id).length;
-                return (
-                  <div key={date} className="bg-white rounded-2xl border border-black/5 shadow-sm overflow-hidden">
-                    <div className="px-4 py-2.5 bg-black/[0.02] border-b border-black/5 flex items-center justify-between">
-                      <span className="text-xs font-semibold text-gray-800 capitalize">{fmtDate(date)}</span>
-                      {nonAssignes > 0 && (
-                        <span className="flex items-center gap-1.5 text-xs text-amber-600 font-medium">
-                          <AlertTriangle className="h-3.5 w-3.5" />
-                          {nonAssignes} créneau(x) sans surveillant
-                        </span>
-                      )}
-                    </div>
-                    <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b border-black/5 bg-black/[0.01]">
-                          <th className="text-left px-4 py-2 text-gray-700 font-medium w-28">Matière</th>
-                          <th className="text-left px-4 py-2 text-gray-700 font-medium w-24">Heure</th>
-                          <th className="text-left px-4 py-2 text-gray-700 font-medium">Surveillant</th>
-                          <th className="text-left px-4 py-2 text-gray-700 font-medium">2ᵉ surveillant</th>
-                          <th className="text-left px-4 py-2 text-gray-700 font-medium">Candidat</th>
-                          <th className="text-left px-4 py-2 text-gray-700 font-medium w-20">Statut</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rows.map((ep) => (
-                          <tr key={ep.id} className={`border-b border-black/[0.04] last:border-0 ${!ep.surveillant_id ? "bg-amber-50/40" : "hover:bg-black/[0.01]"}`}>
-                            <td className="px-4 py-2.5 font-medium text-gray-900">{ep.matiere}</td>
-                            <td className="px-4 py-2.5 font-mono text-gray-800">{ep.heure_debut} – {ep.heure_fin}</td>
-                            <td className="px-4 py-2.5">
-                              {ep.surveillant_nom ? (
-                                <span className="text-gray-900">{ep.surveillant_nom} {ep.surveillant_prenom}</span>
-                              ) : (
-                                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                  <span className="flex items-center gap-1 text-amber-700">
-                                    <AlertTriangle className="h-3 w-3" /> Non assigné
-                                  </span>
-                                  {selectedPlanningId && (
-                                    <button
-                                      type="button"
-                                      onClick={() => allerAffecter({ manque: "surveillant", planningId: selectedPlanningId, date: ep.date, matiere: ep.matiere, heure: ep.heure_debut })}
-                                      title="Ouvre l'écran Salles & surveillants, filtré sur ce créneau et les épreuves sans surveillant"
-                                      className="font-semibold text-gray-900 underline decoration-dotted underline-offset-2 hover:decoration-solid"
-                                    >
-                                      Affecter dans Salles
-                                    </button>
-                                  )}
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-4 py-2.5">
-                              {ep.surveillant2_nom
-                                ? <span className="text-gray-900">{ep.surveillant2_nom} {ep.surveillant2_prenom}</span>
-                                : <span className="text-gray-700">—</span>}
-                            </td>
-                            <td className="px-4 py-2.5 text-gray-800">
-                              {ep.candidat_nom ? `${ep.candidat_nom} ${ep.candidat_prenom}` : <span className="text-gray-700">—</span>}
-                            </td>
-                            <td className="px-4 py-2.5">
-                              <StatutBadge statut={ep.statut} />
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>
+      {/* ── Charge par surveillant ── */}
+      {view === "charge" && selectedPlanningId && (
+        <ChargeSurveillants planningId={selectedPlanningId} surveillants={surveillants} />
       )}
 
       {/* Modal création */}
