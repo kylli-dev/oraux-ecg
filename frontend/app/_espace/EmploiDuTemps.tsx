@@ -3,9 +3,9 @@
 // Vue « Emploi du temps » partagée par les espaces examinateur et surveillant, en agenda
 // semaine par semaine : une colonne par journée de la semaine affichée (seulement les jours
 // qui ont des créneaux), l'axe vertical en heures, navigation entre les semaines. Chaque
-// passage est un bloc à son horaire ; la préparation du candidat est une fine barre à
-// gauche (elle chevauche souvent le passage précédent). Les passages simultanés (un
-// surveillant couvre plusieurs salles) sont placés côte à côte. Aujourd'hui est mis en
+// passage est un bloc à son horaire, qui se lit de haut en bas : heure, candidat, salle et
+// matière, préparation. Les passages simultanés (un surveillant couvre plusieurs salles)
+// sont placés côte à côte, chacun assez large pour rester lisible. Aujourd'hui est mis en
 // évidence, avec un trait à l'heure actuelle. Plein écran : API Fullscreen quand elle
 // existe, sinon calque fixe.
 
@@ -27,11 +27,11 @@ export type CreneauEdt = {
 
 export type LegendeEdt = { label: string; style: React.CSSProperties };
 
-// 2 px/min = 120 px par heure : un passage de 30 min (60 px) affiche lisiblement son
-// horaire, son titre et son détail.
-const PX_PAR_MIN_DEFAUT = 2;
+// 2,6 px/min ≈ 156 px par heure : un passage de 30 min (78 px) affiche en entier son
+// heure, son candidat, sa salle et sa préparation.
+const PX_PAR_MIN_DEFAUT = 2.6;
 const ENTETE_JOUR_PX = 60;
-const LARGEUR_MIN_VOIE = 130;
+const LARGEUR_MIN_VOIE = 170;
 
 function enMinutes(h: string) {
   const [hh, mm] = h.split(":").map(Number);
@@ -160,7 +160,7 @@ export function EmploiDuTemps({
     return `Semaine du ${debutTxt} au ${dimanche.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}`;
   })();
 
-  const debut = Math.floor(Math.min(...duSemaine.map((c) => enMinutes(c.heure_debut) - (c.preparation_minutes ?? 0))) / 60) * 60;
+  const debut = Math.floor(Math.min(...duSemaine.map((c) => enMinutes(c.heure_debut))) / 60) * 60;
   const fin = Math.ceil(Math.max(...duSemaine.map((c) => enMinutes(c.heure_fin))) / 60) * 60;
   // En plein écran, l'échelle s'agrandit pour que la journée occupe toute la hauteur
   // (~190 px réservés au titre, à la barre d'outils et aux en-têtes de journée)
@@ -243,10 +243,6 @@ export function EmploiDuTemps({
             {l.label}
           </span>
         ))}
-        <span className="flex items-center gap-1.5">
-          <span className="h-3.5 w-1.5 rounded-full" style={{ backgroundColor: RED + "55" }} />
-          Préparation du candidat
-        </span>
         {consigne && <span className="sm:ml-auto text-gray-700">{consigne}</span>}
       </div>
 
@@ -258,7 +254,7 @@ export function EmploiDuTemps({
             {heures.map((m) => (
               <span
                 key={m}
-                className="absolute right-2 -translate-y-1/2 text-[11px] font-semibold text-gray-700 tabular-nums"
+                className="absolute right-2 -translate-y-1/2 text-xs font-semibold text-gray-800 tabular-nums"
                 style={{ top: ENTETE_JOUR_PX + (m - debut) * pxParMin }}
               >
                 {enHeure(m)}
@@ -301,11 +297,7 @@ export function EmploiDuTemps({
 
                 <div className="relative" style={{ height: hauteur }}>
                   {heures.map((m) => (
-                    <div key={m} className="absolute inset-x-0 border-t border-gray-200" style={{ top: (m - debut) * pxParMin }} />
-                  ))}
-                  {/* Repères des demi-heures */}
-                  {heures.slice(0, -1).map((m) => (
-                    <div key={`d${m}`} className="absolute inset-x-0 border-t border-dashed border-gray-100" style={{ top: (m + 30 - debut) * pxParMin }} />
+                    <div key={m} className="absolute inset-x-0 border-t border-gray-100" style={{ top: (m - debut) * pxParMin }} />
                   ))}
                   {/* Heure actuelle */}
                   {estAujourdhui && minutesMaintenant >= debut && minutesMaintenant <= fin && (
@@ -326,25 +318,24 @@ export function EmploiDuTemps({
                       // pointer-events-none : la voie couvre toute la hauteur et ne doit pas
                       // masquer les blocs des autres groupes situés dessous
                       <div key={c.id} className="absolute inset-y-0 pointer-events-none" style={{ left: gauche, width: largeur }}>
-                        {prep > 0 && (
-                          <div
-                            className="pointer-events-auto absolute left-1 w-1.5 rounded-full"
-                            style={{ top: (d - prep - debut) * pxParMin, height: prep * pxParMin, backgroundColor: RED + "55" }}
-                            title={`Préparation ${enHeure(d - prep)} – ${c.heure_debut}`}
-                          />
-                        )}
                         <button
                           onClick={() => { if (pleinEcran) quitterPleinEcran(); onSelect(c.id); }}
-                          className="pointer-events-auto absolute left-3.5 right-1.5 rounded-lg border border-l-4 px-2 py-1 text-left overflow-hidden text-gray-900 shadow-sm transition hover:shadow-md hover:-translate-y-px hover:z-10 focus:outline-none focus-visible:ring-2"
+                          className="pointer-events-auto absolute left-1 right-1 rounded-lg border border-l-4 px-2.5 py-1.5 text-left overflow-hidden text-gray-900 shadow-sm transition hover:shadow-md hover:z-10 focus:outline-none focus-visible:ring-2"
                           style={{ top: (d - debut) * pxParMin + 1, height: h - 2, "--tw-ring-color": RED, ...c.style } as React.CSSProperties}
                           title={c.infobulle}
                         >
-                          <span className="block text-[11px] font-bold tabular-nums leading-tight text-gray-800">
-                            {c.heure_debut} – {c.heure_fin}
+                          <span className="flex items-baseline gap-1.5 leading-tight">
+                            <span className="text-sm font-bold tabular-nums">{c.heure_debut}</span>
+                            <span className="text-xs text-gray-700 tabular-nums">→ {c.heure_fin}</span>
                           </span>
-                          {h >= 44 && <span className="block text-sm font-semibold truncate leading-snug">{c.titre}</span>}
-                          {h >= 64 && c.detail && (
-                            <span className="block text-[11px] text-gray-800 truncate leading-tight">{c.detail}</span>
+                          {h >= 44 && <span className="block text-sm font-semibold truncate leading-snug mt-0.5">{c.titre}</span>}
+                          {h >= 62 && c.detail && (
+                            <span className="block text-xs text-gray-800 truncate leading-tight">{c.detail}</span>
+                          )}
+                          {h >= 76 && prep > 0 && (
+                            <span className="block text-[11px] text-gray-700 truncate leading-tight mt-0.5">
+                              Préparation dès {enHeure(d - prep)}
+                            </span>
                           )}
                         </button>
                       </div>
