@@ -358,6 +358,33 @@ function memoriserPlanning(id: number | string | null | undefined) {
   try { localStorage.setItem(CLE_PLANNING_ACTIF, String(id)); } catch {}
 }
 
+// ── Filtres retenus entre les sections ──
+// Un filtre déclaré avec useFiltre garde sa valeur quand on change de section et qu'on
+// revient (sessionStorage : le temps de l'onglet du navigateur). `pid` : planning auquel le
+// filtre se rapporte (jour, heure… n'ont de sens que pour lui) — undefined pour un filtre
+// indépendant du planning (recherche, onglet…). `force` : valeur imposée (lien « il
+// manque… », recherche globale), qui remplace la valeur retenue.
+function planningActifMemorise(): number | null {
+  try { return Number(localStorage.getItem(CLE_PLANNING_ACTIF)) || null; } catch { return null; }
+}
+function useFiltre<T>(nom: string, initial: T, pid?: number | string | null, force = false): [T, React.Dispatch<React.SetStateAction<T>>] {
+  const lie = pid !== undefined;
+  const [valeur, setValeur] = useState<T>(() => {
+    if (force) return initial;
+    try {
+      const p = lie ? (pid || planningActifMemorise()) : "-";
+      const brut = p ? sessionStorage.getItem(`filtre:${nom}:${p}`) : null;
+      return brut != null ? (JSON.parse(brut) as T) : initial;
+    } catch { return initial; }
+  });
+  useEffect(() => {
+    const p = lie ? pid : "-";
+    if (!p) return; // planning pas encore chargé
+    try { sessionStorage.setItem(`filtre:${nom}:${p}`, JSON.stringify(valeur)); } catch {}
+  }, [nom, valeur, lie, pid]);
+  return [valeur, setValeur];
+}
+
 // ── Ouverture de Candidats depuis une notification ou la recherche globale ──
 // Planning, onglet et candidat à présélectionner, lus par CandidatsSection à son montage
 // (recherche : texte du champ de recherche de la liste).
@@ -1752,10 +1779,10 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
   const confirm = useConfirm();
   const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterDate, setFilterDate] = useState<string>("");
-  const [filterStatut, setFilterStatut] = useState<string>("");
+  const [filterDate, setFilterDate] = useFiltre<string>("tableau:date", "", planningId);
+  const [filterStatut, setFilterStatut] = useFiltre<string>("tableau:statut", "", planningId);
   // "" = tous, "__sans" = épreuves sans numéro de matrice, sinon « T5 »
-  const [filterTriplet, setFilterTriplet] = useState<string>("");
+  const [filterTriplet, setFilterTriplet] = useFiltre<string>("tableau:triplet", "", planningId);
   const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set());
   const [deletingDays, setDeletingDays] = useState(false);
 
@@ -2238,7 +2265,7 @@ function PlanningDaySection({
   journeeTypes: JourneeType[];
   onBack: () => void;
 }) {
-  const [viewMode, setViewMode] = useState<"journee" | "tableau" | "triplets">("tableau");
+  const [viewMode, setViewMode] = useFiltre<"journee" | "tableau" | "triplets">("planning:vue", "tableau");
   const [daySubView, setDaySubView] = useState<"triplets" | "creneaux">("triplets");
   const [date, setDate] = useState(planning.date_debut);
   const [dayData, setDayData] = useState<DayViewData | null>(null);
@@ -4090,7 +4117,7 @@ function ApplyJourneeTypeToPlanning({ jt, onClose }: { jt: JourneeType; onClose:
 function JourneeTypesSection() {
   const toast = useToast();
   const confirm = useConfirm();
-  const [tab, setTab] = useState<"gabarits" | "matrice">("gabarits");
+  const [tab, setTab] = useFiltre<"gabarits" | "matrice">("journeeTypes:onglet", "gabarits");
   const [jts, setJts] = useState<JourneeType[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -5614,10 +5641,10 @@ function CandidatsSection() {
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [gestionKey, setGestionKey] = useState(0);
-  const [tab, setTab] = useState<"liste" | "gestion" | "liste_attente" | "compactage">(intention?.tab ?? "liste");
+  const [tab, setTab] = useFiltre<"liste" | "gestion" | "liste_attente" | "compactage">("candidats:onglet", intention?.tab ?? "liste", undefined, !!intention);
   const [error, setError] = useState("");
-  const [searchCand, setSearchCand] = useState(intention?.recherche ?? "");
-  const [filterProfil, setFilterProfil] = useState<"" | "HGG" | "ESH">("");
+  const [searchCand, setSearchCand] = useFiltre("candidats:recherche", intention?.recherche ?? "", undefined, !!intention);
+  const [filterProfil, setFilterProfil] = useFiltre<"" | "HGG" | "ESH">("candidats:profil", "");
   const [selectedCandId, setSelectedCandId] = useState<number | null>(intention?.tab === "liste" ? intention.candidatId : null);
   const [editCandId, setEditCandId] = useState<number | null>(null);
 
@@ -7518,10 +7545,10 @@ function GestionCandidatsTab({ planningId }: { planningId: number }) {
   const [fiche, setFiche] = useState<FicheCandidat | null>(null);
   const [triplets, setTriplets] = useState<TripletDisponible[]>([]);
   const [search, setSearch] = useState("");
-  const [filterStatut, setFilterStatut] = useState<"" | "inscrits" | "non_inscrits" | "attente">("");
-  const [filterProfil, setFilterProfil] = useState<"" | "HGG" | "ESH">("");
-  const [filterDateCreneau, setFilterDateCreneau] = useState("");
-  const [filterHeureCreneau, setFilterHeureCreneau] = useState("");
+  const [filterStatut, setFilterStatut] = useFiltre<"" | "inscrits" | "non_inscrits" | "attente">("gestion:statut", "");
+  const [filterProfil, setFilterProfil] = useFiltre<"" | "HGG" | "ESH">("gestion:profil", "");
+  const [filterDateCreneau, setFilterDateCreneau] = useFiltre("gestion:date", "", planningId);
+  const [filterHeureCreneau, setFilterHeureCreneau] = useFiltre("gestion:heure", "", planningId);
   const [loadingAction, setLoadingAction] = useState(false);
 
   const loadListe = useCallback(() => {
@@ -7907,15 +7934,15 @@ function AffectationTab({ planningId, examinateurs, filtresInitiaux }: {
   const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedExId, setSelectedExId] = useState<number | "">("");
-  const [filterDate, setFilterDate] = useState(filtresInitiaux?.date ?? "");
-  const [filterMatiere, setFilterMatiere] = useState(filtresInitiaux?.matiere ?? "");
-  const [filterSession, setFilterSession] = useState<"" | "MATIN" | "APRES_MIDI">("");
-  const [filterHeure, setFilterHeure] = useState(filtresInitiaux?.heure ?? "");
+  const [filterDate, setFilterDate] = useFiltre("affectation:date", filtresInitiaux?.date ?? "", planningId, !!filtresInitiaux);
+  const [filterMatiere, setFilterMatiere] = useFiltre("affectation:matiere", filtresInitiaux?.matiere ?? "", planningId, !!filtresInitiaux);
+  const [filterSession, setFilterSession] = useFiltre<"" | "MATIN" | "APRES_MIDI">("affectation:session", "", planningId, !!filtresInitiaux);
+  const [filterHeure, setFilterHeure] = useFiltre("affectation:heure", filtresInitiaux?.heure ?? "", planningId, !!filtresInitiaux);
   // "" = tous, "__sans" = épreuves sans numéro de matrice, sinon « T5 »
-  const [filterTriplet, setFilterTriplet] = useState("");
-  const [filterEtat, setFilterEtat] = useState<"" | "sans" | "avec" | "lui">(filtresInitiaux ? "sans" : "");
+  const [filterTriplet, setFilterTriplet] = useFiltre("affectation:triplet", "", planningId, !!filtresInitiaux);
+  const [filterEtat, setFilterEtat] = useFiltre<"" | "sans" | "avec" | "lui">("affectation:etat", filtresInitiaux ? "sans" : "", planningId, !!filtresInitiaux);
   // 2ᵉ examinateur : "" = tous, "__avec" / "__sans", ou l'id d'un examinateur précis
-  const [filterEx2, setFilterEx2] = useState("");
+  const [filterEx2, setFilterEx2] = useFiltre("affectation:ex2", "", planningId, !!filtresInitiaux);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [assigning, setAssigning] = useState(false);
   const [deassigning, setDeassigning] = useState<number | null>(null);
@@ -9158,15 +9185,15 @@ function ExaminateursSection() {
   const [showCreate, setShowCreate] = useState(false);
   const [showImportEx, setShowImportEx] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [filterActif, setFilterActif] = useState<"tous" | "actif" | "inactif">("tous");
+  const [filterActif, setFilterActif] = useFiltre<"tous" | "actif" | "inactif">("examinateurs:actif", "tous");
   // Recherche globale : fiche de l'examinateur à ouvrir dès le chargement de la liste
   const [exRecherche] = useState(() => intentionExaminateur);
   useEffect(() => { if (exRecherche) intentionExaminateur = null; }, [exRecherche]);
   const exAOuvrir = useRef<number | null>(exRecherche?.id ?? null);
-  const [searchEx, setSearchEx] = useState(exRecherche?.nom ?? "");
-  const [filterMatiereEx, setFilterMatiereEx] = useState("");
-  const [filterEtabEx, setFilterEtabEx] = useState("");
-  const [tab, setTab] = useState<"fiche" | "affectation">(intention ? "affectation" : "fiche");
+  const [searchEx, setSearchEx] = useFiltre("examinateurs:recherche", exRecherche?.nom ?? "", undefined, !!exRecherche);
+  const [filterMatiereEx, setFilterMatiereEx] = useFiltre("examinateurs:matiere", "");
+  const [filterEtabEx, setFilterEtabEx] = useFiltre("examinateurs:etab", "");
+  const [tab, setTab] = useFiltre<"fiche" | "affectation">("examinateurs:onglet", intention ? "affectation" : "fiche", undefined, !!intention);
 
   useEffect(() => {
     get<Planning[]>("plannings/").then((ps) => {
@@ -9673,7 +9700,7 @@ function fmtNote(v: number): string {
 
 function NotesSection() {
   const toast = useToast();
-  const [tab, setTab] = useState<"tableau" | "publication" | "saisie">("tableau");
+  const [tab, setTab] = useFiltre<"tableau" | "publication" | "saisie">("notes:onglet", "tableau");
 
   // ── Tableau tab state ────────────────────────────────────────────────────────
   const [plannings, setPlannings] = useState<Planning[]>([]);
@@ -9757,7 +9784,7 @@ function NotesSection() {
   const [error, setError] = useState("");
   const [publishing, setPublishing] = useState<Record<number, boolean>>({});
   const [publishingAll, setPublishingAll] = useState(false);
-  const [pubVue, setPubVue] = useState<"tout" | "brouillons" | "attente" | "publiees">("tout");
+  const [pubVue, setPubVue] = useFiltre<"tout" | "brouillons" | "attente" | "publiees">("notes:publication", "tout");
   const [pubRecherche, setPubRecherche] = useState("");
   const [pubExaminateur, setPubExaminateur] = useState("");
 
@@ -10784,7 +10811,7 @@ function EtablissementsSection() {
 }
 
 function ParametragesSection() {
-  const [tab, setTab] = useState<"matieres" | "salles" | "etablissements" | "messages" | "mdp" | "comptes">("matieres");
+  const [tab, setTab] = useFiltre<"matieres" | "salles" | "etablissements" | "messages" | "mdp" | "comptes">("parametrages:onglet", "matieres");
   const toastAdmins = useToast();
   const confirmAdmins = useConfirm();
   const [adminAccounts, setAdminAccounts] = useState<AdminAccount[]>([]);
@@ -10986,7 +11013,7 @@ function ParametragesSection() {
   // Si un compte non super-admin se retrouve sur l'onglet (ex. via un ancien lien), on le renvoie ailleurs.
   useEffect(() => {
     if (tab === "comptes" && myRole !== null && !isSuperAdmin) setTab("matieres");
-  }, [tab, myRole, isSuperAdmin]);
+  }, [tab, myRole, isSuperAdmin, setTab]);
 
   const doExportParametrages = () => {
     const a = document.createElement("a");
@@ -11486,7 +11513,7 @@ function CredentialsModal({
 function ChargeSurveillants({ planningId, surveillants }: { planningId: number; surveillants: Surveillant[] }) {
   const allerAffecter = React.useContext(NavAffectationContext);
   const [donnees, setDonnees] = useState<{ pid: number; epreuves: EpreuveFlat[] } | null>(null);
-  const [filtreDate, setFiltreDate] = useState("");
+  const [filtreDate, setFiltreDate] = useFiltre("charge:date", "", planningId);
   const [ouvert, setOuvert] = useState<number | null>(null);
 
   useEffect(() => {
@@ -11653,11 +11680,11 @@ function SurveillantsSection() {
     nom: string; prenom: string; email: string; code_acces: string;
     plainPassword: string; emailSent: boolean;
   } | null>(null);
-  const [filterActif, setFilterActif] = useState<"tous" | "actif" | "inactif">("tous");
+  const [filterActif, setFilterActif] = useFiltre<"tous" | "actif" | "inactif">("surveillants:actif", "tous");
   const [survRecherche] = useState(() => intentionSurveillant);
   useEffect(() => { if (survRecherche) intentionSurveillant = null; }, [survRecherche]);
-  const [search, setSearch] = useState(survRecherche?.nom ?? "");
-  const [view, setView] = useState<"annuaire" | "charge">("annuaire");
+  const [search, setSearch] = useFiltre("surveillants:recherche", survRecherche?.nom ?? "", undefined, !!survRecherche);
+  const [view, setView] = useFiltre<"annuaire" | "charge">("surveillants:vue", "annuaire");
 
   useEffect(() => {
     get<Planning[]>("plannings/").then((ps) => {
@@ -12695,7 +12722,7 @@ function PlanchesSection() {
   const confirm = useConfirm();
   const matieres = useMatieres();
   const intention = useIntentionAffectation("planche");
-  const [tab, setTab] = useState<"sujets" | "assignation" | "impression" | "historique">(intention ? "assignation" : "sujets");
+  const [tab, setTab] = useFiltre<"sujets" | "assignation" | "impression" | "historique">("planches:onglet", intention ? "assignation" : "sujets", undefined, !!intention);
 
   // ── Onglet Sujets ────────────────────────────────────────────────────────────
   const [planches, setPlanches] = useState<PlancheItem[]>([]);
@@ -12763,16 +12790,16 @@ function PlanchesSection() {
   const [epreuves, setEpreuves] = useState<EpreuveFlat[]>([]);
   const [loadingEp, setLoadingEp] = useState(false);
   const [assignModal, setAssignModal] = useState<EpreuveFlat | null>(null);
-  const [filterMatAss, setFilterMatAss] = useState(intention?.matiere ?? "");
-  const [filterDateAss, setFilterDateAss] = useState(intention?.date ?? "");
-  const [filterHeureAss, setFilterHeureAss] = useState(intention?.heure ? hm(intention.heure) : "");
+  const [filterMatAss, setFilterMatAss] = useFiltre("planches:matiere", intention?.matiere ?? "", planningId, !!intention);
+  const [filterDateAss, setFilterDateAss] = useFiltre("planches:date", intention?.date ?? "", planningId, !!intention);
+  const [filterHeureAss, setFilterHeureAss] = useFiltre("planches:heure", intention?.heure ? hm(intention.heure) : "", planningId, !!intention);
   // "" = tous, "avec" / "sans" candidat, sinon l'id du candidat
-  const [filterCandAss, setFilterCandAss] = useState("");
+  const [filterCandAss, setFilterCandAss] = useFiltre("planches:candidat", "", planningId, !!intention);
   // "" = toutes, "assignee" / "non_assignee", sinon le nom de la planche
-  const [filterPlancheAss, setFilterPlancheAss] = useState(intention ? "non_assignee" : "");
+  const [filterPlancheAss, setFilterPlancheAss] = useFiltre("planches:planche", intention ? "non_assignee" : "", planningId, !!intention);
   const [rechercheAss, setRechercheAss] = useState("");
   // "" = tous, "aucun" = sans examinateur, sinon l'id de l'examinateur (1er ou 2e)
-  const [filterExamAss, setFilterExamAss] = useState("");
+  const [filterExamAss, setFilterExamAss] = useFiltre("planches:examinateur", "", planningId, !!intention);
   const [assigning, setAssigning] = useState(false);
 
   const loadPlanches = useCallback(() => {
@@ -13773,8 +13800,8 @@ function PretAPublierSection() {
   const allerAffecter = React.useContext(NavAffectationContext);
   const [plannings, setPlannings] = useState<Planning[]>([]);
   const [planningId, setPlanningId] = useState<number | "">("");
-  const [filtreDate, setFiltreDate] = useState("");
-  const [seulementIncomplets, setSeulementIncomplets] = useState(true);
+  const [filtreDate, setFiltreDate] = useFiltre("publication:date", "", planningId);
+  const [seulementIncomplets, setSeulementIncomplets] = useFiltre("publication:incomplets", true);
 
   useEffect(() => {
     get<Planning[]>("plannings/").then((ps) => {
@@ -14013,17 +14040,17 @@ function SallesSection() {
   const [newSalle, setNewSalle] = useState("");
   const [addingS, setAddingS] = useState(false);
   const [addErr, setAddErr] = useState("");
-  const [filterMatiere, setFilterMatiere] = useState(intention?.matiere ?? "");
-  const [filterDate, setFilterDate] = useState(intention?.date ?? "");
-  const [filterHeure, setFilterHeure] = useState(intention?.heure ?? "");
+  const [filterMatiere, setFilterMatiere] = useFiltre("salles:matiere", intention?.matiere ?? "", planningId, !!intention);
+  const [filterDate, setFilterDate] = useFiltre("salles:date", intention?.date ?? "", planningId, !!intention);
+  const [filterHeure, setFilterHeure] = useFiltre("salles:heure", intention?.heure ?? "", planningId, !!intention);
   // "" = toutes, "none" = non affectée, sinon l'id de la salle (en string)
-  const [filterSalle, setFilterSalle] = useState(intentionSalle ? "none" : "");
+  const [filterSalle, setFilterSalle] = useFiltre("salles:salle", intentionSalle ? "none" : "", planningId, !!intention);
   // "" = tous, "none" = sans surveillant (ni 1er ni 2ᵉ), sinon l'id du surveillant
-  const [filterSurvSalle, setFilterSurvSalle] = useState(intentionSurv ? "none" : "");
+  const [filterSurvSalle, setFilterSurvSalle] = useFiltre("salles:surveillant", intentionSurv ? "none" : "", planningId, !!intention);
   // Ne montrer que les doublons (créneau avec plusieurs épreuves en parallèle) dont les
   // salles ne sont pas toutes distinctes — pas encore vérifiés/différenciés, donc à risque
   // (2 candidats pourraient se retrouver affectés à la même salle physique).
-  const [filterAVerifier, setFilterAVerifier] = useState(false);
+  const [filterAVerifier, setFilterAVerifier] = useFiltre("salles:averifier", false, planningId, !!intention);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkSalleId, setBulkSalleId] = useState<string>("");
   const [bulkSallePrepId, setBulkSallePrepId] = useState<string>("");
