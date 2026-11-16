@@ -8,7 +8,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Loader2, Clock, Download, AlertTriangle, CheckCircle, UserX, CalendarDays, MapPin, Search,
-  CalendarRange, User, FileText,
+  CalendarRange, User, FileText, ChevronLeft, ChevronRight, X,
 } from "lucide-react";
 import { RED, PageHeader, Alert } from "./_ui";
 import { EmploiDuTemps, type CreneauEdt, type LegendeEdt } from "../_espace/EmploiDuTemps";
@@ -210,10 +210,14 @@ export function PlanningSurveillant({ vue }: { vue: "liste" | "edt" }) {
   const absents = epreuves.filter((e) => e.candidat_id && e.statut === "ABSENT").length;
   const libres = epreuves.length - attendus;
 
-  const pastille = (actif: boolean) =>
-    `shrink-0 px-3 py-1.5 rounded-full text-sm font-medium border transition capitalize ${
-      actif ? "text-white shadow-sm" : "bg-white text-gray-900 border-gray-300 hover:border-gray-400"
-    }`;
+  // Filtre par jour : une liste déroulante avec jour précédent / suivant, plutôt qu'une
+  // rangée de pastilles qui s'allongeait avec le nombre de dates
+  const aujourdhui = new Date().toLocaleDateString("sv-SE"); // AAAA-MM-JJ, heure locale
+  const indexDate = filterDate ? dates.indexOf(filterDate) : -1;
+  const libelleJour = (d: string) =>
+    new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+  const flecheCls =
+    "h-full px-2.5 grid place-items-center text-gray-900 hover:bg-gray-50 transition disabled:opacity-30 disabled:hover:bg-transparent";
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-10">
@@ -270,49 +274,78 @@ export function PlanningSurveillant({ vue }: { vue: "liste" | "edt" }) {
 
         {/* ── Filtres ── */}
         {!loading && epreuves.length > 0 && (
-          <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-4 space-y-3">
-            <div className="relative">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[220px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-700 pointer-events-none" />
               <input
                 type="text"
                 value={searchCandidat}
                 onChange={(e) => setSearchCandidat(e.target.value)}
                 placeholder="Rechercher un candidat…"
-                className="w-full pl-9 pr-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:border-transparent"
+                className="w-full h-10 pl-9 pr-9 rounded-xl border border-gray-300 bg-white text-sm text-gray-900 placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:border-transparent"
                 style={{ "--tw-ring-color": RED } as React.CSSProperties}
               />
-            </div>
-            {dates.length > 1 && (
-              <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap">
+              {searchCandidat && (
                 <button
-                  onClick={() => setFilterDate("")}
-                  className={pastille(!filterDate)}
-                  style={!filterDate ? { backgroundColor: RED, borderColor: RED } : undefined}
+                  onClick={() => setSearchCandidat("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-gray-700 hover:bg-gray-100"
+                  aria-label="Effacer la recherche"
                 >
-                  Toutes les dates
+                  <X className="h-3.5 w-3.5" />
                 </button>
-                {dates.map((d) => {
-                  const actif = filterDate === d;
-                  return (
-                    <button
-                      key={d}
-                      onClick={() => setFilterDate(d)}
-                      className={pastille(actif)}
-                      style={actif ? { backgroundColor: RED, borderColor: RED } : undefined}
-                    >
-                      {new Date(d + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })}
-                    </button>
-                  );
-                })}
+              )}
+            </div>
+
+            {dates.length > 1 && (
+              <div className="flex items-stretch h-10 rounded-xl border border-gray-300 bg-white overflow-hidden">
+                <button
+                  onClick={() => setFilterDate(dates[indexDate - 1])}
+                  disabled={indexDate <= 0}
+                  className={flecheCls}
+                  aria-label="Jour précédent"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <select
+                  value={filterDate}
+                  onChange={(e) => setFilterDate(e.target.value)}
+                  className="border-x border-gray-300 bg-white px-3 text-sm font-medium text-gray-900 capitalize focus:outline-none cursor-pointer"
+                  aria-label="Jour"
+                >
+                  <option value="">Tous les jours ({dates.length})</option>
+                  {dates.map((d) => (
+                    <option key={d} value={d}>
+                      {libelleJour(d)}{d === aujourdhui ? " — aujourd'hui" : ""}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => setFilterDate(dates[indexDate + 1])}
+                  disabled={indexDate >= dates.length - 1}
+                  className={flecheCls}
+                  aria-label="Jour suivant"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
               </div>
             )}
-            {(filterDate || searchCandidat) && (
+
+            {dates.includes(aujourdhui) && filterDate !== aujourdhui && (
               <button
-                onClick={() => { setFilterDate(""); setSearchCandidat(""); }}
-                className="text-sm font-medium hover:underline underline-offset-2"
-                style={{ color: RED }}
+                onClick={() => setFilterDate(aujourdhui)}
+                className="h-10 px-3 rounded-xl border text-sm font-semibold bg-white hover:bg-red-50 transition"
+                style={{ borderColor: RED + "55", color: RED }}
               >
-                Effacer les filtres
+                Aujourd&apos;hui
+              </button>
+            )}
+
+            {filterDate && (
+              <button
+                onClick={() => setFilterDate("")}
+                className="h-10 px-3 rounded-xl text-sm font-medium text-gray-900 hover:bg-gray-100 transition"
+              >
+                Tous les jours
               </button>
             )}
           </div>
