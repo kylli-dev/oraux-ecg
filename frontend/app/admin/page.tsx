@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import InterfaceAdminENSAEPlanning from "../InterfaceAdminENSAEPlanning";
+import RechercheGlobale, { type ResultatRecherche } from "./RechercheGlobale";
 import { useRouter } from "next/navigation";
 import { ToastProvider, useToast, useConfirm } from "./Toast";
 import { type CaseTriplet, MARGE_ENTRE_EPREUVES, exceptionsMatrice, minutes } from "./echangeTriplets";
@@ -60,6 +61,7 @@ import {
   EyeOff,
   Activity,
   LayoutTemplate,
+  Search,
 } from "lucide-react";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -356,10 +358,30 @@ function memoriserPlanning(id: number | string | null | undefined) {
   try { localStorage.setItem(CLE_PLANNING_ACTIF, String(id)); } catch {}
 }
 
-// ── Ouverture de Candidats depuis une notification ──
-// Planning, onglet et candidat à présélectionner, lus par CandidatsSection à son montage.
-type IntentionCandidats = { planningId: number; tab: "liste_attente"; candidatId: number | null };
+// ── Ouverture de Candidats depuis une notification ou la recherche globale ──
+// Planning, onglet et candidat à présélectionner, lus par CandidatsSection à son montage
+// (recherche : texte du champ de recherche de la liste).
+type IntentionCandidats = { planningId: number; tab: "liste_attente" | "liste"; candidatId: number | null; recherche?: string };
 let intentionCandidats: IntentionCandidats | null = null;
+// Recherche globale : examinateur à ouvrir (fiche), surveillant à retrouver dans l'annuaire
+let intentionExaminateur: { id: number; nom: string } | null = null;
+let intentionSurveillant: { nom: string } | null = null;
+
+// Sections proposées par la recherche globale (Ctrl+K)
+const SECTIONS_RECHERCHE: { key: SectionKey; label: string }[] = [
+  { key: "dashboard", label: "Tableau de bord" },
+  { key: "plannings", label: "Planning" },
+  { key: "journeeTypes", label: "Journées types" },
+  { key: "salles", label: "Salles & surveillants" },
+  { key: "examinateurs", label: "Examinateurs" },
+  { key: "planches", label: "Planches" },
+  { key: "publication", label: "Prêt à publier ?" },
+  { key: "candidats", label: "Candidats" },
+  { key: "notes", label: "Notes" },
+  { key: "surveillants", label: "Surveillants" },
+  { key: "conflits", label: "Conflits" },
+  { key: "parametrages", label: "Paramétrages" },
+];
 
 // ── Liens vers l'affectation manquante ──
 // Un clic sur « salle », « examinateur » ou « surveillant » ouvre l'écran d'affectation
@@ -5594,9 +5616,9 @@ function CandidatsSection() {
   const [gestionKey, setGestionKey] = useState(0);
   const [tab, setTab] = useState<"liste" | "gestion" | "liste_attente" | "compactage">(intention?.tab ?? "liste");
   const [error, setError] = useState("");
-  const [searchCand, setSearchCand] = useState("");
+  const [searchCand, setSearchCand] = useState(intention?.recherche ?? "");
   const [filterProfil, setFilterProfil] = useState<"" | "HGG" | "ESH">("");
-  const [selectedCandId, setSelectedCandId] = useState<number | null>(null);
+  const [selectedCandId, setSelectedCandId] = useState<number | null>(intention?.tab === "liste" ? intention.candidatId : null);
   const [editCandId, setEditCandId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -9137,7 +9159,11 @@ function ExaminateursSection() {
   const [showImportEx, setShowImportEx] = useState(false);
   const [loading, setLoading] = useState(false);
   const [filterActif, setFilterActif] = useState<"tous" | "actif" | "inactif">("tous");
-  const [searchEx, setSearchEx] = useState("");
+  // Recherche globale : fiche de l'examinateur à ouvrir dès le chargement de la liste
+  const [exRecherche] = useState(() => intentionExaminateur);
+  useEffect(() => { if (exRecherche) intentionExaminateur = null; }, [exRecherche]);
+  const exAOuvrir = useRef<number | null>(exRecherche?.id ?? null);
+  const [searchEx, setSearchEx] = useState(exRecherche?.nom ?? "");
   const [filterMatiereEx, setFilterMatiereEx] = useState("");
   const [filterEtabEx, setFilterEtabEx] = useState("");
   const [tab, setTab] = useState<"fiche" | "affectation">(intention ? "affectation" : "fiche");
@@ -9156,7 +9182,12 @@ function ExaminateursSection() {
     try {
       const data = await get<Examinateur[]>(`examinateurs/?planning_id=${selectedPlanningId}`);
       setExaminateurs(data);
-      setSelectedEx((prev) => prev ? (data.find((e) => e.id === prev.id) ?? null) : null);
+      const id = exAOuvrir.current;
+      exAOuvrir.current = null;
+      setSelectedEx((prev) => {
+        const cible = prev?.id ?? id;
+        return cible != null ? (data.find((e) => e.id === cible) ?? null) : null;
+      });
     } finally { setLoading(false); }
   }, [selectedPlanningId]);
 
@@ -11623,7 +11654,9 @@ function SurveillantsSection() {
     plainPassword: string; emailSent: boolean;
   } | null>(null);
   const [filterActif, setFilterActif] = useState<"tous" | "actif" | "inactif">("tous");
-  const [search, setSearch] = useState("");
+  const [survRecherche] = useState(() => intentionSurveillant);
+  useEffect(() => { if (survRecherche) intentionSurveillant = null; }, [survRecherche]);
+  const [search, setSearch] = useState(survRecherche?.nom ?? "");
   const [view, setView] = useState<"annuaire" | "charge">("annuaire");
 
   useEffect(() => {
@@ -11958,11 +11991,13 @@ function Sidebar({
   onSelect,
   nbConflits = 0,
   onNotification,
+  onRecherche,
 }: {
   active: SectionKey;
   onSelect: (k: SectionKey) => void;
   nbConflits?: number;
   onNotification: (n: NotificationAdmin) => void;
+  onRecherche: () => void;
 }) {
   // Le Monitoring est réservé aux super-administrateurs (le serveur refuse aussi les autres)
   const [superAdmin, setSuperAdmin] = useState(false);
@@ -12020,6 +12055,16 @@ function Sidebar({
           />
           <EnvBadge />
         </div>
+        <button
+          type="button"
+          onClick={onRecherche}
+          className="mt-4 w-full flex items-center gap-2 rounded-lg bg-white/15 hover:bg-white/25 px-3 py-2 text-sm text-white transition"
+          title="Rechercher un candidat, un examinateur, un surveillant ou une section"
+        >
+          <Search className="h-4 w-4 shrink-0" />
+          <span className="flex-1 text-left">Rechercher…</span>
+          <kbd className="text-[10px] font-semibold border border-white/40 rounded px-1">Ctrl K</kbd>
+        </button>
       </div>
 
       <nav className="px-3 flex-1 overflow-y-auto">
@@ -14977,6 +15022,45 @@ export default function AdminPage() {
     setMobileSidebar(false);
     setCleNavigation((c) => c + 1);
   }, []);
+  // ── Recherche globale (Ctrl+K / Cmd+K) ──
+  const [rechercheOuverte, setRechercheOuverte] = useState(false);
+  useEffect(() => {
+    const touche = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setRechercheOuverte((o) => !o);
+      }
+    };
+    document.addEventListener("keydown", touche);
+    return () => document.removeEventListener("keydown", touche);
+  }, []);
+  const allerSection = useCallback((k: SectionKey) => {
+    setSection(k);
+    localStorage.setItem("admin_section", k);
+    setSelectedPlanning(null);
+    setMobileSidebar(false);
+    setCleNavigation((c) => c + 1);
+    window.scrollTo({ top: 0 });
+  }, []);
+  const allerRecherche = useCallback(async (r: ResultatRecherche) => {
+    setRechercheOuverte(false);
+    if (r.type === "section") { allerSection(r.key as SectionKey); return; }
+    if (r.type === "candidat") {
+      memoriserPlanning(r.planningId);
+      intentionCandidats = { planningId: r.planningId, tab: "liste", candidatId: r.id, recherche: r.nom };
+      allerSection("candidats");
+      return;
+    }
+    if (r.type === "examinateur") { intentionExaminateur = { id: r.id, nom: r.nom }; allerSection("examinateurs"); return; }
+    if (r.type === "surveillant") { intentionSurveillant = { nom: r.nom }; allerSection("surveillants"); return; }
+    // Planning : ouvert directement dans la section Planning
+    try {
+      const p = await get<Planning>(`plannings/${r.id}`);
+      allerSection("plannings");
+      setSelectedPlanning(p);
+    } catch { /* planning supprimé entre-temps : rien à ouvrir */ }
+  }, [allerSection]);
+
   const allerAffecter = useCallback((i: IntentionAffectation) => {
     intentionAffectation = i;
     const k = SECTION_AFFECTATION[i.manque];
@@ -14990,10 +15074,13 @@ export default function AdminPage() {
   return (
     <ToastProvider>
     <BackendWakingBanner />
+    {rechercheOuverte && (
+      <RechercheGlobale get={get} sections={SECTIONS_RECHERCHE} onChoisir={allerRecherche} onFermer={() => setRechercheOuverte(false)} />
+    )}
     <div className="flex min-h-screen bg-[#F5F5F5]">
       {/* Sidebar desktop */}
       <div className="hidden md:block h-screen sticky top-0">
-        <Sidebar active={section} onSelect={switchSection} nbConflits={nbConflits} onNotification={ouvrirNotification} />
+        <Sidebar active={section} onSelect={switchSection} nbConflits={nbConflits} onNotification={ouvrirNotification} onRecherche={() => setRechercheOuverte(true)} />
       </div>
 
       {/* Sidebar mobile overlay */}
@@ -15016,7 +15103,7 @@ export default function AdminPage() {
               transition={{ type: "spring", stiffness: 280, damping: 26 }}
               className="absolute left-0 top-0 h-full"
             >
-              <Sidebar active={section} onSelect={switchSection} nbConflits={nbConflits} onNotification={ouvrirNotification} />
+              <Sidebar active={section} onSelect={switchSection} nbConflits={nbConflits} onNotification={ouvrirNotification} onRecherche={() => { setMobileSidebar(false); setRechercheOuverte(true); }} />
             </motion.div>
           </motion.div>
         )}
