@@ -33,6 +33,10 @@ class NotificationOut(BaseModel):
 class NotificationsOut(BaseModel):
     non_lues: int
     notifications: List[NotificationOut]
+    # Deux onglets dans la cloche : alertes métier (liste d'attente…) et activité des admins
+    non_lues_metier: int = 0
+    non_lues_activite: int = 0
+    super_admin: bool = False  # l'onglet Activité n'existe que pour les super-admins
 
 
 def _maintenant() -> datetime:
@@ -50,18 +54,34 @@ def _visibles(db: Session, role: Optional[str], admin_id: Optional[str]) -> Requ
     return q
 
 
+def _categorie(q: RequeteSQL, categorie: Optional[str]) -> RequeteSQL:
+    """« activite » : alertes d'activité des admins ; « metier » : tout le reste ; sinon tout."""
+    if categorie == "activite":
+        return q.filter(NotificationAdmin.type == "ACTIVITE")
+    if categorie == "metier":
+        return q.filter(NotificationAdmin.type != "ACTIVITE")
+    return q
+
+
 @router.get("/", response_model=NotificationsOut)
 def lister(
     limite: int = Query(30, ge=1, le=200),
+    categorie: Optional[str] = Query(None, pattern="^(metier|activite)$"),
     x_admin_role: Optional[str] = Header(default=None),
     x_admin_id: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    """Les plus récentes d'abord, et le nombre de non lues."""
-    lignes = _visibles(db, x_admin_role, x_admin_id).order_by(NotificationAdmin.created_at.desc(), NotificationAdmin.id.desc()).limit(limite).all()
-    non_lues = _visibles(db, x_admin_role, x_admin_id).filter(NotificationAdmin.lue_le.is_(None)).count()
+    """Les plus récentes d'abord (d'une catégorie, ou toutes), et le nombre de non lues."""
+    visibles = lambda: _visibles(db, x_admin_role, x_admin_id)
+    lignes = _categorie(visibles(), categorie).order_by(NotificationAdmin.created_at.desc(), NotificationAdmin.id.desc()).limit(limite).all()
+    non_lues_q = lambda c: _categorie(visibles(), c).filter(NotificationAdmin.lue_le.is_(None)).count()
+    non_lues_metier = non_lues_q("metier")
+    non_lues_activite = non_lues_q("activite")
     return NotificationsOut(
-        non_lues=non_lues,
+        non_lues=non_lues_metier + non_lues_activite,
+        non_lues_metier=non_lues_metier,
+        non_lues_activite=non_lues_activite,
+        super_admin=x_admin_role == "super_admin",
         notifications=[
             NotificationOut(
                 id=n.id, date=n.created_at.replace(tzinfo=timezone.utc).isoformat(), type=n.type,
@@ -85,11 +105,12 @@ def marquer_lue(notification_id: int, db: Session = Depends(get_db)):
 
 @router.post("/tout-lu", status_code=204)
 def tout_marquer_lu(
+    categorie: Optional[str] = Query(None, pattern="^(metier|activite)$"),
     x_admin_role: Optional[str] = Header(default=None),
     x_admin_id: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),
 ):
-    _visibles(db, x_admin_role, x_admin_id).filter(NotificationAdmin.lue_le.is_(None)).update(
+    _categorie(_visibles(db, x_admin_role, x_admin_id), categorie).filter(NotificationAdmin.lue_le.is_(None)).update(
         {NotificationAdmin.lue_le: _maintenant()}, synchronize_session=False
     )
     db.commit()

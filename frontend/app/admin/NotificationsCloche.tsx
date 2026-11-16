@@ -19,7 +19,19 @@ export type NotificationAdmin = {
   nombre?: number; // action répétée, regroupée en une ligne
 };
 
-type Reponse = { non_lues: number; notifications: NotificationAdmin[] };
+type Reponse = {
+  non_lues: number; notifications: NotificationAdmin[];
+  non_lues_metier?: number; non_lues_activite?: number; super_admin?: boolean;
+};
+
+// Deux onglets : alertes sur les candidats (liste d'attente…) et, pour les super-admins,
+// activité des autres admins. Chaque onglet a sa propre liste, ses non lues et son
+// « Tout marquer comme lu ».
+type Onglet = "metier" | "activite";
+const ONGLETS: { k: Onglet; label: string }[] = [
+  { k: "metier", label: "Candidats" },
+  { k: "activite", label: "Activité des admins" },
+];
 
 const ACTUALISATION_MS = 60_000;
 
@@ -43,11 +55,12 @@ export default function NotificationsCloche({
 }) {
   const [donnees, setDonnees] = useState<Reponse>({ non_lues: 0, notifications: [] });
   const [ouvert, setOuvert] = useState(false);
+  const [onglet, setOnglet] = useState<Onglet>("metier");
   const ref = useRef<HTMLDivElement>(null);
 
   const charger = useCallback(() => {
-    get<Reponse>("notifications/").then(setDonnees).catch(() => {});
-  }, [get]);
+    get<Reponse>(`notifications/?categorie=${onglet}`).then(setDonnees).catch(() => {});
+  }, [get, onglet]);
 
   useEffect(() => {
     charger();
@@ -78,17 +91,27 @@ export default function NotificationsCloche({
   };
 
   const toutLu = async () => {
-    await post("notifications/tout-lu", {}).catch(() => {});
+    await post(`notifications/tout-lu?categorie=${onglet}`, {}).catch(() => {});
     charger();
   };
 
   const { non_lues, notifications } = donnees;
+  const nonLuesOnglet: Record<Onglet, number> = {
+    metier: donnees.non_lues_metier ?? non_lues,
+    activite: donnees.non_lues_activite ?? 0,
+  };
+  // Ouverture de la cloche : sur l'onglet qui a des non lues (Candidats en priorité)
+  const basculer = () => {
+    if (!ouvert && donnees.super_admin && !nonLuesOnglet.metier && nonLuesOnglet.activite) setOnglet("activite");
+    setOuvert((o) => !o);
+    if (!ouvert) charger();
+  };
 
   return (
     <div ref={ref} className="relative">
       <button
         type="button"
-        onClick={() => { setOuvert((o) => !o); if (!ouvert) charger(); }}
+        onClick={basculer}
         title={non_lues ? `${non_lues} notification${non_lues > 1 ? "s" : ""} non lue${non_lues > 1 ? "s" : ""}` : "Notifications"}
         aria-label="Notifications"
         className="relative h-9 w-9 grid place-items-center rounded-lg hover:bg-black/10 transition"
@@ -105,15 +128,38 @@ export default function NotificationsCloche({
         <div className="absolute bottom-full left-0 mb-2 w-80 max-h-[70vh] flex flex-col rounded-xl border border-black/10 bg-white text-gray-900 shadow-xl z-50">
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-black/10">
             <span className="text-sm font-semibold">Notifications</span>
-            {non_lues > 0 && (
+            {nonLuesOnglet[onglet] > 0 && (
               <button type="button" onClick={toutLu} className="text-xs font-medium text-[#C62828] hover:underline">
                 Tout marquer comme lu
               </button>
             )}
           </div>
+          {donnees.super_admin && (
+            <div className="flex border-b border-black/10 text-xs font-medium">
+              {ONGLETS.map(({ k, label }) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setOnglet(k)}
+                  className={`flex-1 px-3 py-2 transition border-b-2 -mb-px ${
+                    onglet === k ? "border-[#C62828] text-gray-900 font-semibold" : "border-transparent text-gray-700 hover:text-gray-900"
+                  }`}
+                >
+                  {label}
+                  {nonLuesOnglet[k] > 0 && (
+                    <span className="ml-1.5 inline-grid place-items-center min-w-[18px] h-[18px] px-1 rounded-full bg-amber-400 text-[10px] font-bold text-gray-900">
+                      {nonLuesOnglet[k] > 99 ? "99+" : nonLuesOnglet[k]}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="overflow-y-auto divide-y divide-black/5">
             {notifications.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-gray-700 text-center">Aucune notification</p>
+              <p className="px-4 py-6 text-sm text-gray-700 text-center">
+                {onglet === "activite" ? "Aucune activité des autres admins" : "Aucune notification"}
+              </p>
             ) : (
               notifications.map((n) => (
                 <button
