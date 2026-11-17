@@ -12,6 +12,7 @@ import Link from "next/link";
 import { CalendarCheck, CheckCircle, Clock, DoorOpen, Loader2, RefreshCw } from "lucide-react";
 import { RED, PageHeader, Alert } from "../_ui";
 import { BlocIncident, BoutonsPointage, etatPointage, heureArrivee, pointer } from "../_pointage";
+import { ContactsUtiles } from "../_contacts";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
 const RELECTURE_MS = 2 * 60_000;
@@ -298,6 +299,8 @@ export default function SurveillantAujourdhuiPage() {
           </>
         )}
       </div>
+
+      <ContactsUtiles className="mt-6" />
     </div>
   );
 }

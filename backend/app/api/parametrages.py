@@ -137,6 +137,18 @@ MESSAGE_TYPE_DEFAULTS = {
             "</ul>"
         ),
     },
+    # Pas un email — encadré « Contacts utiles » des pages Accueil et Aujourd'hui de
+    # l'espace surveillant (voir /surveillant/contacts). Modèle à compléter par l'admin.
+    "CONTACTS_SURVEILLANT": {
+        "sujet": "",
+        "corps_html": (
+            "<ul>"
+            "<li><strong>Responsable des oraux :</strong> Prénom Nom — 06 00 00 00 00</li>"
+            "<li><strong>Salle de coordination :</strong> salle …</li>"
+            "<li><strong>En cas d'urgence :</strong> …</li>"
+            "</ul>"
+        ),
+    },
 }
 
 

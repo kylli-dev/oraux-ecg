@@ -31,6 +31,7 @@ from app.models.candidat import Candidat
 from app.models.salle import Salle
 from app.models.planche import Planche
 from app.models.examinateur import Examinateur
+from app.models.message_type import MessageType
 from app.services.notifications import notifier_admins
 from zoneinfo import ZoneInfo
 
@@ -236,6 +237,18 @@ def mes_epreuves(
             incident_le=_iso_utc(ep.incident_le),
         ))
     return result
+
+
+@router.get("/contacts")
+def contacts_utiles(s: Surveillant = Depends(get_current_surveillant), db: Session = Depends(get_db)):
+    """Encadré « Contacts utiles » — éditable côté admin dans Paramétrages > Messages-type
+    (code CONTACTS_SURVEILLANT)."""
+    from app.api.parametrages import MESSAGE_TYPE_DEFAULTS
+    mt = db.query(MessageType).filter_by(code="CONTACTS_SURVEILLANT").first()
+    # Modèle pas encore complété par l'admin : rien à afficher
+    if not mt or mt.corps_html == MESSAGE_TYPE_DEFAULTS["CONTACTS_SURVEILLANT"]["corps_html"]:
+        return {"corps_html": ""}
+    return {"corps_html": mt.corps_html}
 
 
 # ── Changements depuis la dernière visite ─────────────────────────────────────

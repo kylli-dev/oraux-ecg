@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CalendarCheck, CalendarRange, ChevronRight, KeyRound, ListChecks, Mail } from "lucide-react";
 import { RED, PageLoader } from "../_ui";
+import { ContactsUtiles } from "../_contacts";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
 
@@ -164,6 +165,8 @@ export default function SurveillantAccueilPage() {
           <ChevronRight className="h-5 w-5 shrink-0 transition group-hover:translate-x-0.5" />
         </Link>
       )}
+
+      <ContactsUtiles className="mb-6" />
 
       {/* ── Accès rapides ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

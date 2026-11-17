@@ -178,11 +178,12 @@ const MESSAGE_LABELS: Record<string, string> = {
   PLACE_LIBEREE:     "Place libérée (liste d'attente, envoi manuel)",
   PUBLICATION_NOTES: "Publication des notes",
   CONSIGNES_ACCUEIL: "Consignes importantes (page d'accueil candidat)",
+  CONTACTS_SURVEILLANT: "Contacts utiles (espace surveillant)",
 };
 
 // Codes qui ne sont pas des emails (pas de "Sujet") — juste du contenu affiché tel quel
-// sur une page du portail candidat.
-const MESSAGE_NON_EMAIL_CODES = new Set(["CONSIGNES_ACCUEIL"]);
+// sur une page du portail candidat ou de l'espace surveillant.
+const MESSAGE_NON_EMAIL_CODES = new Set(["CONSIGNES_ACCUEIL", "CONTACTS_SURVEILLANT"]);
 
 // ── ReferentielSection : générique Matières / Salles ──────────────────────────
 type ReferentielItem = { id: number; intitule: string; active: boolean };
@@ -744,7 +745,9 @@ export function ParametragesSection() {
 
               {MESSAGE_NON_EMAIL_CODES.has(selected.code) ? (
                 <div className="rounded-lg bg-blue-50 border border-blue-100 px-4 py-3 text-xs text-blue-700">
-                  Ce n&apos;est pas un email : ce contenu s&apos;affiche tel quel dans un encadré du portail candidat — pas de sujet ni de variables ici.
+                  {selected.code === "CONTACTS_SURVEILLANT"
+                    ? "Ce n'est pas un email : ce contenu s'affiche dans l'encadré « Contacts utiles » des pages Accueil et Aujourd'hui de l'espace surveillant. Les numéros de téléphone y deviennent cliquables (appel direct sur mobile). Tant que le modèle n'est pas complété, ou s'il est vidé, l'encadré n'apparaît pas."
+                    : "Ce n'est pas un email : ce contenu s'affiche tel quel dans un encadré du portail candidat — pas de sujet ni de variables ici."}
                 </div>
               ) : (
                 <Field label="Sujet de l'email">
