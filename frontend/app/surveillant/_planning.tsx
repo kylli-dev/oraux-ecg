@@ -11,7 +11,7 @@ import {
   CalendarRange, User, FileText, ChevronLeft, ChevronRight, X,
 } from "lucide-react";
 import { RED, PageHeader, Alert } from "./_ui";
-import { EmploiDuTemps, type CreneauEdt, type LegendeEdt } from "../_espace/EmploiDuTemps";
+import { EmploiDuTemps, type CreneauEdt, type LegendeEdt, type TeinteEdt } from "../_espace/EmploiDuTemps";
 import { BlocIncident, BoutonsPointage, etatPointage, heureArrivee, pointer } from "./_pointage";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
@@ -55,25 +55,23 @@ function heurePrepa(heure_debut: string, prep_min: number): string {
 }
 
 // ── Vue « Emploi du temps » (composant partagé : app/_espace/EmploiDuTemps.tsx) ──
-function styleBloc(ep: Pick<Epreuve, "candidat_id" | "statut" | "presence_le">): React.CSSProperties {
-  if (!ep.candidat_id) return { backgroundColor: "#FFFFFF", borderColor: "#9CA3AF", borderStyle: "dashed" };
-  if (ep.statut === "ABSENT") return { backgroundColor: "#FFFBEB", borderColor: "#B45309" };
-  if (ep.presence_le) return { backgroundColor: "#F0FDF4", borderColor: "#15803D" };
-  return { backgroundColor: RED + "12", borderColor: RED };
-}
+const TEINTES: Record<"attendu" | "present" | "absent" | "libre", TeinteEdt> = {
+  attendu: { fond: "#FDF2F2", barre: RED },
+  present: { fond: "#F0FDF4", barre: "#16A34A" },
+  absent: { fond: "#FFFBEB", barre: "#D97706" },
+  libre: { fond: "#FFFFFF", barre: "#9CA3AF" },
+};
 
 const LEGENDE_EDT: LegendeEdt[] = [
-  { label: "Candidat attendu", style: styleBloc({ candidat_id: 1, statut: "" }) },
-  { label: "Présent", style: styleBloc({ candidat_id: 1, statut: "", presence_le: "x" }) },
-  { label: "Absent", style: styleBloc({ candidat_id: 1, statut: "ABSENT" }) },
-  { label: "Créneau libre", style: styleBloc({ candidat_id: null, statut: "" }) },
+  { label: "Candidat attendu", teinte: TEINTES.attendu },
+  { label: "Présent", teinte: TEINTES.present },
+  { label: "Absent", teinte: TEINTES.absent },
+  { label: "Créneau libre", teinte: TEINTES.libre, libre: true },
 ];
 
 function versCreneauEdt(ep: Epreuve): CreneauEdt {
-  const nom = ep.candidat_id
-    ? `${ep.candidat_prenom ?? ""} ${ep.candidat_nom ?? ""}`.trim()
-      + (ep.statut === "ABSENT" ? " (absent)" : ep.presence_le ? ` (arrivé ${heureArrivee(ep)})` : "")
-    : "Créneau libre";
+  const nom = ep.candidat_id ? `${ep.candidat_prenom ?? ""} ${ep.candidat_nom ?? ""}`.trim() : "Créneau libre";
+  const etat = !ep.candidat_id ? "libre" : ep.statut === "ABSENT" ? "absent" : ep.presence_le ? "present" : "attendu";
   return {
     id: ep.id,
     date: ep.date,
@@ -81,11 +79,17 @@ function versCreneauEdt(ep: Epreuve): CreneauEdt {
     heure_fin: ep.heure_fin,
     preparation_minutes: ep.preparation_minutes,
     titre: nom,
-    detail: ep.incident ? `${ep.matiere} · ⚠ incident` : ep.matiere,
+    detail: ep.matiere,
+    badge:
+      etat === "present" ? { texte: `✓ ${heureArrivee(ep)}`, couleur: "#166534", fond: "#DCFCE7" }
+      : etat === "absent" ? { texte: "Absent", couleur: "#92400E", fond: "#FEF3C7" }
+      : null,
+    alerte: ep.incident ? `Incident : ${ep.incident}` : null,
     salle: ep.salle_intitule,
-    libre: !ep.candidat_id,
-    infobulle: `${ep.heure_debut} – ${ep.heure_fin} · ${ep.matiere} · ${nom}${ep.salle_intitule ? ` · Salle ${ep.salle_intitule}` : ""}`,
-    style: styleBloc(ep),
+    libre: etat === "libre",
+    infobulle: `${ep.heure_debut} – ${ep.heure_fin} · ${ep.matiere} · ${nom}${ep.salle_intitule ? ` · Salle ${ep.salle_intitule}` : ""}`
+      + (etat === "present" ? ` · arrivé à ${heureArrivee(ep)}` : etat === "absent" ? " · absent" : ""),
+    teinte: TEINTES[etat],
   };
 }
 

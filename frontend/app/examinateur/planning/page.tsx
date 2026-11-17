@@ -7,7 +7,7 @@ import {
   CalendarDays, MapPin, Search, Users, BarChart3, List, CalendarRange,
 } from "lucide-react";
 import { RED, PageHeader, Alert } from "../_ui";
-import { EmploiDuTemps, type CreneauEdt, type LegendeEdt } from "../../_espace/EmploiDuTemps";
+import { EmploiDuTemps, type CreneauEdt, type LegendeEdt, type TeinteEdt } from "../../_espace/EmploiDuTemps";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
 
@@ -88,18 +88,25 @@ function heurePrepa(heure_debut: string, prep_min: number): string {
 }
 
 // ── Vue « Emploi du temps » (composant partagé : app/_espace/EmploiDuTemps.tsx) ──
-function styleBloc(ep: Pick<Epreuve, "candidat_id" | "note_statut">): React.CSSProperties {
-  if (!ep.candidat_id) return { backgroundColor: "#FFFFFF", borderColor: "#9CA3AF", borderStyle: "dashed" };
-  if (isLocked(ep.note_statut)) return { backgroundColor: "#F0FDF4", borderColor: "#15803D" };
-  if (ep.note_statut === "BROUILLON") return { backgroundColor: "#F3F4F6", borderColor: "#4B5563" };
-  return { backgroundColor: RED + "12", borderColor: RED };
+const TEINTES: Record<"anoter" | "brouillon" | "valide" | "libre", TeinteEdt> = {
+  anoter: { fond: "#FDF2F2", barre: RED },
+  brouillon: { fond: "#F3F4F6", barre: "#4B5563" },
+  valide: { fond: "#F0FDF4", barre: "#16A34A" },
+  libre: { fond: "#FFFFFF", barre: "#9CA3AF" },
+};
+
+function etatBloc(ep: Pick<Epreuve, "candidat_id" | "note_statut">): keyof typeof TEINTES {
+  if (!ep.candidat_id) return "libre";
+  if (isLocked(ep.note_statut)) return "valide";
+  if (ep.note_statut === "BROUILLON") return "brouillon";
+  return "anoter";
 }
 
 const LEGENDE_EDT: LegendeEdt[] = [
-  { label: "À noter", style: styleBloc({ candidat_id: 1, note_statut: null }) },
-  { label: "Brouillon", style: styleBloc({ candidat_id: 1, note_statut: "BROUILLON" }) },
-  { label: "Note validée", style: styleBloc({ candidat_id: 1, note_statut: "VALIDE" }) },
-  { label: "Sans candidat", style: styleBloc({ candidat_id: null, note_statut: null }) },
+  { label: "À noter", teinte: TEINTES.anoter },
+  { label: "Brouillon", teinte: TEINTES.brouillon },
+  { label: "Note validée", teinte: TEINTES.valide },
+  { label: "Sans candidat", teinte: TEINTES.libre, libre: true },
 ];
 
 function versCreneauEdt(ep: Epreuve): CreneauEdt {
@@ -114,10 +121,14 @@ function versCreneauEdt(ep: Epreuve): CreneauEdt {
     preparation_minutes: ep.preparation_minutes,
     titre: nom,
     detail: ep.matiere,
+    badge:
+      etatBloc(ep) === "valide" ? { texte: "✓ Noté", couleur: "#166534", fond: "#DCFCE7" }
+      : etatBloc(ep) === "brouillon" ? { texte: "Brouillon", couleur: "#374151", fond: "#E5E7EB" }
+      : null,
     salle: ep.salle_intitule,
     libre: !ep.candidat_id,
     infobulle: `${ep.heure_debut} – ${ep.heure_fin} · ${ep.matiere} · ${nom}${ep.salle_intitule ? ` · Salle ${ep.salle_intitule}` : ""}`,
-    style: styleBloc(ep),
+    teinte: TEINTES[etatBloc(ep)],
   };
 }
 

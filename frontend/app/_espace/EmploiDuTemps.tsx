@@ -11,21 +11,26 @@ import { useEffect, useRef, useState } from "react";
 import { CalendarRange, ChevronLeft, ChevronRight, DoorOpen, Maximize2, Minimize2 } from "lucide-react";
 import { RED } from "./ui";
 
+// Couleurs d'un bloc : fond doux et barre verticale à gauche
+export type TeinteEdt = { fond: string; barre: string };
+
 export type CreneauEdt = {
   id: number;
   date: string;
   heure_debut: string;
   heure_fin: string;
   preparation_minutes: number | null;
-  titre: string;
-  detail?: string | null;
+  titre: string; // nom du candidat (ou « Créneau libre »)
+  detail?: string | null; // affiché après l'horaire (matière)
+  badge?: { texte: string; couleur: string; fond: string } | null; // état, à droite du nom
+  alerte?: string | null; // ⚠ à côté du nom (incident), texte en infobulle
   infobulle: string;
-  style: React.CSSProperties;
+  teinte: TeinteEdt;
   salle: string | null; // colonne du créneau
   libre: boolean; // pas de candidat
 };
 
-export type LegendeEdt = { label: string; style: React.CSSProperties };
+export type LegendeEdt = { label: string; teinte: TeinteEdt; libre?: boolean };
 
 // 2,6 px/min ≈ 156 px par heure : un passage de 30 min (78 px) affiche en entier son
 // heure, son candidat, son détail et sa préparation.
@@ -260,10 +265,13 @@ export function EmploiDuTemps({
         </button>
       </div>
       <div className={`flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-gray-900 ${pleinEcran ? "mb-3" : "px-4 pb-3"}`}>
-        {/* Entrée « créneau libre » (bordure en pointillés) seulement quand ils sont affichés */}
-        {legende.filter((l) => libres || l.style.borderStyle !== "dashed").map((l) => (
+        {/* Entrée « créneau libre » seulement quand ils sont affichés */}
+        {legende.filter((l) => libres || !l.libre).map((l) => (
           <span key={l.label} className="flex items-center gap-1.5">
-            <span className="h-3.5 w-3.5 rounded border border-l-4" style={l.style} />
+            <span
+              className={`h-3.5 w-4 rounded-sm ${l.libre ? "border border-dashed border-gray-400" : ""}`}
+              style={{ backgroundColor: l.teinte.fond, boxShadow: `inset 3px 0 0 ${l.teinte.barre}` }}
+            />
             {l.label}
           </span>
         ))}
@@ -327,27 +335,40 @@ export function EmploiDuTemps({
                           <button
                             key={c.id}
                             onClick={() => { if (pleinEcran) quitterPleinEcran(); onSelect(c.id); }}
-                            className="absolute rounded-lg border border-l-4 px-2.5 py-1.5 text-left overflow-hidden text-gray-900 shadow-sm transition hover:shadow-md hover:z-10 focus:outline-none focus-visible:ring-2"
+                            className={`absolute rounded-md pl-3 pr-2 text-left overflow-hidden text-gray-900 transition hover:brightness-[0.97] hover:z-10 focus:outline-none focus-visible:ring-2 ${
+                              h >= 40 ? "py-1.5" : "py-0.5"
+                            } ${c.libre ? "border border-dashed border-gray-300" : ""}`}
                             style={{
-                              top: (d - debut) * pxParMin + 1,
-                              height: h - 2,
-                              left: `calc(${(voie / nbVoies) * 100}% + 4px)`,
-                              width: `calc(${100 / nbVoies}% - 8px)`,
+                              top: (d - debut) * pxParMin + 2,
+                              height: h - 4,
+                              left: `calc(${(voie / nbVoies) * 100}% + 6px)`,
+                              width: `calc(${100 / nbVoies}% - 12px)`,
+                              backgroundColor: c.teinte.fond,
+                              boxShadow: `inset 3px 0 0 ${c.teinte.barre}`,
                               "--tw-ring-color": RED,
-                              ...c.style,
                             } as React.CSSProperties}
                             title={c.infobulle}
                           >
-                            <span className="flex items-baseline gap-1.5 leading-tight">
-                              <span className="text-sm font-bold tabular-nums">{c.heure_debut}</span>
-                              <span className="text-xs text-gray-700 tabular-nums">→ {c.heure_fin}</span>
+                            <span className="flex items-center gap-1.5 min-w-0">
+                              {h < 40 && <span className="text-xs font-semibold tabular-nums shrink-0">{c.heure_debut}</span>}
+                              <span className={`text-sm truncate ${c.libre ? "text-gray-700" : "font-semibold"}`}>{c.titre}</span>
+                              {c.alerte && <span className="text-xs shrink-0" title={c.alerte}>⚠</span>}
+                              {c.badge && (
+                                <span
+                                  className="ml-auto shrink-0 rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums"
+                                  style={{ color: c.badge.couleur, backgroundColor: c.badge.fond }}
+                                >
+                                  {c.badge.texte}
+                                </span>
+                              )}
                             </span>
-                            {h >= 44 && <span className="block text-sm font-semibold truncate leading-snug mt-0.5">{c.titre}</span>}
-                            {h >= 62 && c.detail && (
-                              <span className="block text-xs text-gray-800 truncate leading-tight">{c.detail}</span>
+                            {h >= 40 && (
+                              <span className="block text-xs text-gray-700 tabular-nums truncate mt-0.5">
+                                {c.heure_debut} – {c.heure_fin}{c.detail ? ` · ${c.detail}` : ""}
+                              </span>
                             )}
-                            {h >= 76 && prep > 0 && (
-                              <span className="block text-[11px] text-gray-700 truncate leading-tight mt-0.5">
+                            {h >= 70 && prep > 0 && (
+                              <span className="block text-[11px] text-gray-700 tabular-nums truncate mt-0.5">
                                 Préparation dès {enHeure(d - prep)}
                               </span>
                             )}
