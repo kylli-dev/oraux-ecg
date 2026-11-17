@@ -2,6 +2,7 @@
 Portail surveillant : accès via code_acces, consultation planning, marquage absences.
 """
 import io
+import json
 from datetime import date as Date, datetime, timezone
 from typing import List, Optional
 
@@ -235,6 +236,104 @@ def mes_epreuves(
             incident_le=_iso_utc(ep.incident_le),
         ))
     return result
+
+
+# ── Changements depuis la dernière visite ─────────────────────────────────────
+
+class ChangementOut(BaseModel):
+    date: Date
+    heure: str
+    matiere: str
+    type: str  # "ajoute" | "retire" | "modifie"
+    details: List[str] = []
+
+
+class ChangementsOut(BaseModel):
+    changements: List[ChangementOut]
+
+
+def _photo_affectations(s: Surveillant, db: Session) -> dict:
+    """Ce qui compte pour le surveillant sur chacun de ses créneaux, par id d'épreuve."""
+    SallePrep = aliased(Salle)
+    rows = (
+        db.query(Epreuve, DemiJournee, Candidat, Salle, SallePrep)
+        .join(DemiJournee, Epreuve.demi_journee_id == DemiJournee.id)
+        .outerjoin(Candidat, Epreuve.candidat_id == Candidat.id)
+        .outerjoin(Salle, Epreuve.salle_id == Salle.id)
+        .outerjoin(SallePrep, Epreuve.salle_preparation_id == SallePrep.id)
+        .filter(Epreuve.surveillant_id == s.id)
+        .all()
+    )
+    return {
+        str(ep.id): {
+            "date": dj.date.isoformat(),
+            "heure": str(ep.heure_debut)[:5],
+            "matiere": ep.matiere,
+            "salle": salle.intitule if salle else None,
+            "prepa": salle_prep.intitule if salle_prep else None,
+            "candidat": f"{c.prenom} {c.nom}".strip() if c else None,
+        }
+        for ep, dj, c, salle, salle_prep in rows
+    }
+
+
+_LIBELLES = [("date", "date"), ("heure", "horaire"), ("salle", "salle"), ("prepa", "salle de préparation"), ("candidat", "candidat")]
+
+
+def _difference(avant: dict, apres: dict) -> List[ChangementOut]:
+    """Créneaux ajoutés, retirés ou modifiés, à partir d'aujourd'hui (heure de Paris)."""
+    aujourdhui = datetime.now(PARIS).date().isoformat()
+    ajoutes = {k: v for k, v in apres.items() if k not in avant}
+    retires = {k: v for k, v in avant.items() if k not in apres}
+    paires = [(avant[k], apres[k]) for k in apres if k in avant]
+    # Créneau recréé (gabarit réappliqué…) : même date, heure et matière → modification
+    for k, v in list(ajoutes.items()):
+        jumeau = next((kr for kr, vr in retires.items()
+                       if (vr["date"], vr["heure"], vr["matiere"]) == (v["date"], v["heure"], v["matiere"])), None)
+        if jumeau:
+            paires.append((retires.pop(jumeau), ajoutes.pop(k)))
+
+    out: List[ChangementOut] = []
+    for a, b in paires:
+        if max(a["date"], b["date"]) < aujourdhui:
+            continue
+        details = []
+        for cle, libelle in _LIBELLES:
+            if a.get(cle) != b.get(cle):
+                if cle == "date":
+                    av, ap = (Date.fromisoformat(x).strftime("%d/%m") for x in (a[cle], b[cle]))
+                else:
+                    av, ap = a.get(cle) or "—", b.get(cle) or "—"
+                details.append(f"{libelle} : {av} → {ap}")
+        if details:
+            out.append(ChangementOut(date=Date.fromisoformat(b["date"]), heure=b["heure"], matiere=b["matiere"], type="modifie", details=details))
+    for v, typ in [(v, "ajoute") for v in ajoutes.values()] + [(v, "retire") for v in retires.values()]:
+        if v["date"] >= aujourdhui:
+            out.append(ChangementOut(date=Date.fromisoformat(v["date"]), heure=v["heure"], matiere=v["matiere"], type=typ))
+    out.sort(key=lambda c: (c.date, c.heure))
+    return out
+
+
+@router.get("/me/changements", response_model=ChangementsOut)
+def mes_changements(s: Surveillant = Depends(get_current_surveillant), db: Session = Depends(get_db)):
+    """Ce qui a changé dans ses créneaux depuis qu'il a cliqué « J'ai pris connaissance ».
+    Première visite : la photo actuelle devient la référence, rien n'est signalé."""
+    actuel = _photo_affectations(s, db)
+    if not s.affectations_vues:
+        s.affectations_vues = json.dumps(actuel)
+        db.commit()
+        return ChangementsOut(changements=[])
+    try:
+        avant = json.loads(s.affectations_vues)
+    except ValueError:
+        avant = actuel
+    return ChangementsOut(changements=_difference(avant, actuel))
+
+
+@router.post("/me/changements/vu", status_code=204)
+def changements_vus(s: Surveillant = Depends(get_current_surveillant), db: Session = Depends(get_db)):
+    s.affectations_vues = json.dumps(_photo_affectations(s, db))
+    db.commit()
 
 
 @router.post("/me/epreuves/{epreuve_id}/marquer-absent", status_code=204)

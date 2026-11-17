@@ -235,6 +235,7 @@ def _run_migrations():
         "ALTER TABLE epreuve ADD COLUMN incident TEXT",
         "ALTER TABLE epreuve ADD COLUMN incident_le TIMESTAMP",
         "ALTER TABLE epreuve ADD COLUMN incident_par VARCHAR(150)",
+        "ALTER TABLE surveillant ADD COLUMN affectations_vues TEXT",
         # Monitoring : précision lisible de l'action (ex. gabarit appliqué et date)
         "ALTER TABLE audit_log ADD COLUMN detail VARCHAR(300)",
         # Notifications : alertes d'activité réservées aux super-admins

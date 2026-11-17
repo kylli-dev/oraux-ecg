@@ -1,6 +1,6 @@
 import secrets
 from typing import Optional
-from sqlalchemy import String, Boolean, DateTime
+from sqlalchemy import String, Boolean, DateTime, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -29,3 +29,7 @@ class Surveillant(Base):
     # « Mot de passe oublié » : lien envoyé par email (valable 30 min, usage unique)
     reset_token: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     reset_token_expires_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Ses créneaux tels qu'il les a vus la dernière fois (JSON) : sert au bandeau
+    # « Votre planning a changé » quand un admin modifie une affectation après coup
+    affectations_vues: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
