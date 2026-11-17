@@ -33,7 +33,7 @@ const actions = [
     href: "/surveillant/planning",
     icon: <ListChecks className="h-5 w-5" />,
     label: "Liste & présences",
-    desc: "Vos créneaux un par un, pour enregistrer les absences.",
+    desc: "Vos créneaux un par un, pour pointer les présents et les absents.",
   },
   {
     href: "/surveillant/emploi-du-temps",
@@ -90,13 +90,17 @@ export default function SurveillantAccueilPage() {
     .filter((e) => enMin(e.heure_fin) > minutes)
     .sort((a, b) => a.heure_debut.localeCompare(b.heure_debut))[0];
 
+  // Résumé limité aux créneaux avec un candidat (les créneaux vides ne demandent rien
+  // au surveillant) ; « à venir » = pas encore terminé à l'heure qu'il est
   let resume: { label: string; valeur: string }[] | null = null;
   if (epreuves) {
-    const prochaine = [...new Set(epreuves.map((e) => e.date))].sort().find((d) => d >= today);
+    const avecCandidat = epreuves.filter((e) => e.candidat_id);
+    const aVenir = avecCandidat.filter((e) => e.date > today || (e.date === today && enMin(e.heure_fin) > minutes));
+    const prochaine = aVenir.map((e) => e.date).sort()[0];
     resume = [
-      { label: "Créneaux", valeur: String(epreuves.length) },
-      { label: "Candidats attendus", valeur: String(epreuves.filter((e) => e.candidat_id).length) },
-      { label: "Prochaine journée", valeur: prochaine ? formatDate(prochaine) : "—" },
+      { label: "Candidats à venir", valeur: String(aVenir.length) },
+      { label: "Candidats déjà passés", valeur: String(avecCandidat.length - aVenir.length) },
+      { label: "Prochain passage", valeur: prochaine ? (prochaine === today ? "aujourd'hui" : formatDate(prochaine)) : "aucun prévu" },
     ];
   }
 
