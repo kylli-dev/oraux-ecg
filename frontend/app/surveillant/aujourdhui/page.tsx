@@ -287,7 +287,7 @@ export default function SurveillantAujourdhuiPage() {
                         <span className="text-xs font-semibold text-green-800">Arrivé {heureArrivee(e)}</span>
                       )}
                       {e.incident && (
-                        <span className="text-xs font-semibold text-amber-800" title={e.incident}>⚠ Incident</span>
+                        <span className="text-xs font-semibold" style={{ color: RED }} title={e.incident}>⚠ Incident</span>
                       )}
                       {e.candidat_id ? boutonsPointage(e) : null}
                     </div>

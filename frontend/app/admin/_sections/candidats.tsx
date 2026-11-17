@@ -1019,13 +1019,13 @@ function CandidatGestionDrawer({
                     <p className="text-[10px] font-semibold text-gray-700 uppercase tracking-wide mb-2">Incidents signalés</p>
                     <div className="flex flex-col gap-1.5">
                       {(fiche.incidents ?? []).map((i) => (
-                        <div key={i.epreuve_id} className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-950">
+                        <div key={i.epreuve_id} className="rounded-lg border border-black/15 bg-white px-2.5 py-1.5 text-xs text-gray-900">
                           <p className="font-semibold">
                             {i.matiere} · {new Date(i.date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })} à {i.heure_debut}
                           </p>
                           <p className="whitespace-pre-line mt-0.5">{i.texte}</p>
                           {i.signale_par && (
-                            <p className="text-[10px] text-amber-900 mt-0.5">
+                            <p className="text-[10px] text-gray-700 mt-0.5">
                               Signalé par {i.signale_par}
                               {i.signale_le && ` le ${new Date(i.signale_le).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`}
                             </p>

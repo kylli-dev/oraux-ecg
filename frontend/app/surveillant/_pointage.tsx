@@ -7,6 +7,7 @@
 
 import { useState } from "react";
 import { AlertTriangle, Loader2, UserCheck, UserX } from "lucide-react";
+import { RED, inputClass, inputStyle } from "./_ui";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
 
@@ -136,8 +137,8 @@ export function BlocIncident({ epreuve, onEnregistre }: { epreuve: EpreuvePointa
 
   if (edition) {
     return (
-      <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-2">
-        <label className="block text-xs font-semibold text-amber-900">Incident sur ce créneau</label>
+      <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 space-y-2">
+        <label className="block text-xs font-semibold text-gray-900">Incident sur ce créneau</label>
         <textarea
           value={texte}
           onChange={(e) => setTexte(e.target.value)}
@@ -145,25 +146,27 @@ export function BlocIncident({ epreuve, onEnregistre }: { epreuve: EpreuvePointa
           rows={3}
           autoFocus
           placeholder="Ex. arrivé avec 10 min de retard, pièce d'identité manquante, malaise pendant l'épreuve…"
-          className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-amber-400"
+          className={`${inputClass} resize-y`}
+          style={inputStyle}
         />
         {erreur && <p className="text-xs font-medium text-red-700">{erreur}</p>}
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => valider(texte)}
             disabled={envoi || !texte.trim()}
-            className="h-9 px-4 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 transition disabled:opacity-50 inline-flex items-center gap-1.5"
+            className="h-9 px-4 rounded-lg text-white text-sm font-semibold shadow-sm transition hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-1.5"
+            style={{ backgroundColor: RED }}
           >
             {envoi && <Loader2 className="h-4 w-4 animate-spin" />}
             Enregistrer et prévenir l&apos;admin
           </button>
           <button
             onClick={() => { setEdition(false); setTexte(epreuve.incident ?? ""); setErreur(""); }}
-            className="h-9 px-3 rounded-lg text-sm font-medium text-gray-900 hover:bg-amber-100 transition"
+            className="h-9 px-3 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-900 hover:bg-gray-100 transition"
           >
             Annuler
           </button>
-          <span className="ml-auto text-[11px] text-amber-900 tabular-nums">{texte.length} / 1000</span>
+          <span className="ml-auto text-[11px] text-gray-700 tabular-nums">{texte.length} / 1000</span>
         </div>
       </div>
     );
@@ -174,19 +177,19 @@ export function BlocIncident({ epreuve, onEnregistre }: { epreuve: EpreuvePointa
       ? new Date(epreuve.incident_le).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
       : null;
     return (
-      <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-950">
+      <div className="rounded-xl border border-gray-200 border-l-4 bg-white px-3 py-2.5 text-sm text-gray-900" style={{ borderLeftColor: RED }}>
         <p className="flex items-start gap-1.5">
-          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-700" />
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" style={{ color: RED }} />
           <span className="min-w-0 whitespace-pre-line">
             <strong>Incident{quand ? ` (signalé à ${quand})` : ""} :</strong> {epreuve.incident}
           </span>
         </p>
         {erreur && <p className="mt-1 text-xs font-medium text-red-700">{erreur}</p>}
         <div className="mt-1.5 flex gap-3 pl-5">
-          <button onClick={() => { setTexte(epreuve.incident ?? ""); setEdition(true); }} className="text-xs font-semibold underline underline-offset-2">
+          <button onClick={() => { setTexte(epreuve.incident ?? ""); setEdition(true); }} className="text-xs font-semibold underline underline-offset-2" style={{ color: RED }}>
             Modifier
           </button>
-          <button onClick={() => valider("")} disabled={envoi} className="text-xs font-semibold underline underline-offset-2 disabled:opacity-50">
+          <button onClick={() => valider("")} disabled={envoi} className="text-xs font-semibold text-gray-800 underline underline-offset-2 disabled:opacity-50">
             Retirer
           </button>
         </div>
@@ -197,7 +200,7 @@ export function BlocIncident({ epreuve, onEnregistre }: { epreuve: EpreuvePointa
   return (
     <button
       onClick={() => { setTexte(""); setEdition(true); }}
-      className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-800 hover:text-amber-800 transition"
+      className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-800 hover:text-[#C62828] transition"
     >
       <AlertTriangle className="h-4 w-4" />
       Signaler un incident
