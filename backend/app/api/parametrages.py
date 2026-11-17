@@ -2,6 +2,7 @@
 Paramétrages admin : messages-type et réinitialisation des mots de passe.
 """
 import secrets
+from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -244,6 +245,7 @@ def update_message_type(
         raise HTTPException(status_code=404, detail="Message-type introuvable")
     mt.sujet = body.sujet
     mt.corps_html = body.corps_html
+    mt.enregistre_le = datetime.now(timezone.utc)
     db.commit()
     db.refresh(mt)
     return mt

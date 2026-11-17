@@ -243,10 +243,9 @@ def mes_epreuves(
 def contacts_utiles(s: Surveillant = Depends(get_current_surveillant), db: Session = Depends(get_db)):
     """Encadré « Contacts utiles » — éditable côté admin dans Paramétrages > Messages-type
     (code CONTACTS_SURVEILLANT)."""
-    from app.api.parametrages import MESSAGE_TYPE_DEFAULTS
     mt = db.query(MessageType).filter_by(code="CONTACTS_SURVEILLANT").first()
-    # Modèle pas encore complété par l'admin : rien à afficher
-    if not mt or mt.corps_html == MESSAGE_TYPE_DEFAULTS["CONTACTS_SURVEILLANT"]["corps_html"]:
+    # Modèle jamais enregistré par un admin : rien à afficher
+    if not mt or not mt.enregistre_le:
         return {"corps_html": ""}
     return {"corps_html": mt.corps_html}
 

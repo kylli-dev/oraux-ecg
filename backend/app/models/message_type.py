@@ -1,3 +1,4 @@
+from typing import Optional
 from sqlalchemy import String, Text, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -33,3 +34,8 @@ class MessageType(Base):
     updated_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+    # Dernier clic « Enregistrer » d'un admin (None = valeur par défaut jamais validée).
+    # Sert aux contenus affichés sur une page (Contacts utiles) : rien n'est montré tant
+    # qu'un admin n'a pas validé le modèle, même s'il l'enregistre sans le modifier.
+    enregistre_le: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)

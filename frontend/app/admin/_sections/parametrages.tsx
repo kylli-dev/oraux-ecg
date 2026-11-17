@@ -746,7 +746,7 @@ export function ParametragesSection() {
               {MESSAGE_NON_EMAIL_CODES.has(selected.code) ? (
                 <div className="rounded-lg bg-blue-50 border border-blue-100 px-4 py-3 text-xs text-blue-700">
                   {selected.code === "CONTACTS_SURVEILLANT"
-                    ? "Ce n'est pas un email : ce contenu s'affiche dans l'encadré « Contacts utiles » des pages Accueil et Aujourd'hui de l'espace surveillant. Les numéros de téléphone y deviennent cliquables (appel direct sur mobile). Tant que le modèle n'est pas complété, ou s'il est vidé, l'encadré n'apparaît pas."
+                    ? "Ce n'est pas un email : ce contenu s'affiche dans l'encadré « Contacts utiles » des pages Accueil et Aujourd'hui de l'espace surveillant. Les numéros de téléphone y deviennent cliquables (appel direct sur mobile). L'encadré apparaît dès le premier clic sur « Enregistrer » ; videz le message pour le masquer."
                     : "Ce n'est pas un email : ce contenu s'affiche tel quel dans un encadré du portail candidat — pas de sujet ni de variables ici."}
                 </div>
               ) : (
