@@ -10,7 +10,7 @@ from app.services.monitoring import signaler_acteur
 from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, aliased
 
 from app.core.auth import (
@@ -30,6 +30,7 @@ from app.models.candidat import Candidat
 from app.models.salle import Salle
 from app.models.planche import Planche
 from app.models.examinateur import Examinateur
+from app.services.notifications import notifier_admins
 from zoneinfo import ZoneInfo
 
 PARIS = ZoneInfo("Europe/Paris")
@@ -90,6 +91,12 @@ class EpreuveSurveillant(BaseModel):
     examinateur_nom: Optional[str] = None
     examinateur_prenom: Optional[str] = None
     presence_le: Optional[str] = None  # heure d'arrivée pointée (ISO UTC), None si pas pointé
+    incident: Optional[str] = None
+    incident_le: Optional[str] = None  # ISO UTC
+
+
+class IncidentIn(BaseModel):
+    texte: str = Field(default="", max_length=1000)  # vide = retirer l'incident
 
 
 def _iso_utc(dt) -> Optional[str]:
@@ -224,6 +231,8 @@ def mes_epreuves(
             examinateur_nom=exam.nom if exam else None,
             examinateur_prenom=exam.prenom if exam else None,
             presence_le=_iso_utc(ep.presence_le),
+            incident=ep.incident,
+            incident_le=_iso_utc(ep.incident_le),
         ))
     return result
 
@@ -294,6 +303,43 @@ def annuler_present(
     db.commit()
 
 
+@router.put("/me/epreuves/{epreuve_id}/incident", status_code=204)
+def signaler_incident(
+    epreuve_id: int,
+    body: IncidentIn,
+    background_tasks: BackgroundTasks,
+    s: Surveillant = Depends(get_current_surveillant),
+    db: Session = Depends(get_db),
+):
+    """Enregistre (ou retire, texte vide) l'incident du créneau. Un incident nouveau ou
+    modifié prévient les admins (cloche et email)."""
+    ep = db.get(Epreuve, epreuve_id)
+    if not ep or ep.surveillant_id != s.id:
+        raise HTTPException(status_code=404, detail="Épreuve introuvable")
+    texte = body.texte.strip()
+    if not texte:
+        ep.incident = ep.incident_le = ep.incident_par = None
+        db.commit()
+        return
+    if texte == (ep.incident or ""):
+        return
+    ep.incident = texte
+    ep.incident_le = datetime.now(timezone.utc).replace(tzinfo=None)
+    ep.incident_par = f"{s.prenom} {s.nom}".strip()
+    dj = db.get(DemiJournee, ep.demi_journee_id)
+    candidat = db.get(Candidat, ep.candidat_id) if ep.candidat_id else None
+    quand = f"{dj.date.strftime('%d/%m')} {str(ep.heure_debut)[:5]}" if dj else str(ep.heure_debut)[:5]
+    qui = f"{candidat.prenom} {candidat.nom}" if candidat else "créneau sans candidat"
+    notifier_admins(
+        db, background_tasks, "INCIDENT",
+        titre=f"Incident signalé — {ep.matiere} {quand}",
+        message=f"{ep.incident_par} ({qui}, salle {ep.salle.intitule if ep.salle else '?'}) : {texte}",
+        planning_id=dj.planning_id if dj else None,
+        candidat_id=ep.candidat_id,
+    )
+    db.commit()
+
+
 @router.get("/me/epreuves/export")
 def export_planning(
     s: Surveillant = Depends(get_current_surveillant),
@@ -309,7 +355,7 @@ def export_planning(
     ws = wb.active
     ws.title = "Planning surveillance"
 
-    headers = ["Date", "Matière", "Heure prépa", "Heure passage", "Candidat", "Salle prépa", "Salle", "Examinateur", "Sujet", "Statut", "Présence"]
+    headers = ["Date", "Matière", "Heure prépa", "Heure passage", "Candidat", "Salle prépa", "Salle", "Examinateur", "Sujet", "Statut", "Présence", "Incident"]
     ws.append(headers)
     for cell in ws[1]:
         cell.font = Font(bold=True, color="FFFFFF")
@@ -342,7 +388,7 @@ def export_planning(
         ws.append([
             date_str, ep.matiere, heure_prep, ep.heure_debut,
             candidat_str, ep.salle_preparation_intitule or "—", ep.salle_intitule or "—",
-            exam_str, ep.planche_nom or "—", ep.statut, presence,
+            exam_str, ep.planche_nom or "—", ep.statut, presence, ep.incident or "",
         ])
 
     for col in ws.columns:

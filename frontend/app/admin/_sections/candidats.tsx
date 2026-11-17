@@ -119,6 +119,8 @@ type FicheCandidat = {
   commentaire?: string | null;
   inscription: InscriptionGestion | null;
   liste_attente: { date: string }[];
+  // Incidents signalés par les surveillants sur ses créneaux
+  incidents?: { epreuve_id: number; date: string; matiere: string; heure_debut: string; texte: string; signale_le: string | null; signale_par: string | null }[];
 };
 
 type JourneeInscritItem = {
@@ -1010,6 +1012,29 @@ function CandidatGestionDrawer({
                 </div>
 
                 <CommentaireCandidat key={fiche.id} candidatId={fiche.id} initial={fiche.commentaire ?? null} />
+
+                {/* Incidents signalés par les surveillants */}
+                {(fiche.incidents ?? []).length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold text-gray-700 uppercase tracking-wide mb-2">Incidents signalés</p>
+                    <div className="flex flex-col gap-1.5">
+                      {(fiche.incidents ?? []).map((i) => (
+                        <div key={i.epreuve_id} className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-950">
+                          <p className="font-semibold">
+                            {i.matiere} · {new Date(i.date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" })} à {i.heure_debut}
+                          </p>
+                          <p className="whitespace-pre-line mt-0.5">{i.texte}</p>
+                          {i.signale_par && (
+                            <p className="text-[10px] text-amber-900 mt-0.5">
+                              Signalé par {i.signale_par}
+                              {i.signale_le && ` le ${new Date(i.signale_le).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Liste d'attente */}
                 {fiche.liste_attente.length > 0 && (

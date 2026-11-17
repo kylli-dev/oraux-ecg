@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import DateTime, Time, String, Integer, Boolean, ForeignKey, CheckConstraint
+from sqlalchemy import DateTime, Time, String, Integer, Boolean, ForeignKey, CheckConstraint, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -34,6 +34,12 @@ class Epreuve(Base):
     # Pointage du surveillant : heure d'arrivée du candidat (UTC sans fuseau). NULL = pas
     # encore pointé présent ; une absence est le statut ABSENT, qui efface ce pointage.
     presence_le: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Incident signalé par le surveillant sur ce créneau (retard, pièce d'identité, problème
+    # pendant l'épreuve…), avec la date du signalement (UTC sans fuseau) et son auteur
+    incident: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    incident_le: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    incident_par: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
 
     # Candidat assigné (nullable)
     candidat_id: Mapped[Optional[int]] = mapped_column(

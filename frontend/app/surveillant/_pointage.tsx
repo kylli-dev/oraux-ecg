@@ -3,8 +3,10 @@
 // Pointage d'un candidat par le surveillant, partagé par « Liste & présences » et
 // « Aujourd'hui » : deux boutons Présent / Absent. Un clic sur l'état déjà choisi l'annule
 // (le candidat redevient « pas encore pointé ») ; Présent sur un absent le remet présent.
+// Et le signalement d'un incident sur le créneau (BlocIncident), transmis aux admins.
 
-import { Loader2, UserCheck, UserX } from "lucide-react";
+import { useState } from "react";
+import { AlertTriangle, Loader2, UserCheck, UserX } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
 
@@ -13,6 +15,8 @@ export type EpreuvePointable = {
   statut: string;
   candidat_id: number | null;
   presence_le?: string | null; // heure d'arrivée (ISO UTC)
+  incident?: string | null;
+  incident_le?: string | null; // ISO UTC
 };
 
 export type EtatPointage = "present" | "absent" | "attendu";
@@ -90,5 +94,113 @@ export function BoutonsPointage({
         Absent
       </button>
     </div>
+  );
+}
+
+// Enregistre l'incident (texte vide = le retirer) ; renvoie un message d'erreur ou null
+async function enregistrerIncident(id: number, texte: string): Promise<string | null> {
+  try {
+    const r = await fetch(`${API}/surveillant/me/epreuves/${id}/incident`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${sessionStorage.getItem("surveillant_token") ?? ""}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ texte }),
+    });
+    if (r.ok) return null;
+    const d = await r.json().catch(() => ({}));
+    return typeof d.detail === "string" ? d.detail : "L'enregistrement a échoué. Réessayez.";
+  } catch {
+    return "L'enregistrement a échoué. Vérifiez votre connexion.";
+  }
+}
+
+// Incident du créneau : affiché s'il existe (modifier / retirer), sinon un lien pour le
+// signaler. Les admins sont prévenus à chaque nouvel incident.
+export function BlocIncident({ epreuve, onEnregistre }: { epreuve: EpreuvePointable; onEnregistre: () => void }) {
+  const [edition, setEdition] = useState(false);
+  const [texte, setTexte] = useState(epreuve.incident ?? "");
+  const [envoi, setEnvoi] = useState(false);
+  const [erreur, setErreur] = useState("");
+
+  async function valider(valeur: string) {
+    setEnvoi(true);
+    setErreur("");
+    const e = await enregistrerIncident(epreuve.id, valeur);
+    setEnvoi(false);
+    if (e) { setErreur(e); return; }
+    setEdition(false);
+    onEnregistre();
+  }
+
+  if (edition) {
+    return (
+      <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-2">
+        <label className="block text-xs font-semibold text-amber-900">Incident sur ce créneau</label>
+        <textarea
+          value={texte}
+          onChange={(e) => setTexte(e.target.value)}
+          maxLength={1000}
+          rows={3}
+          autoFocus
+          placeholder="Ex. arrivé avec 10 min de retard, pièce d'identité manquante, malaise pendant l'épreuve…"
+          className="w-full rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-amber-400"
+        />
+        {erreur && <p className="text-xs font-medium text-red-700">{erreur}</p>}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => valider(texte)}
+            disabled={envoi || !texte.trim()}
+            className="h-9 px-4 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 transition disabled:opacity-50 inline-flex items-center gap-1.5"
+          >
+            {envoi && <Loader2 className="h-4 w-4 animate-spin" />}
+            Enregistrer et prévenir l&apos;admin
+          </button>
+          <button
+            onClick={() => { setEdition(false); setTexte(epreuve.incident ?? ""); setErreur(""); }}
+            className="h-9 px-3 rounded-lg text-sm font-medium text-gray-900 hover:bg-amber-100 transition"
+          >
+            Annuler
+          </button>
+          <span className="ml-auto text-[11px] text-amber-900 tabular-nums">{texte.length} / 1000</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (epreuve.incident) {
+    const quand = epreuve.incident_le
+      ? new Date(epreuve.incident_le).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+      : null;
+    return (
+      <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-950">
+        <p className="flex items-start gap-1.5">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-700" />
+          <span className="min-w-0 whitespace-pre-line">
+            <strong>Incident{quand ? ` (signalé à ${quand})` : ""} :</strong> {epreuve.incident}
+          </span>
+        </p>
+        {erreur && <p className="mt-1 text-xs font-medium text-red-700">{erreur}</p>}
+        <div className="mt-1.5 flex gap-3 pl-5">
+          <button onClick={() => { setTexte(epreuve.incident ?? ""); setEdition(true); }} className="text-xs font-semibold underline underline-offset-2">
+            Modifier
+          </button>
+          <button onClick={() => valider("")} disabled={envoi} className="text-xs font-semibold underline underline-offset-2 disabled:opacity-50">
+            Retirer
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => { setTexte(""); setEdition(true); }}
+      className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-800 hover:text-amber-800 transition"
+    >
+      <AlertTriangle className="h-4 w-4" />
+      Signaler un incident
+    </button>
   );
 }

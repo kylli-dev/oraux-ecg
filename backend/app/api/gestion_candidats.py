@@ -83,6 +83,16 @@ class ListeAttenteDate(BaseModel):
     date: Date
 
 
+class IncidentOut(BaseModel):
+    epreuve_id: int
+    date: Date
+    matiere: str
+    heure_debut: str
+    texte: str
+    signale_le: Optional[str] = None  # ISO UTC
+    signale_par: Optional[str] = None
+
+
 class FicheOut(BaseModel):
     id: int
     nom: str
@@ -101,6 +111,7 @@ class FicheOut(BaseModel):
     commentaire: Optional[str] = None
     inscription: Optional[InscriptionOut] = None
     liste_attente: List[ListeAttenteDate] = []
+    incidents: List[IncidentOut] = []  # signalés par les surveillants sur ses créneaux
 
 
 class CommentaireIn(BaseModel):
@@ -290,6 +301,18 @@ def get_fiche(candidat_id: int, db: Session = Depends(get_db)):
         commentaire=c.commentaire,
         inscription=_build_inscription_out(insc, db) if insc else None,
         liste_attente=la_dates,
+        incidents=[
+            IncidentOut(
+                epreuve_id=e.id, date=dj.date, matiere=e.matiere, heure_debut=str(e.heure_debut)[:5],
+                texte=e.incident, signale_par=e.incident_par,
+                signale_le=e.incident_le.replace(tzinfo=timezone.utc).isoformat() if e.incident_le else None,
+            )
+            for e, dj in db.query(Epreuve, DemiJournee)
+            .join(DemiJournee, Epreuve.demi_journee_id == DemiJournee.id)
+            .filter(Epreuve.candidat_id == candidat_id, Epreuve.incident.isnot(None))
+            .order_by(DemiJournee.date, Epreuve.heure_debut)
+            .all()
+        ],
     )
 
 

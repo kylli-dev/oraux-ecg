@@ -173,6 +173,17 @@ export default function AdminPage() {
       setCleNavigation((c) => c + 1);
       return;
     }
+    // Incident signalé par un surveillant : fiche du candidat (où l'incident est affiché)
+    if (n.type === "INCIDENT" && n.planning_id && n.candidat_id) {
+      memoriserPlanning(n.planning_id);
+      intentions.candidats = { planningId: n.planning_id, tab: "liste", candidatId: n.candidat_id };
+      setSection("candidats");
+      localStorage.setItem("admin_section", "candidats");
+      setSelectedPlanning(null);
+      setMobileSidebar(false);
+      setCleNavigation((c) => c + 1);
+      return;
+    }
     if (n.type !== "LISTE_ATTENTE" || !n.planning_id) return;
     intentions.candidats = { planningId: n.planning_id, tab: "liste_attente", candidatId: n.candidat_id };
     setSection("candidats");

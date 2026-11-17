@@ -112,6 +112,9 @@ export type EpreuveFlat = {
   triplet?: string | null;
   // Pointage du surveillant : heure d'arrivée du candidat (ISO UTC), null si pas pointé
   presence_le?: string | null;
+  // Incident signalé par le surveillant sur le créneau
+  incident?: string | null;
+  incident_par?: string | null;
 };
 
 export type Examinateur = {

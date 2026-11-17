@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { RED, PageHeader, Alert } from "./_ui";
 import { EmploiDuTemps, type CreneauEdt, type LegendeEdt } from "../_espace/EmploiDuTemps";
-import { BoutonsPointage, etatPointage, heureArrivee, pointer } from "./_pointage";
+import { BlocIncident, BoutonsPointage, etatPointage, heureArrivee, pointer } from "./_pointage";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
 
@@ -33,6 +33,8 @@ type Epreuve = {
   examinateur_nom: string | null;
   examinateur_prenom: string | null;
   presence_le?: string | null; // heure d'arrivée pointée (ISO UTC)
+  incident?: string | null;
+  incident_le?: string | null;
 };
 
 function authHeaders() {
@@ -486,6 +488,9 @@ export function PlanningSurveillant({ vue }: { vue: "liste" | "edt" }) {
                               )}
                             </div>
                           )}
+
+                          {/* Incident signalé sur le créneau */}
+                          <BlocIncident key={`${ep.id}-${ep.incident ?? ""}`} epreuve={ep} onEnregistre={() => load()} />
                         </div>
                       </div>
                     );

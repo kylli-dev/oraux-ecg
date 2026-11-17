@@ -11,7 +11,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CalendarCheck, CheckCircle, Clock, DoorOpen, Loader2, RefreshCw } from "lucide-react";
 import { RED, PageHeader, Alert } from "../_ui";
-import { BoutonsPointage, etatPointage, heureArrivee, pointer } from "../_pointage";
+import { BlocIncident, BoutonsPointage, etatPointage, heureArrivee, pointer } from "../_pointage";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
 const RELECTURE_MS = 2 * 60_000;
@@ -33,6 +33,8 @@ type Epreuve = {
   examinateur_nom: string | null;
   examinateur_prenom: string | null;
   presence_le?: string | null;
+  incident?: string | null;
+  incident_le?: string | null;
 };
 
 // Où en est un créneau à l'heure actuelle
@@ -163,6 +165,9 @@ export default function SurveillantAujourdhuiPage() {
         {e.planche_nom && <p><span className="text-gray-700">Planche :</span> <strong>{e.planche_nom}</strong></p>}
       </div>
       <div className="mt-4">{boutonsPointage(e, true)}</div>
+      <div className="mt-3">
+        <BlocIncident key={`${e.id}-${e.incident ?? ""}`} epreuve={e} onEnregistre={() => charger()} />
+      </div>
     </div>
   );
 
@@ -280,6 +285,9 @@ export default function SurveillantAujourdhuiPage() {
                       )}
                       {e.presence_le && e.statut !== "ABSENT" && (
                         <span className="text-xs font-semibold text-green-800">Arrivé {heureArrivee(e)}</span>
+                      )}
+                      {e.incident && (
+                        <span className="text-xs font-semibold text-amber-800" title={e.incident}>⚠ Incident</span>
                       )}
                       {e.candidat_id ? boutonsPointage(e) : null}
                     </div>

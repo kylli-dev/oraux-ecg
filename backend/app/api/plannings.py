@@ -286,6 +286,8 @@ def list_epreuves_planning(
             "triplet": f"T{num}" if num is not None else None,
             # Pointage du surveillant : heure d'arrivée du candidat (ISO UTC)
             "presence_le": epreuve.presence_le.replace(tzinfo=timezone.utc).isoformat() if epreuve.presence_le else None,
+            "incident": epreuve.incident,
+            "incident_par": epreuve.incident_par,
         })
     return result
 

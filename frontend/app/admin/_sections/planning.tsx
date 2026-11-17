@@ -932,6 +932,14 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                                           ✓ {new Date(e.presence_le).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
                                         </span>
                                       )}
+                                      {e.incident && (
+                                        <span
+                                          className="ml-1.5 text-[11px] font-semibold text-amber-800 cursor-help"
+                                          title={`Incident signalé${e.incident_par ? ` par ${e.incident_par}` : ""} : ${e.incident}`}
+                                        >
+                                          ⚠ Incident
+                                        </span>
+                                      )}
                                     </span>
                                   ) : manquesPublication(e).length > 0 ? (
                                     <span
