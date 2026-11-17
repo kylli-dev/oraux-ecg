@@ -229,7 +229,8 @@ export function PlanningSurveillant({ vue }: { vue: "liste" | "edt" }) {
     "h-full px-2.5 grid place-items-center text-gray-900 hover:bg-gray-50 transition disabled:opacity-30 disabled:hover:bg-transparent";
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-10">
+    // L'emploi du temps prend toute la largeur de l'écran (une colonne par salle)
+    <div className={`${vue === "edt" ? "max-w-[1800px]" : "max-w-4xl"} mx-auto px-4 sm:px-6 py-10`}>
       <PageHeader
         icon={vue === "edt" ? <CalendarRange className="h-6 w-6" /> : <CalendarDays className="h-6 w-6" />}
         title={vue === "edt" ? "Emploi du temps" : "Liste & présences"}

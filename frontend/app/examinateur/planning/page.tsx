@@ -332,7 +332,8 @@ export default function ExaminateurPlanningPage() {
     }`;
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-10">
+    // L'emploi du temps prend toute la largeur de l'écran (une colonne par salle)
+    <div className={`${vue === "edt" ? "max-w-[1800px]" : "max-w-4xl"} mx-auto px-4 sm:px-6 py-10`}>
       <PageHeader
         icon={<CalendarDays className="h-6 w-6" />}
         title="Mon planning & notes"

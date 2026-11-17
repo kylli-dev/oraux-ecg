@@ -36,7 +36,7 @@ export type LegendeEdt = { label: string; teinte: TeinteEdt; libre?: boolean };
 // heure, son candidat, son détail et sa préparation.
 const PX_PAR_MIN_DEFAUT = 2.6;
 const ENTETE_COLONNE_PX = 48;
-const LARGEUR_MIN_COLONNE = 180;
+const LARGEUR_MIN_COLONNE = 220;
 const CLE_LIBRES = "edt_afficher_libres";
 
 function enMinutes(h: string) {
