@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { CalendarRange, ChevronRight, KeyRound, ListChecks, Mail } from "lucide-react";
+import { CalendarCheck, CalendarRange, ChevronRight, KeyRound, ListChecks, Mail } from "lucide-react";
 import { RED, PageLoader } from "../_ui";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
@@ -11,6 +11,12 @@ const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
 // Champs utiles au résumé (le détail est sur la page planning)
 type EpreuveResume = {
   date: string;
+  heure_debut: string;
+  heure_fin: string;
+  preparation_minutes: number | null;
+  candidat_prenom: string | null;
+  candidat_nom: string | null;
+  salle_intitule: string | null;
   candidat_id: number | null;
   statut: string;
 };
@@ -72,9 +78,19 @@ export default function SurveillantAccueilPage() {
 
   const initiales = `${me.prenom?.[0] ?? ""}${me.nom?.[0] ?? ""}`.toUpperCase();
 
+  // Date du jour en heure locale (toISOString passe en UTC et décale la date la nuit)
+  const n = new Date();
+  const today = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
+  const minutes = n.getHours() * 60 + n.getMinutes();
+  const enMin = (h: string) => { const [hh, mm] = h.split(":").map(Number); return hh * 60 + (mm || 0); };
+  // Jour J : prochain candidat (ou celui en cours) pour la carte « Aujourd'hui »
+  const duJour = (epreuves ?? []).filter((e) => e.date === today && e.candidat_id);
+  const suivant = duJour
+    .filter((e) => enMin(e.heure_fin) > minutes)
+    .sort((a, b) => a.heure_debut.localeCompare(b.heure_debut))[0];
+
   let resume: { label: string; valeur: string }[] | null = null;
   if (epreuves) {
-    const today = new Date().toISOString().slice(0, 10);
     const prochaine = [...new Set(epreuves.map((e) => e.date))].sort().find((d) => d >= today);
     resume = [
       { label: "Créneaux", valeur: String(epreuves.length) },
@@ -126,6 +142,28 @@ export default function SurveillantAccueilPage() {
           )}
         </div>
       </div>
+
+      {/* ── Jour J : accès direct au mode « Aujourd'hui » ── */}
+      {duJour.length > 0 && (
+        <Link
+          href="/surveillant/aujourdhui"
+          className="group mb-6 flex items-center gap-4 rounded-2xl p-5 text-white shadow-sm transition hover:shadow-md hover:-translate-y-0.5"
+          style={{ backgroundColor: RED }}
+        >
+          <div className="flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-xl bg-white/15">
+            <CalendarCheck className="h-6 w-6" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-base font-bold">Aujourd&apos;hui : {duJour.length} candidat{duJour.length > 1 ? "s" : ""} à surveiller</p>
+            <p className="text-sm text-white/90 truncate">
+              {suivant
+                ? `${enMin(suivant.heure_debut) <= minutes ? "En cours" : "Prochain"} : ${`${suivant.candidat_prenom ?? ""} ${suivant.candidat_nom ?? ""}`.trim()} à ${suivant.heure_debut}${suivant.salle_intitule ? `, salle ${suivant.salle_intitule}` : ""}`
+                : "Tous les passages de la journée sont terminés."}
+            </p>
+          </div>
+          <ChevronRight className="h-5 w-5 shrink-0 transition group-hover:translate-x-0.5" />
+        </Link>
+      )}
 
       {/* ── Accès rapides ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
