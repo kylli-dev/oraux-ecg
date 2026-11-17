@@ -923,6 +923,15 @@ function PlanningTableauView({ planningId, planning }: { planningId: number; pla
                                   {e.candidat_nom ? (
                                     <span className="font-semibold text-sm text-gray-900">
                                       {e.candidat_nom} {e.candidat_prenom}
+                                      {/* Pointage du surveillant le jour J */}
+                                      {e.statut !== "ABSENT" && e.presence_le && (
+                                        <span
+                                          className="ml-1.5 text-[11px] font-semibold text-green-800"
+                                          title="Pointé présent par le surveillant"
+                                        >
+                                          ✓ {new Date(e.presence_le).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+                                        </span>
+                                      )}
                                     </span>
                                   ) : manquesPublication(e).length > 0 ? (
                                     <span

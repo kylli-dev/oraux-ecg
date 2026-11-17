@@ -1217,6 +1217,7 @@ def admin_marquer_absent(candidat_id: int, epreuve_id: int, db: Session = Depend
     if ep.statut != "ATTRIBUEE":
         raise HTTPException(status_code=400, detail=f"Statut actuel {ep.statut!r} — seule une épreuve ATTRIBUEE peut être marquée absente")
     ep.statut = "ABSENT"
+    ep.presence_le = None
     db.commit()
     return {"epreuve_id": epreuve_id, "statut": "ABSENT"}
 

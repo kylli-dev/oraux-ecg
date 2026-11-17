@@ -7,11 +7,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Loader2, Clock, Download, AlertTriangle, CheckCircle, UserX, CalendarDays, MapPin, Search,
+  Loader2, Clock, Download, AlertTriangle, CheckCircle, CalendarDays, MapPin, Search,
   CalendarRange, User, FileText, ChevronLeft, ChevronRight, X,
 } from "lucide-react";
 import { RED, PageHeader, Alert } from "./_ui";
 import { EmploiDuTemps, type CreneauEdt, type LegendeEdt } from "../_espace/EmploiDuTemps";
+import { BoutonsPointage, etatPointage, heureArrivee, pointer } from "./_pointage";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
 
@@ -31,6 +32,7 @@ type Epreuve = {
   planche_nom: string | null;
   examinateur_nom: string | null;
   examinateur_prenom: string | null;
+  presence_le?: string | null; // heure d'arrivée pointée (ISO UTC)
 };
 
 function authHeaders() {
@@ -51,21 +53,24 @@ function heurePrepa(heure_debut: string, prep_min: number): string {
 }
 
 // ── Vue « Emploi du temps » (composant partagé : app/_espace/EmploiDuTemps.tsx) ──
-function styleBloc(ep: Pick<Epreuve, "candidat_id" | "statut">): React.CSSProperties {
+function styleBloc(ep: Pick<Epreuve, "candidat_id" | "statut" | "presence_le">): React.CSSProperties {
   if (!ep.candidat_id) return { backgroundColor: "#FFFFFF", borderColor: "#9CA3AF", borderStyle: "dashed" };
   if (ep.statut === "ABSENT") return { backgroundColor: "#FFFBEB", borderColor: "#B45309" };
+  if (ep.presence_le) return { backgroundColor: "#F0FDF4", borderColor: "#15803D" };
   return { backgroundColor: RED + "12", borderColor: RED };
 }
 
 const LEGENDE_EDT: LegendeEdt[] = [
   { label: "Candidat attendu", style: styleBloc({ candidat_id: 1, statut: "" }) },
+  { label: "Présent", style: styleBloc({ candidat_id: 1, statut: "", presence_le: "x" }) },
   { label: "Absent", style: styleBloc({ candidat_id: 1, statut: "ABSENT" }) },
   { label: "Créneau libre", style: styleBloc({ candidat_id: null, statut: "" }) },
 ];
 
 function versCreneauEdt(ep: Epreuve): CreneauEdt {
   const nom = ep.candidat_id
-    ? `${ep.candidat_prenom ?? ""} ${ep.candidat_nom ?? ""}`.trim() + (ep.statut === "ABSENT" ? " (absent)" : "")
+    ? `${ep.candidat_prenom ?? ""} ${ep.candidat_nom ?? ""}`.trim()
+      + (ep.statut === "ABSENT" ? " (absent)" : ep.presence_le ? ` (arrivé ${heureArrivee(ep)})` : "")
     : "Créneau libre";
   return {
     id: ep.id,
@@ -157,18 +162,13 @@ export function PlanningSurveillant({ vue }: { vue: "liste" | "edt" }) {
 
   useEffect(() => { load(); }, [load]);
 
-  async function toggleAbsent(ep: Epreuve) {
+  async function pointerEpreuve(ep: Epreuve, cible: "present" | "absent") {
     setToggling((s) => new Set(s).add(ep.id));
     try {
-      const isAbsent = ep.statut === "ABSENT";
-      const res = await fetch(`${API}/surveillant/me/epreuves/${ep.id}/marquer-absent`, {
-        method: isAbsent ? "DELETE" : "POST",
-        headers: authHeaders(),
-      });
-      if (!res.ok) { const d = await res.json().catch(() => ({})); setError(d.detail ?? "Erreur"); return; }
+      const erreur = await pointer(ep, cible);
+      if (erreur) { setError(erreur); return; }
       await load();
-    } catch { setError("Erreur"); }
-    finally { setToggling((s) => { const n = new Set(s); n.delete(ep.id); return n; }); }
+    } finally { setToggling((s) => { const n = new Set(s); n.delete(ep.id); return n; }); }
   }
 
   async function handleExport() {
@@ -208,6 +208,7 @@ export function PlanningSurveillant({ vue }: { vue: "liste" | "edt" }) {
   // Résumé des présences sur l'ensemble du planning
   const attendus = epreuves.filter((e) => e.candidat_id).length;
   const absents = epreuves.filter((e) => e.candidat_id && e.statut === "ABSENT").length;
+  const presents = epreuves.filter((e) => e.candidat_id && etatPointage(e) === "present").length;
   const libres = epreuves.length - attendus;
 
   // Filtre par jour : une liste déroulante avec jour précédent / suivant, plutôt qu'une
@@ -258,9 +259,10 @@ export function PlanningSurveillant({ vue }: { vue: "liste" | "edt" }) {
 
         {/* ── Résumé ── */}
         {!loading && epreuves.length > 0 && (
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               { label: "Candidats attendus", valeur: attendus, cls: "text-gray-900" },
+              { label: "Présents", valeur: presents, cls: presents ? "text-green-800" : "text-gray-900" },
               { label: "Absents", valeur: absents, cls: absents ? "text-amber-800" : "text-gray-900" },
               { label: "Créneaux libres", valeur: libres, cls: "text-gray-900" },
             ].map((r) => (
@@ -428,23 +430,17 @@ export function PlanningSurveillant({ vue }: { vue: "liste" | "edt" }) {
                                     <AlertTriangle className="h-3 w-3" /> Absent
                                   </span>
                                 )}
+                                {!isAbsent && ep.presence_le && (
+                                  <span className="inline-flex items-center gap-1 mt-1 text-xs font-semibold border rounded-full px-2.5 py-0.5 bg-green-50 border-green-200 text-green-900">
+                                    <CheckCircle className="h-3 w-3" /> Présent · arrivé à {heureArrivee(ep)}
+                                  </span>
+                                )}
                               </div>
                             ) : (
                               <p className="text-sm text-gray-700 italic">Aucun candidat inscrit — créneau libre</p>
                             )}
                             {ep.candidat_id && (
-                              <button
-                                onClick={() => toggleAbsent(ep)}
-                                disabled={busy}
-                                className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border font-medium transition disabled:opacity-40 ${
-                                  isAbsent
-                                    ? "border-green-300 text-green-800 bg-green-50 hover:bg-green-100"
-                                    : "border-red-200 text-red-700 bg-white hover:bg-red-50"
-                                }`}
-                              >
-                                {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : isAbsent ? <CheckCircle className="h-3.5 w-3.5" /> : <UserX className="h-3.5 w-3.5" />}
-                                {isAbsent ? "Marquer présent" : "Marquer absent"}
-                              </button>
+                              <BoutonsPointage epreuve={ep} occupe={busy} onPointer={(cible) => pointerEpreuve(ep, cible)} />
                             )}
                           </div>
 

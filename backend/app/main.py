@@ -231,6 +231,7 @@ def _run_migrations():
         "ALTER TABLE demi_journee ADD COLUMN journee_type_id INTEGER REFERENCES journee_type(id) ON DELETE SET NULL",
         "ALTER TABLE demi_journee ADD COLUMN journee_type_nom VARCHAR(255)",
         "ALTER TABLE demi_journee ADD COLUMN gabarit_applique_le TIMESTAMP",
+        "ALTER TABLE epreuve ADD COLUMN presence_le TIMESTAMP",
         # Monitoring : précision lisible de l'action (ex. gabarit appliqué et date)
         "ALTER TABLE audit_log ADD COLUMN detail VARCHAR(300)",
         # Notifications : alertes d'activité réservées aux super-admins

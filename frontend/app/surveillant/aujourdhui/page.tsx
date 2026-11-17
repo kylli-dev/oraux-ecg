@@ -9,8 +9,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { CalendarCheck, Clock, DoorOpen, Loader2, RefreshCw, UserCheck, UserX } from "lucide-react";
+import { CalendarCheck, CheckCircle, Clock, DoorOpen, Loader2, RefreshCw } from "lucide-react";
 import { RED, PageHeader, Alert } from "../_ui";
+import { BoutonsPointage, etatPointage, heureArrivee, pointer } from "../_pointage";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
 const RELECTURE_MS = 2 * 60_000;
@@ -31,6 +32,7 @@ type Epreuve = {
   planche_nom: string | null;
   examinateur_nom: string | null;
   examinateur_prenom: string | null;
+  presence_le?: string | null;
 };
 
 // Où en est un créneau à l'heure actuelle
@@ -86,21 +88,13 @@ export default function SurveillantAujourdhuiPage() {
     return () => { clearInterval(relecture); clearInterval(horloge); };
   }, [charger]);
 
-  async function basculerAbsent(e: Epreuve) {
+  async function pointerEpreuve(e: Epreuve, cible: "present" | "absent") {
     setEnCours((s) => new Set(s).add(e.id));
     try {
-      const r = await fetch(`${API}/surveillant/me/epreuves/${e.id}/marquer-absent`, {
-        method: e.statut === "ABSENT" ? "DELETE" : "POST",
-        headers: authHeaders(),
-      });
-      if (!r.ok) {
-        const d = await r.json().catch(() => ({}));
-        setErreur(d.detail ?? "L'enregistrement a échoué. Réessayez.");
-        return;
-      }
+      const message = await pointer(e, cible);
+      if (message) { setErreur(message); return; }
+      setErreur("");
       await charger();
-    } catch {
-      setErreur("L'enregistrement a échoué. Vérifiez votre connexion.");
     } finally {
       setEnCours((s) => { const n = new Set(s); n.delete(e.id); return n; });
     }
@@ -129,23 +123,14 @@ export default function SurveillantAujourdhuiPage() {
   const prochains = aVenir.filter((e) => debutPrepa(e) === prochainDebut);
   const passes = avecCandidat.filter((e) => phaseDe(e, minutes) === "passe").length;
   const absents = avecCandidat.filter((e) => e.statut === "ABSENT").length;
+  const presents = avecCandidat.filter((e) => etatPointage(e) === "present").length;
+  // Passages commencés (préparation ou épreuve) sans pointage : à vérifier
+  const nonPointes = avecCandidat.filter((e) => etatPointage(e) === "attendu" && phaseDe(e, minutes) !== "a_venir").length;
   const prochaineDate = [...new Set(epreuves.map((e) => e.date))].sort().find((d) => d > aujourdhui);
 
-  const boutonAbsent = (e: Epreuve, grand = false) => {
-    const absent = e.statut === "ABSENT";
-    return (
-      <button
-        onClick={() => basculerAbsent(e)}
-        disabled={enCours.has(e.id)}
-        className={`shrink-0 inline-flex items-center justify-center gap-2 rounded-xl border-2 font-semibold transition disabled:opacity-50 ${
-          grand ? "h-12 px-5 text-base" : "h-11 px-4 text-sm"
-        } ${absent ? "bg-amber-50 border-amber-500 text-amber-900" : "bg-white border-gray-300 text-gray-900 hover:border-gray-500"}`}
-      >
-        {enCours.has(e.id) ? <Loader2 className="h-4 w-4 animate-spin" /> : absent ? <UserX className="h-5 w-5" /> : <UserCheck className="h-5 w-5" />}
-        {absent ? "Absent — annuler" : "Marquer absent"}
-      </button>
-    );
-  };
+  const boutonsPointage = (e: Epreuve, grand = false) => (
+    <BoutonsPointage epreuve={e} occupe={enCours.has(e.id)} onPointer={(cible) => pointerEpreuve(e, cible)} grand={grand} />
+  );
 
   const carte = (e: Epreuve, etiquette: string, couleur: string) => (
     <div key={e.id} className="bg-white rounded-2xl border-2 shadow-sm p-5" style={{ borderColor: couleur }}>
@@ -158,6 +143,11 @@ export default function SurveillantAujourdhuiPage() {
         </span>
       </div>
       <p className={`text-2xl font-bold ${e.statut === "ABSENT" ? "text-amber-800 line-through" : "text-gray-900"}`}>{nomCandidat(e)}</p>
+      {e.presence_le && e.statut !== "ABSENT" && (
+        <p className="mt-1 inline-flex items-center gap-1 text-sm font-semibold text-green-800">
+          <CheckCircle className="h-4 w-4" /> Arrivé à {heureArrivee(e)}
+        </p>
+      )}
       <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm text-gray-900">
         <p><span className="text-gray-700">Matière :</span> <strong>{e.matiere}</strong></p>
         <p><span className="text-gray-700">Salle d&apos;épreuve :</span> <strong>{e.salle_intitule ?? "—"}</strong></p>
@@ -172,7 +162,7 @@ export default function SurveillantAujourdhuiPage() {
         )}
         {e.planche_nom && <p><span className="text-gray-700">Planche :</span> <strong>{e.planche_nom}</strong></p>}
       </div>
-      <div className="mt-4">{boutonAbsent(e, true)}</div>
+      <div className="mt-4">{boutonsPointage(e, true)}</div>
     </div>
   );
 
@@ -216,9 +206,9 @@ export default function SurveillantAujourdhuiPage() {
             {/* ── Avancement de la journée ── */}
             <div className="grid grid-cols-3 gap-3">
               {[
-                { label: "Passés", valeur: `${passes} / ${avecCandidat.length}` },
+                { label: "Présents", valeur: `${presents} / ${avecCandidat.length}`, cls: presents ? "text-green-800" : "" },
                 { label: "Absents", valeur: String(absents), cls: absents ? "text-amber-800" : "" },
-                { label: "Fin de journée", valeur: duJour[duJour.length - 1].heure_fin },
+                { label: "Passés", valeur: `${passes} / ${avecCandidat.length}` },
               ].map((r) => (
                 <div key={r.label} className="bg-white rounded-2xl border border-black/5 shadow-sm px-4 py-3">
                   <p className="text-[11px] font-medium uppercase tracking-wide text-gray-700">{r.label}</p>
@@ -226,6 +216,12 @@ export default function SurveillantAujourdhuiPage() {
                 </div>
               ))}
             </div>
+
+            {nonPointes > 0 && (
+              <Alert tone="warning">
+                {nonPointes} candidat{nonPointes > 1 ? "s" : ""} déjà en préparation ou passé{nonPointes > 1 ? "s" : ""} sans pointage : marquez-le{nonPointes > 1 ? "s" : ""} présent{nonPointes > 1 ? "s" : ""} ou absent{nonPointes > 1 ? "s" : ""}.
+              </Alert>
+            )}
 
             {/* ── En ce moment / prochain ── */}
             {maintenantCreneaux.length > 0 && (
@@ -282,10 +278,10 @@ export default function SurveillantAujourdhuiPage() {
                           {phase === "preparation" ? "En préparation" : "En épreuve"}
                         </span>
                       )}
-                      {passe && e.candidat_id && e.statut !== "ABSENT" && (
-                        <span className="text-xs font-medium text-gray-700">Terminé</span>
+                      {e.presence_le && e.statut !== "ABSENT" && (
+                        <span className="text-xs font-semibold text-green-800">Arrivé {heureArrivee(e)}</span>
                       )}
-                      {e.candidat_id ? boutonAbsent(e) : null}
+                      {e.candidat_id ? boutonsPointage(e) : null}
                     </div>
                   );
                 })}

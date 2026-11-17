@@ -1,5 +1,6 @@
+from datetime import datetime
 from typing import Optional
-from sqlalchemy import Time, String, Integer, Boolean, ForeignKey, CheckConstraint
+from sqlalchemy import DateTime, Time, String, Integer, Boolean, ForeignKey, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -29,6 +30,10 @@ class Epreuve(Base):
     # la génération. Les épreuves d'un même numéro forment le triplet proposé aux candidats.
     # NULL (journées générées avant, ou hors journée type) : triplets calculés par rotation.
     triplet_num: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    # Pointage du surveillant : heure d'arrivée du candidat (UTC sans fuseau). NULL = pas
+    # encore pointé présent ; une absence est le statut ABSENT, qui efface ce pointage.
+    presence_le: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Candidat assigné (nullable)
     candidat_id: Mapped[Optional[int]] = mapped_column(

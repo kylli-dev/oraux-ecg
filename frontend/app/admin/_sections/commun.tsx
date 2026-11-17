@@ -110,6 +110,8 @@ export type EpreuveFlat = {
   planche_nom: string | null;
   // Triplet de la matrice de la journée type (« T5 »), null si journée sans matrice
   triplet?: string | null;
+  // Pointage du surveillant : heure d'arrivée du candidat (ISO UTC), null si pas pointé
+  presence_le?: string | null;
 };
 
 export type Examinateur = {

@@ -1,4 +1,4 @@
-from datetime import date as Date, time as Time
+from datetime import date as Date, time as Time, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
@@ -284,6 +284,8 @@ def list_epreuves_planning(
             "planche_id": planche.id if planche else None,
             "planche_nom": planche.nom if planche else None,
             "triplet": f"T{num}" if num is not None else None,
+            # Pointage du surveillant : heure d'arrivée du candidat (ISO UTC)
+            "presence_le": epreuve.presence_le.replace(tzinfo=timezone.utc).isoformat() if epreuve.presence_le else None,
         })
     return result
 

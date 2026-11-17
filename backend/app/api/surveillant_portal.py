@@ -2,7 +2,7 @@
 Portail surveillant : accès via code_acces, consultation planning, marquage absences.
 """
 import io
-from datetime import date as Date
+from datetime import date as Date, datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Security, Request
@@ -30,6 +30,9 @@ from app.models.candidat import Candidat
 from app.models.salle import Salle
 from app.models.planche import Planche
 from app.models.examinateur import Examinateur
+from zoneinfo import ZoneInfo
+
+PARIS = ZoneInfo("Europe/Paris")
 
 router = APIRouter(prefix="/surveillant", tags=["surveillant-portal"])
 
@@ -86,6 +89,11 @@ class EpreuveSurveillant(BaseModel):
     planche_nom: Optional[str] = None
     examinateur_nom: Optional[str] = None
     examinateur_prenom: Optional[str] = None
+    presence_le: Optional[str] = None  # heure d'arrivée pointée (ISO UTC), None si pas pointé
+
+
+def _iso_utc(dt) -> Optional[str]:
+    return dt.replace(tzinfo=timezone.utc).isoformat() if dt else None
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -215,6 +223,7 @@ def mes_epreuves(
             planche_nom=planche.nom if planche else None,
             examinateur_nom=exam.nom if exam else None,
             examinateur_prenom=exam.prenom if exam else None,
+            presence_le=_iso_utc(ep.presence_le),
         ))
     return result
 
@@ -233,6 +242,7 @@ def marquer_absent(
     if ep.statut != "ATTRIBUEE":
         raise HTTPException(status_code=400, detail=f"Statut actuel : {ep.statut}")
     ep.statut = "ABSENT"
+    ep.presence_le = None
     db.commit()
 
 
@@ -251,6 +261,39 @@ def annuler_absent(
     db.commit()
 
 
+@router.post("/me/epreuves/{epreuve_id}/marquer-present", status_code=204)
+def marquer_present(
+    epreuve_id: int,
+    s: Surveillant = Depends(get_current_surveillant),
+    db: Session = Depends(get_db),
+):
+    """Pointe le candidat arrivé (heure d'arrivée = maintenant). Un candidat marqué absent
+    par erreur repasse présent."""
+    ep = db.get(Epreuve, epreuve_id)
+    if not ep or ep.surveillant_id != s.id:
+        raise HTTPException(status_code=404, detail="Épreuve introuvable")
+    if not ep.candidat_id:
+        raise HTTPException(status_code=400, detail="Aucun candidat assigné")
+    if ep.statut == "ABSENT":
+        ep.statut = "ATTRIBUEE"
+    ep.presence_le = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.commit()
+
+
+@router.delete("/me/epreuves/{epreuve_id}/marquer-present", status_code=204)
+def annuler_present(
+    epreuve_id: int,
+    s: Surveillant = Depends(get_current_surveillant),
+    db: Session = Depends(get_db),
+):
+    """Annule le pointage (candidat pointé par erreur) : il redevient « pas encore pointé »."""
+    ep = db.get(Epreuve, epreuve_id)
+    if not ep or ep.surveillant_id != s.id:
+        raise HTTPException(status_code=404, detail="Épreuve introuvable")
+    ep.presence_le = None
+    db.commit()
+
+
 @router.get("/me/epreuves/export")
 def export_planning(
     s: Surveillant = Depends(get_current_surveillant),
@@ -266,7 +309,7 @@ def export_planning(
     ws = wb.active
     ws.title = "Planning surveillance"
 
-    headers = ["Date", "Matière", "Heure prépa", "Heure passage", "Candidat", "Salle prépa", "Salle", "Examinateur", "Sujet", "Statut"]
+    headers = ["Date", "Matière", "Heure prépa", "Heure passage", "Candidat", "Salle prépa", "Salle", "Examinateur", "Sujet", "Statut", "Présence"]
     ws.append(headers)
     for cell in ws[1]:
         cell.font = Font(bold=True, color="FFFFFF")
@@ -287,10 +330,19 @@ def export_planning(
         date_str = f"{JOURS[d.weekday()]} {d.day} {MOIS[d.month]} {d.year}"
         candidat_str = f"{ep.candidat_prenom or ''} {ep.candidat_nom or ''}".strip() if ep.candidat_id else "—"
         exam_str = f"{ep.examinateur_prenom or ''} {ep.examinateur_nom or ''}".strip() if ep.examinateur_nom else "—"
+        if not ep.candidat_id:
+            presence = "—"
+        elif ep.statut == "ABSENT":
+            presence = "Absent"
+        elif ep.presence_le:
+            arrivee = datetime.fromisoformat(ep.presence_le).astimezone(PARIS)
+            presence = f"Présent ({arrivee:%H:%M})"
+        else:
+            presence = "Non pointé"
         ws.append([
             date_str, ep.matiere, heure_prep, ep.heure_debut,
             candidat_str, ep.salle_preparation_intitule or "—", ep.salle_intitule or "—",
-            exam_str, ep.planche_nom or "—", ep.statut,
+            exam_str, ep.planche_nom or "—", ep.statut, presence,
         ])
 
     for col in ws.columns:
