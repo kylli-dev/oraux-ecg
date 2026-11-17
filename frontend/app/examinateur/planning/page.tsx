@@ -113,7 +113,9 @@ function versCreneauEdt(ep: Epreuve): CreneauEdt {
     heure_fin: ep.heure_fin,
     preparation_minutes: ep.preparation_minutes,
     titre: nom,
-    detail: ep.salle_intitule ? `Salle ${ep.salle_intitule}` : null,
+    detail: ep.matiere,
+    salle: ep.salle_intitule,
+    libre: !ep.candidat_id,
     infobulle: `${ep.heure_debut} – ${ep.heure_fin} · ${ep.matiere} · ${nom}${ep.salle_intitule ? ` · Salle ${ep.salle_intitule}` : ""}`,
     style: styleBloc(ep),
   };

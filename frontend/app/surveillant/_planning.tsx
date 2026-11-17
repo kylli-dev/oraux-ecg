@@ -81,7 +81,9 @@ function versCreneauEdt(ep: Epreuve): CreneauEdt {
     heure_fin: ep.heure_fin,
     preparation_minutes: ep.preparation_minutes,
     titre: nom,
-    detail: ep.salle_intitule ? `Salle ${ep.salle_intitule} · ${ep.matiere}` : ep.matiere,
+    detail: ep.incident ? `${ep.matiere} · ⚠ incident` : ep.matiere,
+    salle: ep.salle_intitule,
+    libre: !ep.candidat_id,
     infobulle: `${ep.heure_debut} – ${ep.heure_fin} · ${ep.matiere} · ${nom}${ep.salle_intitule ? ` · Salle ${ep.salle_intitule}` : ""}`,
     style: styleBloc(ep),
   };
@@ -229,7 +231,7 @@ export function PlanningSurveillant({ vue }: { vue: "liste" | "edt" }) {
         title={vue === "edt" ? "Emploi du temps" : "Liste & présences"}
         subtitle={vue === "edt"
           ? "Vue d'ensemble de vos créneaux de surveillance, jour par jour."
-          : "Vos créneaux de surveillance, avec l'enregistrement des absences."}
+          : "Vos créneaux de surveillance, pour pointer les présents et les absents."}
         actions={
           <button
             onClick={handleExport}

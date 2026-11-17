@@ -1,16 +1,14 @@
 "use client";
 
-// Vue « Emploi du temps » partagée par les espaces examinateur et surveillant, en agenda
-// semaine par semaine : une colonne par journée de la semaine affichée (seulement les jours
-// qui ont des créneaux), l'axe vertical en heures, navigation entre les semaines. Chaque
-// passage est un bloc à son horaire, qui se lit de haut en bas : heure, candidat, salle et
-// matière, préparation. Les passages simultanés (un surveillant couvre plusieurs salles)
-// sont placés côte à côte, chacun assez large pour rester lisible. Aujourd'hui est mis en
-// évidence, avec un trait à l'heure actuelle. Plein écran : API Fullscreen quand elle
-// existe, sinon calque fixe.
+// Vue « Emploi du temps » partagée par les espaces examinateur et surveillant : un jour à
+// la fois, une colonne fixe par salle, l'axe vertical en heures. Les jours se choisissent
+// dans une rangée de pastilles (avec leur nombre de candidats, aujourd'hui en rouge). Les
+// créneaux libres sont masqués par défaut (une case les réaffiche) : sans eux, les
+// candidats ne sont plus noyés au milieu des créneaux vides. Trait rouge à l'heure
+// actuelle. Plein écran : API Fullscreen quand elle existe, sinon calque fixe.
 
 import { useEffect, useRef, useState } from "react";
-import { CalendarRange, ChevronLeft, ChevronRight, Maximize2, Minimize2 } from "lucide-react";
+import { CalendarRange, ChevronLeft, ChevronRight, DoorOpen, Maximize2, Minimize2 } from "lucide-react";
 import { RED } from "./ui";
 
 export type CreneauEdt = {
@@ -23,15 +21,18 @@ export type CreneauEdt = {
   detail?: string | null;
   infobulle: string;
   style: React.CSSProperties;
+  salle: string | null; // colonne du créneau
+  libre: boolean; // pas de candidat
 };
 
 export type LegendeEdt = { label: string; style: React.CSSProperties };
 
 // 2,6 px/min ≈ 156 px par heure : un passage de 30 min (78 px) affiche en entier son
-// heure, son candidat, sa salle et sa préparation.
+// heure, son candidat, son détail et sa préparation.
 const PX_PAR_MIN_DEFAUT = 2.6;
-const ENTETE_JOUR_PX = 60;
-const LARGEUR_MIN_VOIE = 170;
+const ENTETE_COLONNE_PX = 48;
+const LARGEUR_MIN_COLONNE = 180;
+const CLE_LIBRES = "edt_afficher_libres";
 
 function enMinutes(h: string) {
   const [hh, mm] = h.split(":").map(Number);
@@ -47,27 +48,19 @@ function iso(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-// Lundi de la semaine d'une date « AAAA-MM-JJ »
-function lundiDe(jour: string) {
-  const d = new Date(jour + "T12:00:00");
-  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-  return iso(d);
-}
+const triSalles = (a: string, b: string) => a.localeCompare(b, "fr", { numeric: true });
 
-// Répartit les créneaux d'une journée en voies : les créneaux qui se chevauchent
-// forment un groupe, chacun reçoit une voie libre et la largeur est partagée entre
-// les voies du groupe.
+// Dans une même colonne, des créneaux peuvent se chevaucher (rare) : on les place côte à
+// côte en partageant la largeur.
 function repartirEnVoies(creneaux: CreneauEdt[]) {
   const tries = [...creneaux].sort((a, b) => enMinutes(a.heure_debut) - enMinutes(b.heure_debut));
   const placement = new Map<number, { voie: number; nbVoies: number }>();
   let groupe: CreneauEdt[] = [];
   let finsVoies: number[] = [];
   let finGroupe = -1;
-  let maxVoies = 1;
 
   const cloreGroupe = () => {
     for (const c of groupe) placement.get(c.id)!.nbVoies = finsVoies.length;
-    maxVoies = Math.max(maxVoies, finsVoies.length);
     groupe = [];
     finsVoies = [];
   };
@@ -83,7 +76,7 @@ function repartirEnVoies(creneaux: CreneauEdt[]) {
     finGroupe = Math.max(finGroupe, f);
   }
   if (groupe.length) cloreGroupe();
-  return { placement, maxVoies };
+  return placement;
 }
 
 export function EmploiDuTemps({
@@ -100,16 +93,28 @@ export function EmploiDuTemps({
   onSelect: (id: number) => void;
 }) {
   const conteneur = useRef<HTMLDivElement>(null);
+  const pastilles = useRef<HTMLDivElement>(null);
   const [pleinEcran, setPleinEcran] = useState(false);
   const [hauteurEcran, setHauteurEcran] = useState(0);
-  // Semaine affichée (lundi) ; null = choix automatique (semaine en cours, sinon la première)
-  const [semaineChoisie, setSemaineChoisie] = useState<string | null>(null);
+  // Jour affiché ; null = choix automatique (aujourd'hui, sinon le prochain jour avec candidats)
+  const [jourChoisi, setJourChoisi] = useState<string | null>(null);
+  // Choix mémorisé dans le navigateur (le composant n'est monté qu'une fois les créneaux
+  // chargés, côté client : pas de décalage avec le rendu serveur)
+  const [libres, setLibres] = useState(() => {
+    try { return localStorage.getItem(CLE_LIBRES) === "1"; } catch { return false; }
+  });
   // Heure actuelle, pour le trait « maintenant » (rafraîchie chaque minute)
   const [maintenant, setMaintenant] = useState(() => new Date());
+
   useEffect(() => {
     const id = setInterval(() => setMaintenant(new Date()), 60_000);
     return () => clearInterval(id);
   }, []);
+
+  function basculerLibres(v: boolean) {
+    setLibres(v);
+    try { localStorage.setItem(CLE_LIBRES, v ? "1" : "0"); } catch { /* stockage indisponible */ }
+  }
 
   function entrerPleinEcran() {
     setPleinEcran(true);
@@ -139,41 +144,45 @@ export function EmploiDuTemps({
     };
   }, [pleinEcran]);
 
+  const aujourdhui = iso(maintenant);
+  const jours = [...new Set(creneaux.map((c) => c.date))].sort();
+  const candidatsDuJour = (j: string) => creneaux.filter((c) => c.date === j && !c.libre).length;
+  const jour =
+    jourChoisi && jours.includes(jourChoisi) ? jourChoisi
+    : jours.includes(aujourdhui) ? aujourdhui
+    : jours.find((j) => j >= aujourdhui && candidatsDuJour(j) > 0)
+      ?? jours.find((j) => candidatsDuJour(j) > 0)
+      ?? jours[0];
+  const idxJour = jours.indexOf(jour);
+
+  // Garde la pastille du jour affiché visible dans la rangée défilante
+  useEffect(() => {
+    pastilles.current?.querySelector<HTMLElement>("[data-actif='1']")?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [jour]);
+
   if (creneaux.length === 0) return null;
 
-  const aujourdhui = iso(maintenant);
-  const semaines = [...new Set(creneaux.map((c) => lundiDe(c.date)))].sort();
-  const semaine =
-    semaineChoisie && semaines.includes(semaineChoisie) ? semaineChoisie
-    : semaines.includes(lundiDe(aujourdhui)) ? lundiDe(aujourdhui)
-    : semaines[0];
-  const idxSemaine = semaines.indexOf(semaine);
-  const duSemaine = creneaux.filter((c) => lundiDe(c.date) === semaine);
-  const jours = [...new Set(duSemaine.map((c) => c.date))].sort();
+  const duJour = creneaux.filter((c) => c.date === jour);
+  const visibles = duJour.filter((c) => libres || !c.libre);
+  const nbLibres = duJour.filter((c) => c.libre).length;
+  const salles = [...new Set(visibles.map((c) => c.salle ?? ""))].sort(triSalles);
 
-  const dimanche = new Date(semaine + "T12:00:00");
-  dimanche.setDate(dimanche.getDate() + 6);
-  const libelleSemaine = (() => {
-    const l = new Date(semaine + "T12:00:00");
-    const memeMois = l.getMonth() === dimanche.getMonth();
-    const debutTxt = l.toLocaleDateString("fr-FR", memeMois ? { day: "numeric" } : { day: "numeric", month: "long" });
-    return `Semaine du ${debutTxt} au ${dimanche.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}`;
-  })();
-
-  const debut = Math.floor(Math.min(...duSemaine.map((c) => enMinutes(c.heure_debut))) / 60) * 60;
-  const fin = Math.ceil(Math.max(...duSemaine.map((c) => enMinutes(c.heure_fin))) / 60) * 60;
+  const debut = visibles.length ? Math.floor(Math.min(...visibles.map((c) => enMinutes(c.heure_debut))) / 60) * 60 : 0;
+  const fin = visibles.length ? Math.ceil(Math.max(...visibles.map((c) => enMinutes(c.heure_fin))) / 60) * 60 : 60;
   // En plein écran, l'échelle s'agrandit pour que la journée occupe toute la hauteur
-  // (~190 px réservés au titre, à la barre d'outils et aux en-têtes de journée)
+  // (~230 px réservés au titre, aux pastilles, à la légende et aux en-têtes de salle)
   const pxParMin = pleinEcran && hauteurEcran
-    ? Math.max(PX_PAR_MIN_DEFAUT, (hauteurEcran - 190) / Math.max(fin - debut, 60))
+    ? Math.max(PX_PAR_MIN_DEFAUT, (hauteurEcran - 230) / Math.max(fin - debut, 60))
     : PX_PAR_MIN_DEFAUT;
   const hauteur = (fin - debut) * pxParMin;
   const heures: number[] = [];
   for (let m = debut; m <= fin; m += 60) heures.push(m);
   const minutesMaintenant = maintenant.getHours() * 60 + maintenant.getMinutes();
+  const estAujourdhui = jour === aujourdhui;
+  const titreJour = new Date(jour + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
 
   const boutonNav =
-    "h-9 w-9 grid place-items-center rounded-lg border border-gray-300 bg-white text-gray-900 hover:bg-gray-50 transition disabled:opacity-30 disabled:hover:bg-white";
+    "h-9 w-9 shrink-0 grid place-items-center rounded-lg border border-gray-300 bg-white text-gray-900 hover:bg-gray-50 transition disabled:opacity-30 disabled:hover:bg-white";
 
   return (
     <div
@@ -191,40 +200,56 @@ export function EmploiDuTemps({
         </p>
       )}
 
-      {/* ── Barre d'outils : semaine, navigation, plein écran ── */}
-      <div className={`flex flex-wrap items-center gap-2 ${pleinEcran ? "mb-3" : "px-4 pt-4 pb-3 border-b border-gray-100"}`}>
-        <button
-          onClick={() => setSemaineChoisie(semaines[idxSemaine - 1])}
-          disabled={idxSemaine <= 0}
-          className={boutonNav}
-          aria-label="Semaine précédente"
-        >
+      {/* ── Jours : pastilles défilantes ── */}
+      <div className={`flex items-center gap-2 ${pleinEcran ? "mb-3" : "px-4 pt-4 pb-3 border-b border-gray-100"}`}>
+        <button onClick={() => setJourChoisi(jours[idxJour - 1])} disabled={idxJour <= 0} className={boutonNav} aria-label="Jour précédent">
           <ChevronLeft className="h-4 w-4" />
         </button>
-        <button
-          onClick={() => setSemaineChoisie(semaines[idxSemaine + 1])}
-          disabled={idxSemaine >= semaines.length - 1}
-          className={boutonNav}
-          aria-label="Semaine suivante"
-        >
+        <div ref={pastilles} className="flex-1 min-w-0 flex gap-1.5 overflow-x-auto py-0.5 [scrollbar-width:thin]">
+          {jours.map((j) => {
+            const d = new Date(j + "T12:00:00");
+            const n = candidatsDuJour(j);
+            const actif = j === jour;
+            const auj = j === aujourdhui;
+            return (
+              <button
+                key={j}
+                data-actif={actif ? "1" : "0"}
+                onClick={() => setJourChoisi(j)}
+                className={`shrink-0 min-w-[64px] rounded-xl border px-2.5 py-1.5 text-center transition ${
+                  actif ? "text-white shadow-sm" : n === 0 ? "bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100" : "bg-white border-gray-300 text-gray-900 hover:bg-gray-50"
+                }`}
+                style={actif ? { backgroundColor: RED, borderColor: RED } : auj ? { borderColor: RED, color: RED } : undefined}
+                title={`${d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })} : ${n} candidat${n > 1 ? "s" : ""}`}
+              >
+                <span className="block text-[11px] font-semibold uppercase leading-tight">
+                  {auj ? "auj." : d.toLocaleDateString("fr-FR", { weekday: "short" }).replace(".", "")}
+                </span>
+                <span className="block text-base font-bold leading-tight tabular-nums">
+                  {d.getDate()} <span className="text-[11px] font-semibold">{d.toLocaleDateString("fr-FR", { month: "short" }).replace(".", "")}</span>
+                </span>
+                <span className={`block text-[11px] leading-tight ${actif ? "text-white/90" : ""}`}>
+                  {n} cand.
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <button onClick={() => setJourChoisi(jours[idxJour + 1])} disabled={idxJour >= jours.length - 1} className={boutonNav} aria-label="Jour suivant">
           <ChevronRight className="h-4 w-4" />
         </button>
-        <div className="ml-1 min-w-0">
-          <p className="text-base font-bold text-gray-900 leading-tight">{libelleSemaine}</p>
-          <p className="text-xs text-gray-700">
-            {duSemaine.length} créneau{duSemaine.length > 1 ? "x" : ""}
-            {semaines.length > 1 && ` · semaine ${idxSemaine + 1} sur ${semaines.length}`}
-          </p>
-        </div>
-        {semaines.includes(lundiDe(aujourdhui)) && semaine !== lundiDe(aujourdhui) && (
-          <button
-            onClick={() => setSemaineChoisie(lundiDe(aujourdhui))}
-            className="h-9 px-3 rounded-lg border text-sm font-semibold bg-white hover:bg-red-50 transition"
-            style={{ borderColor: RED + "55", color: RED }}
-          >
-            Cette semaine
-          </button>
-        )}
+      </div>
+
+      {/* ── Jour affiché, options et légende ── */}
+      <div className={`flex flex-wrap items-center gap-x-4 gap-y-2 ${pleinEcran ? "mb-3" : "px-4 pt-3 pb-2"}`}>
+        <p className="text-base font-bold text-gray-900 capitalize">
+          {titreJour}
+          {estAujourdhui && <span className="ml-2 text-xs font-bold uppercase" style={{ color: RED }}>aujourd&apos;hui</span>}
+        </p>
+        <label className="flex items-center gap-2 text-sm font-medium text-gray-900 cursor-pointer select-none">
+          <input type="checkbox" checked={libres} onChange={(e) => basculerLibres(e.target.checked)} className="h-4 w-4 accent-[#C62828]" />
+          Afficher les créneaux libres{nbLibres > 0 ? ` (${nbLibres})` : ""}
+        </label>
         <button
           onClick={pleinEcran ? quitterPleinEcran : entrerPleinEcran}
           className="ml-auto h-9 flex items-center gap-1.5 text-sm px-3 rounded-lg border border-gray-300 bg-white font-medium text-gray-900 hover:bg-gray-50 transition"
@@ -234,10 +259,9 @@ export function EmploiDuTemps({
           {pleinEcran ? "Quitter le plein écran" : "Plein écran"}
         </button>
       </div>
-
-      {/* ── Légende ── */}
-      <div className={`flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-gray-900 ${pleinEcran ? "mb-3" : "px-4 py-2.5"}`}>
-        {legende.map((l) => (
+      <div className={`flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-gray-900 ${pleinEcran ? "mb-3" : "px-4 pb-3"}`}>
+        {/* Entrée « créneau libre » (bordure en pointillés) seulement quand ils sont affichés */}
+        {legende.filter((l) => libres || l.style.borderStyle !== "dashed").map((l) => (
           <span key={l.label} className="flex items-center gap-1.5">
             <span className="h-3.5 w-3.5 rounded border border-l-4" style={l.style} />
             {l.label}
@@ -246,106 +270,97 @@ export function EmploiDuTemps({
         {consigne && <span className="sm:ml-auto text-gray-700">{consigne}</span>}
       </div>
 
-      {/* ── Grille ── */}
-      <div className={`overflow-x-auto ${pleinEcran ? "" : "px-4 pb-4"}`}>
-        <div className="flex min-w-fit rounded-xl border border-gray-200 overflow-hidden">
-          {/* Axe des heures */}
-          <div className="w-14 shrink-0 relative bg-gray-50/60" style={{ height: hauteur + ENTETE_JOUR_PX }}>
-            {heures.map((m) => (
-              <span
-                key={m}
-                className="absolute right-2 -translate-y-1/2 text-xs font-semibold text-gray-800 tabular-nums"
-                style={{ top: ENTETE_JOUR_PX + (m - debut) * pxParMin }}
-              >
-                {enHeure(m)}
-              </span>
-            ))}
+      {/* ── Grille : une colonne par salle ── */}
+      <div className={pleinEcran ? "" : "px-4 pb-4"}>
+        {visibles.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-gray-300 px-4 py-10 text-center">
+            <p className="text-sm font-semibold text-gray-900">Aucun candidat ce jour-là</p>
+            {nbLibres > 0 && (
+              <button onClick={() => basculerLibres(true)} className="mt-2 text-sm font-semibold underline underline-offset-2" style={{ color: RED }}>
+                Afficher les {nbLibres} créneau{nbLibres > 1 ? "x" : ""} libre{nbLibres > 1 ? "s" : ""}
+              </button>
+            )}
           </div>
-
-          {jours.map((jour) => {
-            const duJour = duSemaine.filter((c) => c.date === jour);
-            const { placement, maxVoies } = repartirEnVoies(duJour);
-            const estAujourdhui = jour === aujourdhui;
-            const dj = new Date(jour + "T12:00:00");
-            return (
-              <div
-                key={jour}
-                className={`flex-1 border-l border-gray-200 ${estAujourdhui ? "bg-red-50/30" : ""}`}
-                style={{ minWidth: Math.max(160, maxVoies * LARGEUR_MIN_VOIE) }}
-              >
-                {/* En-tête de journée, façon agenda : jour de la semaine, puis numéro */}
-                <div
-                  className="flex items-center justify-center gap-2 border-b border-gray-200 px-2 bg-white"
-                  style={{ height: ENTETE_JOUR_PX }}
-                >
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-gray-200">
+            <div className="flex min-w-fit">
+              {/* Axe des heures, fixe pendant le défilement horizontal */}
+              <div className="sticky left-0 z-30 w-14 shrink-0 bg-gray-50 border-r border-gray-200" style={{ height: hauteur + ENTETE_COLONNE_PX }}>
+                {heures.map((m) => (
                   <span
-                    className={`h-9 min-w-9 px-1 grid place-items-center rounded-full text-lg font-bold tabular-nums ${estAujourdhui ? "text-white" : "text-gray-900"}`}
-                    style={estAujourdhui ? { backgroundColor: RED } : undefined}
+                    key={m}
+                    className="absolute right-2 -translate-y-1/2 text-xs font-semibold text-gray-800 tabular-nums"
+                    style={{ top: ENTETE_COLONNE_PX + (m - debut) * pxParMin }}
                   >
-                    {dj.getDate()}
+                    {enHeure(m)}
                   </span>
-                  <span className="flex flex-col leading-tight">
-                    <span className={`text-xs font-bold uppercase tracking-wide ${estAujourdhui ? "" : "text-gray-900"}`} style={estAujourdhui ? { color: RED } : undefined}>
-                      {dj.toLocaleDateString("fr-FR", { weekday: "short" }).replace(".", "")}
-                      {estAujourdhui && " · aujourd'hui"}
-                    </span>
-                    <span className="text-[11px] text-gray-700">
-                      {dj.toLocaleDateString("fr-FR", { month: "short" })} · {duJour.length} créneau{duJour.length > 1 ? "x" : ""}
-                    </span>
-                  </span>
-                </div>
-
-                <div className="relative" style={{ height: hauteur }}>
-                  {heures.map((m) => (
-                    <div key={m} className="absolute inset-x-0 border-t border-gray-100" style={{ top: (m - debut) * pxParMin }} />
-                  ))}
-                  {/* Heure actuelle */}
-                  {estAujourdhui && minutesMaintenant >= debut && minutesMaintenant <= fin && (
-                    <div className="absolute inset-x-0 z-20 pointer-events-none" style={{ top: (minutesMaintenant - debut) * pxParMin }}>
-                      <div className="absolute -left-1 -top-1 h-2 w-2 rounded-full" style={{ backgroundColor: RED }} />
-                      <div className="border-t-2" style={{ borderColor: RED }} />
-                    </div>
-                  )}
-                  {duJour.map((c) => {
-                    const d = enMinutes(c.heure_debut);
-                    const f = enMinutes(c.heure_fin);
-                    const prep = c.preparation_minutes ?? 0;
-                    const h = Math.max((f - d) * pxParMin, 24);
-                    const { voie, nbVoies } = placement.get(c.id)!;
-                    const gauche = `${(voie / nbVoies) * 100}%`;
-                    const largeur = `${100 / nbVoies}%`;
-                    return (
-                      // pointer-events-none : la voie couvre toute la hauteur et ne doit pas
-                      // masquer les blocs des autres groupes situés dessous
-                      <div key={c.id} className="absolute inset-y-0 pointer-events-none" style={{ left: gauche, width: largeur }}>
-                        <button
-                          onClick={() => { if (pleinEcran) quitterPleinEcran(); onSelect(c.id); }}
-                          className="pointer-events-auto absolute left-1 right-1 rounded-lg border border-l-4 px-2.5 py-1.5 text-left overflow-hidden text-gray-900 shadow-sm transition hover:shadow-md hover:z-10 focus:outline-none focus-visible:ring-2"
-                          style={{ top: (d - debut) * pxParMin + 1, height: h - 2, "--tw-ring-color": RED, ...c.style } as React.CSSProperties}
-                          title={c.infobulle}
-                        >
-                          <span className="flex items-baseline gap-1.5 leading-tight">
-                            <span className="text-sm font-bold tabular-nums">{c.heure_debut}</span>
-                            <span className="text-xs text-gray-700 tabular-nums">→ {c.heure_fin}</span>
-                          </span>
-                          {h >= 44 && <span className="block text-sm font-semibold truncate leading-snug mt-0.5">{c.titre}</span>}
-                          {h >= 62 && c.detail && (
-                            <span className="block text-xs text-gray-800 truncate leading-tight">{c.detail}</span>
-                          )}
-                          {h >= 76 && prep > 0 && (
-                            <span className="block text-[11px] text-gray-700 truncate leading-tight mt-0.5">
-                              Préparation dès {enHeure(d - prep)}
-                            </span>
-                          )}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
+                ))}
               </div>
-            );
-          })}
-        </div>
+
+              {salles.map((salle, i) => {
+                const deLaSalle = visibles.filter((c) => (c.salle ?? "") === salle);
+                const placement = repartirEnVoies(deLaSalle);
+                const nbCand = deLaSalle.filter((c) => !c.libre).length;
+                return (
+                  <div key={salle || "—"} className={`flex-1 ${i > 0 ? "border-l border-gray-200" : ""} ${estAujourdhui ? "bg-red-50/20" : ""}`} style={{ minWidth: LARGEUR_MIN_COLONNE }}>
+                    <div className="flex items-center justify-center gap-2 border-b border-gray-200 bg-white px-2" style={{ height: ENTETE_COLONNE_PX }}>
+                      <DoorOpen className="h-4 w-4 shrink-0" style={{ color: RED }} />
+                      <span className="text-sm font-bold text-gray-900 truncate">{salle ? `Salle ${salle}` : "Sans salle"}</span>
+                      <span className="text-[11px] text-gray-700 shrink-0">{nbCand} cand.</span>
+                    </div>
+
+                    <div className="relative" style={{ height: hauteur }}>
+                      {heures.map((m) => (
+                        <div key={m} className="absolute inset-x-0 border-t border-gray-100" style={{ top: (m - debut) * pxParMin }} />
+                      ))}
+                      {/* Heure actuelle */}
+                      {estAujourdhui && minutesMaintenant >= debut && minutesMaintenant <= fin && (
+                        <div className="absolute inset-x-0 z-20 pointer-events-none border-t-2" style={{ top: (minutesMaintenant - debut) * pxParMin, borderColor: RED }} />
+                      )}
+                      {deLaSalle.map((c) => {
+                        const d = enMinutes(c.heure_debut);
+                        const f = enMinutes(c.heure_fin);
+                        const prep = c.preparation_minutes ?? 0;
+                        const h = Math.max((f - d) * pxParMin, 24);
+                        const { voie, nbVoies } = placement.get(c.id)!;
+                        return (
+                          <button
+                            key={c.id}
+                            onClick={() => { if (pleinEcran) quitterPleinEcran(); onSelect(c.id); }}
+                            className="absolute rounded-lg border border-l-4 px-2.5 py-1.5 text-left overflow-hidden text-gray-900 shadow-sm transition hover:shadow-md hover:z-10 focus:outline-none focus-visible:ring-2"
+                            style={{
+                              top: (d - debut) * pxParMin + 1,
+                              height: h - 2,
+                              left: `calc(${(voie / nbVoies) * 100}% + 4px)`,
+                              width: `calc(${100 / nbVoies}% - 8px)`,
+                              "--tw-ring-color": RED,
+                              ...c.style,
+                            } as React.CSSProperties}
+                            title={c.infobulle}
+                          >
+                            <span className="flex items-baseline gap-1.5 leading-tight">
+                              <span className="text-sm font-bold tabular-nums">{c.heure_debut}</span>
+                              <span className="text-xs text-gray-700 tabular-nums">→ {c.heure_fin}</span>
+                            </span>
+                            {h >= 44 && <span className="block text-sm font-semibold truncate leading-snug mt-0.5">{c.titre}</span>}
+                            {h >= 62 && c.detail && (
+                              <span className="block text-xs text-gray-800 truncate leading-tight">{c.detail}</span>
+                            )}
+                            {h >= 76 && prep > 0 && (
+                              <span className="block text-[11px] text-gray-700 truncate leading-tight mt-0.5">
+                                Préparation dès {enHeure(d - prep)}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
