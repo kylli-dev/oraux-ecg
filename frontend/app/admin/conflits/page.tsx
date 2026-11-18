@@ -4,8 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import { AlertTriangle, RefreshCw, Loader2, CheckCircle } from "lucide-react";
 
 const RED = "#C62828";
-const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_API_KEY ?? "change-me-123";
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
 
 type Conflit = {
   epreuve_id: number;
@@ -28,10 +26,6 @@ function formatDate(d: string) {
   });
 }
 
-function adminHeaders() {
-  return { "X-Admin-Api-Key": ADMIN_KEY };
-}
-
 export default function ConflitsPage() {
   const [conflits, setConflits] = useState<Conflit[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,10 +35,8 @@ export default function ConflitsPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${API_BASE}/admin/conflits/`, {
-        headers: adminHeaders(),
-        cache: "no-store",
-      });
+      // Via le proxy admin (cookie de session) : la clé admin reste côté serveur
+      const res = await fetch("/api/backend/conflits", { cache: "no-store" });
       if (!res.ok) throw new Error("Erreur lors du chargement");
       setConflits(await res.json());
     } catch (e: unknown) {

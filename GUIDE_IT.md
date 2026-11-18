@@ -325,7 +325,6 @@ Ces routes sont des **handlers Next.js** (pas des pages) situés dans `frontend/
 |----------|-------------|
 | `NEXT_PUBLIC_API_BASE_URL` | URL de base de l'API (vide = URLs relatives via proxy nginx) |
 | `NEXT_PUBLIC_API_URL` | URL de l'API publique |
-| `NEXT_PUBLIC_ADMIN_API_KEY` | Clé admin côté navigateur (identique à `ADMIN_API_KEY`) |
 
 ### Générer des secrets sécurisés
 
@@ -508,7 +507,7 @@ openssl rand -hex 32  # Pour ADMIN_API_KEY, SECRET_KEY, JWT_SECRET
 # Mettre à jour .env.prod
 nano .env.prod
 
-# Rebuilder le frontend (NEXT_PUBLIC_ADMIN_API_KEY est build-time)
+# Redémarrer le frontend (ADMIN_API_KEY est lue à l'exécution, jamais envoyée au navigateur)
 docker compose build frontend
 docker compose up -d
 ```
