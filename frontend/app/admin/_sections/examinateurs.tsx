@@ -79,6 +79,8 @@ function AffectationTab({ planningId, examinateurs, filtresInitiaux }: {
   const [filterEtat, setFilterEtat] = useFiltre<"" | "sans" | "avec" | "lui">("affectation:etat", filtresInitiaux ? "sans" : "", planningId, !!filtresInitiaux);
   // 2ᵉ examinateur : "" = tous, "__avec" / "__sans", ou l'id d'un examinateur précis
   const [filterEx2, setFilterEx2] = useFiltre("affectation:ex2", "", planningId, !!filtresInitiaux);
+  // Dédoublement : "" = tous, "__doublons" / "__simples", ou le rang du jury ("1", "2"…)
+  const [filterDoublon, setFilterDoublon] = useFiltre("affectation:doublons", "", planningId, !!filtresInitiaux);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [assigning, setAssigning] = useState(false);
   const [deassigning, setDeassigning] = useState<number | null>(null);
@@ -125,7 +127,24 @@ function AffectationTab({ planningId, examinateurs, filtresInitiaux }: {
     ? selectedEx.matieres
     : Array.from(new Set(epreuves.map((e) => e.matiere))).sort();
 
+  // Dédoublement de jury : plusieurs épreuves sur le même créneau (date, matière, heure).
+  // Rang #1, #2… calculé sur tout le planning, comme dans « Salles & surveillants » :
+  // le même jury porte le même numéro sur les deux écrans, quels que soient les filtres.
+  const rangJury = new Map<number, number>();
+  const tailleCreneau = new Map<string, number>();
+  const cleCreneau = (e: EpreuveFlat) => `${e.date}||${e.matiere}||${e.heure_debut}`;
+  for (const e of epreuves) {
+    const n = (tailleCreneau.get(cleCreneau(e)) ?? 0) + 1;
+    tailleCreneau.set(cleCreneau(e), n);
+    rangJury.set(e.id, n);
+  }
+  const estDoublon = (e: EpreuveFlat) => (tailleCreneau.get(cleCreneau(e)) ?? 1) > 1;
+  const maxJurys = Math.max(1, ...Array.from(tailleCreneau.values()));
+
   const filtered = epreuves.filter((ep) => {
+    if (filterDoublon === "__doublons" && !estDoublon(ep)) return false;
+    if (filterDoublon === "__simples" && estDoublon(ep)) return false;
+    if (filterDoublon && !filterDoublon.startsWith("__") && (!estDoublon(ep) || rangJury.get(ep.id) !== Number(filterDoublon))) return false;
     if (filterMatiere && ep.matiere !== filterMatiere) return false;
     if (filterDate && ep.date !== filterDate) return false;
     if (filterSession && ep.demi_journee_type !== filterSession) return false;
@@ -261,7 +280,7 @@ function AffectationTab({ planningId, examinateurs, filtresInitiaux }: {
             </select>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-800 mb-1">Triplet</label>
             <select
@@ -328,12 +347,28 @@ function AffectationTab({ planningId, examinateurs, filtresInitiaux }: {
               ))}
             </select>
           </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-800 mb-1">Doublons</label>
+            <select
+              value={filterDoublon}
+              onChange={(e) => setFilterDoublon(e.target.value)}
+              title="Dédoublement de jury : plusieurs épreuves en parallèle sur le même créneau (même date, matière et horaire)"
+              className="w-full border rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#C62828]/30"
+            >
+              <option value="">Tous les créneaux</option>
+              <option value="__doublons">Créneaux dédoublés</option>
+              <option value="__simples">Créneaux simples</option>
+              {maxJurys > 1 && Array.from({ length: maxJurys }, (_, i) => String(i + 1)).map((r) => (
+                <option key={r} value={r}>Jury #{r} des doublons</option>
+              ))}
+            </select>
+          </div>
         </div>
-        {(filterMatiere || filterDate || filterSession || filterHeure || filterTriplet || filterEtat || filterEx2) && (
+        {(filterMatiere || filterDate || filterSession || filterHeure || filterTriplet || filterEtat || filterEx2 || filterDoublon) && (
           <div className="flex items-center gap-3 text-xs text-gray-800">
             <span>{filtered.length} épreuve{filtered.length > 1 ? "s" : ""} affichée{filtered.length > 1 ? "s" : ""} sur {epreuves.length}</span>
             <button
-              onClick={() => { setFilterMatiere(""); setFilterDate(""); setFilterSession(""); setFilterHeure(""); setFilterTriplet(""); setFilterEtat(""); setFilterEx2(""); }}
+              onClick={() => { setFilterMatiere(""); setFilterDate(""); setFilterSession(""); setFilterHeure(""); setFilterTriplet(""); setFilterEtat(""); setFilterEx2(""); setFilterDoublon(""); }}
               className="text-[#C62828] hover:underline"
             >
               Réinitialiser les filtres
@@ -471,7 +506,19 @@ function AffectationTab({ planningId, examinateurs, filtresInitiaux }: {
                               <span className="ml-1.5 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">Indisponible</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 font-medium text-xs text-gray-700 whitespace-nowrap">{ep.matiere}</td>
+                          <td className="px-4 py-3 font-medium text-xs text-gray-700 whitespace-nowrap">
+                            {ep.matiere}
+                            {estDoublon(ep) && (
+                              <span
+                                className="ml-1.5 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold align-middle"
+                                style={{ backgroundColor: "#EEF2FF", color: "#3730A3" }}
+                                title={`Créneau dédoublé : jury ${rangJury.get(ep.id)} sur ${tailleCreneau.get(cleCreneau(ep))}${ep.salle_intitule ? `, salle ${ep.salle_intitule}` : ", salle non affectée"}`}
+                              >
+                                Jury #{rangJury.get(ep.id)}
+                                <span className="font-normal">· {ep.salle_intitule ? `salle ${ep.salle_intitule}` : "sans salle"}</span>
+                              </span>
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-xs text-gray-800">
                             {ep.candidat_id
                               ? `${ep.candidat_prenom ?? ""} ${ep.candidat_nom ?? ""}`.trim()
