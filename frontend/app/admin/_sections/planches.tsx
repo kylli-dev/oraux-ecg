@@ -12,6 +12,7 @@ import {
   Palette,
   CheckCircle2,
   FileText,
+  Shuffle,
 } from "lucide-react";
 import {
   Btn,
@@ -616,6 +617,14 @@ export function PlanchesSection() {
   // "" = tous, "aucun" = sans examinateur, sinon l'id de l'examinateur (1er ou 2e)
   const [filterExamAss, setFilterExamAss] = useFiltre("planches:examinateur", "", planningId, !!intention);
   const [assigning, setAssigning] = useState(false);
+  // Sélection multiple (cases à cocher) : actions groupées sur les épreuves cochées
+  const [selAss, setSelAss] = useState<Set<number>>(new Set());
+  const dernierCoche = useRef<number | null>(null);
+  const [assignMulti, setAssignMulti] = useState(false);
+  const [modeMulti, setModeMulti] = useState<"meme" | "repartir">("meme");
+  // Planches à répartir, dans l'ordre où elles ont été cochées
+  const [planchesRepartir, setPlanchesRepartir] = useState<number[]>([]);
+  const [progresMulti, setProgresMulti] = useState<{ fait: number; total: number } | null>(null);
 
   const loadPlanches = useCallback(() => {
     setLoadingP(true);
@@ -860,6 +869,93 @@ export function PlanchesSection() {
         .toLowerCase().includes(rechAss))
     .sort((a, b) => a.date.localeCompare(b.date) || hm(a.heure_debut).localeCompare(hm(b.heure_debut)) || a.matiere.localeCompare(b.matiere, "fr"));
 
+  // Seules les épreuves cochées ET visibles avec les filtres actuels sont concernées
+  const selectionnees = epreuvesFiltrees.filter((e) => selAss.has(e.id));
+  const toutesCochees = epreuvesFiltrees.length > 0 && selectionnees.length === epreuvesFiltrees.length;
+  const matieresSelection = Array.from(new Set(selectionnees.map((e) => e.matiere)));
+  const planchesMulti = matieresSelection.length === 1
+    ? planches.filter((p) => p.statut === "ACTIF" && p.matiere_intitule === matieresSelection[0])
+    : [];
+
+  // Maj+clic : coche (ou décoche) toute la plage depuis la dernière case cliquée
+  function cocher(id: number, plage: boolean) {
+    const ids = epreuvesFiltrees.map((e) => e.id);
+    setSelAss((prev) => {
+      const suivant = new Set(prev);
+      const valeur = !prev.has(id);
+      const a = dernierCoche.current != null ? ids.indexOf(dernierCoche.current) : -1;
+      const b = ids.indexOf(id);
+      const cibles = plage && a >= 0 && b >= 0 ? ids.slice(Math.min(a, b), Math.max(a, b) + 1) : [id];
+      for (const x of cibles) {
+        if (valeur) suivant.add(x); else suivant.delete(x);
+      }
+      return suivant;
+    });
+    dernierCoche.current = id;
+  }
+
+  function cocherTout() {
+    setSelAss(toutesCochees ? new Set() : new Set(epreuvesFiltrees.map((e) => e.id)));
+  }
+
+  function ouvrirAssignMulti() {
+    setModeMulti("meme");
+    setPlanchesRepartir([]);
+    setAssignMulti(true);
+  }
+
+  // Assigne les planches aux épreuves cochées, dans l'ordre des horaires : une seule
+  // planche = la même partout ; plusieurs = en rotation (A, B, C, A, B, C…).
+  // Une requête par épreuve : chaque assignation reste dans l'historique des planches.
+  async function assignerEnMasse(plancheIds: number[]) {
+    if (plancheIds.length === 0 || selectionnees.length === 0) return;
+    const cibles = selectionnees;
+    const faites = new Map<number, number>();
+    let echecs = 0;
+    setProgresMulti({ fait: 0, total: cibles.length });
+    for (let i = 0; i < cibles.length; i++) {
+      const ep = cibles[i];
+      const pid = plancheIds[i % plancheIds.length];
+      try {
+        if (ep.planche_id !== pid) await post(`planches/epreuves/${ep.id}/assigner`, { planche_id: pid });
+        faites.set(ep.id, pid);
+      } catch {
+        echecs++;
+      }
+      setProgresMulti({ fait: i + 1, total: cibles.length });
+    }
+    setEpreuves((prev) => prev.map((e) => {
+      const pid = faites.get(e.id);
+      return pid === undefined ? e : { ...e, planche_id: pid, planche_nom: planches.find((p) => p.id === pid)?.nom ?? null };
+    }));
+    setProgresMulti(null);
+    setAssignMulti(false);
+    setSelAss(new Set());
+    if (echecs) toast.error(`${faites.size} planche(s) assignée(s), ${echecs} en échec — réessayez pour celles-ci`);
+    else toast.success(`${faites.size} planche${faites.size > 1 ? "s" : ""} assignée${faites.size > 1 ? "s" : ""}`);
+  }
+
+  async function retirerEnMasse() {
+    const cibles = selectionnees.filter((e) => e.planche_id);
+    if (cibles.length === 0) { toast.error("Aucune des épreuves cochées n'a de planche"); return; }
+    if (!await confirm(`Retirer la planche de ${cibles.length} épreuve${cibles.length > 1 ? "s" : ""} ?`, { confirmLabel: "Retirer", danger: true })) return;
+    const retirees = new Set<number>();
+    setProgresMulti({ fait: 0, total: cibles.length });
+    for (let i = 0; i < cibles.length; i++) {
+      try {
+        await del(`planches/epreuves/${cibles[i].id}/assigner`);
+        retirees.add(cibles[i].id);
+      } catch { /* compté plus bas */ }
+      setProgresMulti({ fait: i + 1, total: cibles.length });
+    }
+    setEpreuves((prev) => prev.map((e) => (retirees.has(e.id) ? { ...e, planche_id: null, planche_nom: null } : e)));
+    setProgresMulti(null);
+    setSelAss(new Set());
+    const echecs = cibles.length - retirees.size;
+    if (echecs) toast.error(`${retirees.size} planche(s) retirée(s), ${echecs} en échec`);
+    else toast.success(`${retirees.size} planche${retirees.size > 1 ? "s" : ""} retirée${retirees.size > 1 ? "s" : ""}`);
+  }
+
   const matiereOptions = Array.from(new Set(epreuves.map((e) => e.matiere))).sort();
   const dateOptionsAss = Array.from(new Set(epreuves.map((e) => e.date))).sort();
   const heureOptionsAss = Array.from(new Set(epreuves.map((e) => hm(e.heure_debut)))).sort();
@@ -1100,7 +1196,7 @@ export function PlanchesSection() {
             <Field label="Planning">
               <Select
                 value={planningId}
-                onChange={(e) => { setPlanningId(e.target.value === "" ? "" : Number(e.target.value)); resetFiltresAss(); }}
+                onChange={(e) => { setPlanningId(e.target.value === "" ? "" : Number(e.target.value)); resetFiltresAss(); setSelAss(new Set()); }}
                 className="min-w-[220px]"
               >
                 <option value="">— Sélectionner un planning</option>
@@ -1187,10 +1283,46 @@ export function PlanchesSection() {
           ) : epreuvesFiltrees.length === 0 ? (
             <Empty message="Aucune épreuve ne correspond aux filtres" />
           ) : (
+            <div className="space-y-3">
+            {/* Barre d'actions groupées, dès qu'une case est cochée */}
+            {selectionnees.length > 0 && (
+              <div
+                className="sticky top-0 z-20 flex flex-wrap items-center gap-3 rounded-xl border px-4 py-2.5 shadow-sm bg-white"
+                style={{ borderColor: RED + "55" }}
+              >
+                <span className="text-sm font-semibold text-gray-900">
+                  {selectionnees.length} épreuve{selectionnees.length > 1 ? "s" : ""} sélectionnée{selectionnees.length > 1 ? "s" : ""}
+                  {matieresSelection.length === 1 && <span className="font-normal text-gray-800"> · {matieresSelection[0]}</span>}
+                </span>
+                {progresMulti ? (
+                  <span className="inline-flex items-center gap-1.5 text-sm text-gray-900">
+                    <Loader2 className="h-4 w-4 animate-spin" /> {progresMulti.fait} / {progresMulti.total}…
+                  </span>
+                ) : (
+                  <>
+                    <Btn label="Assigner une planche" small icon={FileText} onClick={ouvrirAssignMulti} />
+                    <Btn label="Retirer les planches" small variant="danger" icon={X} onClick={retirerEnMasse} />
+                    <button onClick={() => setSelAss(new Set())} className="ml-auto text-sm font-medium text-gray-800 hover:underline">
+                      Tout désélectionner
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
             <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-[#F5F5F5]">
+                    <th className="pl-4 pr-1 py-3 w-8">
+                      <input
+                        type="checkbox"
+                        checked={toutesCochees}
+                        onChange={cocherTout}
+                        aria-label="Tout sélectionner"
+                        title={toutesCochees ? "Tout désélectionner" : `Sélectionner les ${epreuvesFiltrees.length} épreuves affichées`}
+                        className="h-4 w-4 cursor-pointer accent-[#C62828]"
+                      />
+                    </th>
                     {["Date", "Matière", "Horaire", "Examinateur(s)", "Candidat", "Code couleur", "Planche assignée", ""].map((h) => (
                       <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-800 tracking-wide">{h}</th>
                     ))}
@@ -1198,7 +1330,18 @@ export function PlanchesSection() {
                 </thead>
                 <tbody>
                   {epreuvesFiltrees.map((ep) => (
-                    <tr key={ep.id} className="border-t border-black/5 hover:bg-black/[0.012]">
+                    <tr key={ep.id} className={`border-t border-black/5 ${selAss.has(ep.id) ? "bg-red-50/60" : "hover:bg-black/[0.012]"}`}>
+                      <td className="pl-4 pr-1 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selAss.has(ep.id)}
+                          onChange={() => {}}
+                          onClick={(e) => cocher(ep.id, e.shiftKey)}
+                          aria-label="Sélectionner l'épreuve"
+                          title="Maj+clic : sélectionner toute la plage"
+                          className="h-4 w-4 cursor-pointer accent-[#C62828]"
+                        />
+                      </td>
                       <td className="px-4 py-3 text-sm text-gray-900 tabular-nums whitespace-nowrap">{formatDateCourte(ep.date)}</td>
                       <td className="px-4 py-3 font-medium">{ep.matiere}</td>
                       <td className="px-4 py-3 text-sm text-gray-900 tabular-nums whitespace-nowrap">{hm(ep.heure_debut)} → {hm(ep.heure_fin)}</td>
@@ -1285,7 +1428,139 @@ export function PlanchesSection() {
                 </tbody>
               </table>
             </div>
+            </div>
           )}
+
+          {/* Modale d'assignation groupée */}
+          <Modal
+            open={assignMulti}
+            onClose={() => { if (!progresMulti) setAssignMulti(false); }}
+            title={`Assigner une planche — ${selectionnees.length} épreuve${selectionnees.length > 1 ? "s" : ""}`}
+            wide
+          >
+            {matieresSelection.length > 1 ? (
+              <Empty
+                message="La sélection mélange plusieurs matières"
+                sub={`Matières cochées : ${matieresSelection.join(", ")}. Filtrez sur une seule matière (une planche ne vaut que pour sa matière), puis recommencez.`}
+              />
+            ) : planchesMulti.length === 0 ? (
+              <Empty
+                message={`Aucune planche active pour ${matieresSelection[0] ?? "cette matière"}`}
+                sub="Injectez des sujets actifs avec la matière correspondante dans « Gestion des sujets »."
+              />
+            ) : (
+              <div className="space-y-4">
+                <div className="inline-flex rounded-lg border border-black/10 bg-[#F5F5F5] p-0.5">
+                  {([["meme", "Même planche pour toutes", FileText], ["repartir", "Répartir plusieurs planches", Shuffle]] as const).map(([m, label, Icone]) => (
+                    <button
+                      key={m}
+                      onClick={() => setModeMulti(m)}
+                      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition ${modeMulti === m ? "bg-white text-gray-900 shadow-sm" : "text-gray-800 hover:text-gray-900"}`}
+                    >
+                      <Icone className="h-4 w-4" style={modeMulti === m ? { color: RED } : undefined} />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                <p className="text-sm text-gray-800">
+                  {modeMulti === "meme"
+                    ? `La planche choisie sera assignée aux ${selectionnees.length} épreuves cochées (${matieresSelection[0]}).`
+                    : "Cochez les planches dans l'ordre voulu : elles seront distribuées en rotation, dans l'ordre des horaires (1, 2, 3, 1, 2, 3…)."}
+                </p>
+
+                <div className="rounded-xl border overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-[#F5F5F5]">
+                        {[modeMulti === "repartir" ? "Ordre" : null, "Nom", "Auteur", modeMulti === "meme" ? "" : null]
+                          .filter((h): h is string => h !== null)
+                          .map((h, i) => <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-800">{h}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {planchesMulti.map((p) => {
+                        const rang = planchesRepartir.indexOf(p.id);
+                        return (
+                          <tr
+                            key={p.id}
+                            className={`border-t border-black/5 ${modeMulti === "repartir" ? "cursor-pointer" : ""} ${rang >= 0 ? "bg-red-50/60" : "hover:bg-black/[0.012]"}`}
+                            onClick={modeMulti === "repartir"
+                              ? () => setPlanchesRepartir((prev) => (prev.includes(p.id) ? prev.filter((x) => x !== p.id) : [...prev, p.id]))
+                              : undefined}
+                          >
+                            {modeMulti === "repartir" && (
+                              <td className="px-4 py-2.5 w-16">
+                                {rang >= 0 ? (
+                                  <span className="inline-grid h-6 w-6 place-items-center rounded-full text-xs font-bold text-white" style={{ backgroundColor: RED }}>
+                                    {rang + 1}
+                                  </span>
+                                ) : (
+                                  <span className="inline-block h-5 w-5 rounded border-2 border-gray-300" />
+                                )}
+                              </td>
+                            )}
+                            <td className="px-4 py-2.5 font-medium">
+                              <div className="flex items-center gap-2">
+                                <PastillePlanche id={p.id} nom={p.nom} />
+                                {p.nom}
+                              </div>
+                            </td>
+                            <td className="px-4 py-2.5 text-gray-800 text-xs">{p.examinateur_nom ?? "—"}</td>
+                            {modeMulti === "meme" && (
+                              <td className="px-4 py-2.5 text-right">
+                                <Btn
+                                  label={`Assigner aux ${selectionnees.length}`}
+                                  small
+                                  disabled={!!progresMulti}
+                                  onClick={() => assignerEnMasse([p.id])}
+                                />
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {modeMulti === "repartir" && (
+                  <div className="flex flex-wrap items-center gap-3">
+                    {planchesRepartir.length > 0 && (
+                      <p className="text-sm text-gray-900">
+                        {planchesRepartir.map((id, i) => {
+                          const n = Math.floor(selectionnees.length / planchesRepartir.length) + (i < selectionnees.length % planchesRepartir.length ? 1 : 0);
+                          return (
+                            <span key={id} className="mr-3 whitespace-nowrap">
+                              <strong>{planches.find((p) => p.id === id)?.nom}</strong> → {n} épreuve{n > 1 ? "s" : ""}
+                            </span>
+                          );
+                        })}
+                      </p>
+                    )}
+                    <div className="ml-auto flex items-center gap-2">
+                      {progresMulti && (
+                        <span className="inline-flex items-center gap-1.5 text-sm text-gray-900">
+                          <Loader2 className="h-4 w-4 animate-spin" /> {progresMulti.fait} / {progresMulti.total}
+                        </span>
+                      )}
+                      <Btn
+                        label={`Répartir sur ${selectionnees.length} épreuve${selectionnees.length > 1 ? "s" : ""}`}
+                        icon={Shuffle}
+                        disabled={planchesRepartir.length === 0 || !!progresMulti}
+                        onClick={() => assignerEnMasse(planchesRepartir)}
+                      />
+                    </div>
+                  </div>
+                )}
+                {modeMulti === "meme" && progresMulti && (
+                  <p className="inline-flex items-center gap-1.5 text-sm text-gray-900">
+                    <Loader2 className="h-4 w-4 animate-spin" /> {progresMulti.fait} / {progresMulti.total}
+                  </p>
+                )}
+              </div>
+            )}
+          </Modal>
 
           {/* Modale assignation */}
           <Modal open={!!assignModal} onClose={() => setAssignModal(null)} title={`Assigner une planche — ${assignModal?.matiere ?? ""}`} wide>
