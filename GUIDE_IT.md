@@ -210,7 +210,6 @@ Le backend FastAPI est accessible sur le port **8000**. Tous les endpoints `/adm
 ```
 GET  /          → {"service": "oraux-ecg", "status": "ok"}
 GET  /health    → {"status": "ok"}
-GET  /db-check  → Vérification connectivité DB + schéma
 ```
 
 ### Routers admin (préfixe `/admin/`)

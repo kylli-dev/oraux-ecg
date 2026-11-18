@@ -110,20 +110,6 @@ def health():
     return {"status": "ok"}
 
 
-
-@app.get("/db-check")
-def db_check():
-    if engine is None:
-        return {"db": "missing DATABASE_URL"}
-    with engine.connect() as conn:
-        conn.execute(text("SELECT 1"))
-        cols = conn.execute(text(
-            "SELECT column_name, is_nullable, data_type FROM information_schema.columns "
-            "WHERE table_name='examinateur' ORDER BY ordinal_position"
-        )).fetchall()
-    return {"db": "ok", "examinateur_columns": [{"name": c[0], "nullable": c[1], "type": c[2]} for c in cols]}
-
-
 def _run_migrations():
     """Ajoute les colonnes manquantes sans casser les données existantes."""
     migrations = [
