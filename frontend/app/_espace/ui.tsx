@@ -92,6 +92,25 @@ function MenuProfil({ tokenKey, base, meUrl }: { tokenKey: string; base: string;
 
 // En-tête rouge d'un espace. Le menu profil (initiales, déconnexion) n'apparaît pas sur les
 // pages publiques (connexion, mot de passe oublié…).
+// Compte dont le mot de passe a été généré par l'admin (envoyé par email) : vrai tant que
+// l'utilisateur ne l'a pas remplacé par le sien. Lu sur …/me.
+// `cle` (ex. la page en cours) relance la vérification ; la réponse ne vaut que pour la clé
+// qui l'a demandée, pour ne pas renvoyer vers le changement juste après l'avoir fait.
+export function useMotDePasseProvisoire(tokenKey: string, meUrl: string, cle = "") {
+  const [etat, setEtat] = useState<{ cle: string; provisoire: boolean }>({ cle: "", provisoire: false });
+  useEffect(() => {
+    const token = sessionStorage.getItem(tokenKey);
+    if (!token || !meUrl) return;
+    let annule = false;
+    fetch(meUrl, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!annule && d) setEtat({ cle, provisoire: !!d.mot_de_passe_provisoire }); })
+      .catch(() => {});
+    return () => { annule = true; };
+  }, [tokenKey, meUrl, cle]);
+  return etat.cle === cle && etat.provisoire;
+}
+
 export function EspaceHeader({
   libelle,
   base,
@@ -111,6 +130,14 @@ export function EspaceHeader({
 }) {
   const pathname = usePathname().replace(/\/$/, "");
   const connecte = !pagesPubliques.includes(pathname);
+  const router = useRouter();
+  // Première connexion avec le mot de passe provisoire : changement obligatoire. Revérifié
+  // à chaque page ; toute autre page renvoie vers le changement de mot de passe.
+  const pageMotDePasse = `${base}/changer-mot-de-passe`;
+  const provisoire = useMotDePasseProvisoire(tokenKey, connecte ? meUrl : "", pathname) && connecte;
+  useEffect(() => {
+    if (provisoire && pathname !== pageMotDePasse) router.replace(pageMotDePasse);
+  }, [provisoire, pathname, pageMotDePasse, router]);
 
   return (
     <header className="sticky top-0 z-40 shadow-md" style={{ backgroundColor: RED }}>
@@ -137,7 +164,7 @@ export function EspaceHeader({
             <p className="text-xs text-white/90 truncate">{logoEnsae ? libelle : `ENSAE — IP Paris · ${libelle}`}</p>
           </div>
         </Link>
-        {connecte && onglets.length > 0 && (
+        {connecte && !provisoire && onglets.length > 0 && (
           <nav aria-label={libelle} className="order-3 lg:order-none w-full lg:w-auto min-w-0 mt-2 lg:mt-0 flex items-center gap-1 overflow-x-auto">
             {onglets.map((o) => {
               const actif = pathname === o.href || pathname.startsWith(`${o.href}/`);

@@ -269,6 +269,7 @@ def reset_password_candidat_by_email(body: ResetByEmailIn, db: Session = Depends
     if not c.login:
         c.login = c.email
     c.password_hash = hash_password(new_pwd)
+    c.mot_de_passe_provisoire = True
     c.reset_token = None
     c.reset_token_expires_at = None
     db.commit()
@@ -290,6 +291,7 @@ def reset_password_candidat(candidat_id: int, db: Session = Depends(get_db)):
     if not c.login:
         c.login = c.email
     c.password_hash = hash_password(new_pwd)
+    c.mot_de_passe_provisoire = True
     c.reset_token = None
     c.reset_token_expires_at = None
     db.commit()
@@ -309,6 +311,7 @@ def reset_password_examinateur(examinateur_id: int, db: Session = Depends(get_db
     # Le mot de passe généré était renvoyé sans être enregistré : il ne permettait pas de
     # se connecter. Il est désormais réellement appliqué au compte de l'examinateur.
     ex.password_hash = hash_password(new_pwd)
+    ex.mot_de_passe_provisoire = True
     ex.reset_token = None
     ex.reset_token_expires_at = None
     db.commit()

@@ -249,6 +249,7 @@ def import_candidats(db: Session, planning_id: int, file_bytes: bytes) -> dict:
                 email=email,
                 login=login or email,
                 password_hash=hash_password(plain_pwd, rounds=4),
+                mot_de_passe_provisoire=True,
                 profil=profil,
                 code_uai=code_uai,
             )
@@ -691,6 +692,7 @@ def import_candidats_complet(db: Session, planning_id: int, file_bytes: bytes) -
             email=_get(row, "EMAIL"),
             login=_get(row, "EMAIL"),
             password_hash=hash_password(plain_pwd, rounds=4),
+            mot_de_passe_provisoire=True,
             statut="IMPORTE",
             code_candidat=_get(row, "CODE_CANDIDAT"),
             numero_ine=_get(row, "NUMERO_INE"),

@@ -1,6 +1,6 @@
 import json
 import secrets
-from sqlalchemy import Boolean, DateTime, String, Text
+from sqlalchemy import Boolean, DateTime, String, Text, false
 from sqlalchemy.orm import Mapped, mapped_column
 from typing import Optional
 from app.db.base import Base
@@ -35,6 +35,8 @@ class Examinateur(Base):
 
     # Connexion par email + mot de passe (en plus du code d'accès) et « mot de passe oublié »
     password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Mot de passe généré par l'admin (envoyé par email) : à changer dès la première connexion
+    mot_de_passe_provisoire: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     reset_token: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     reset_token_expires_at: Mapped[Optional[DateTime]] = mapped_column(DateTime(timezone=True), nullable=True)
 

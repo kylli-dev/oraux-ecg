@@ -80,7 +80,7 @@ def create_candidat(body: CandidatCreate, background_tasks: BackgroundTasks, db:
         data["classe"] = f"ECG - Maths approfondies et {body.profil}"
 
     mot_de_passe = secrets.token_urlsafe(8)
-    c = Candidat(**data, login=body.email, password_hash=hash_password(mot_de_passe))
+    c = Candidat(**data, login=body.email, password_hash=hash_password(mot_de_passe), mot_de_passe_provisoire=True)
     db.add(c)
     db.commit()
     db.refresh(c)

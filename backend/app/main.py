@@ -236,6 +236,10 @@ def _run_migrations():
         "ALTER TABLE epreuve ADD COLUMN incident_le TIMESTAMP",
         "ALTER TABLE epreuve ADD COLUMN incident_par VARCHAR(150)",
         "ALTER TABLE surveillant ADD COLUMN affectations_vues TEXT",
+        # Mot de passe provisoire (généré par l'admin) : changement obligatoire à la 1re connexion
+        "ALTER TABLE candidat ADD COLUMN mot_de_passe_provisoire BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE examinateur ADD COLUMN mot_de_passe_provisoire BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE surveillant ADD COLUMN mot_de_passe_provisoire BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE message_type ADD COLUMN enregistre_le TIMESTAMP WITH TIME ZONE",
         # Monitoring : précision lisible de l'action (ex. gabarit appliqué et date)
         "ALTER TABLE audit_log ADD COLUMN detail VARCHAR(300)",

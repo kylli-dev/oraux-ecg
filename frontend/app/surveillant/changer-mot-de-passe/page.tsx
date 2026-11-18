@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Loader2, CheckCircle2, Eye, EyeOff, KeyRound } from "lucide-react";
 import { RED, AuthCard, Alert, inputClass, inputStyle, primaryButtonClass } from "../_ui";
+import { useMotDePasseProvisoire } from "../../_espace/ui";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -17,6 +18,8 @@ export default function SurveillantChangerMotDePassePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  // Mot de passe provisoire (1re connexion) : changement obligatoire, pas de retour possible
+  const obligatoire = useMotDePasseProvisoire("surveillant_token", `${API}/surveillant/me`);
   const [visible, setVisible] = useState<Set<number>>(new Set());
   const toggleVisible = (i: number) =>
     setVisible((prev) => {
@@ -68,7 +71,7 @@ export default function SurveillantChangerMotDePassePage() {
           className={primaryButtonClass}
           style={{ backgroundColor: RED }}
         >
-          Retour à l&apos;accueil
+          {obligatoire ? "Accéder à mon espace" : <>Retour à l&apos;accueil</>}
         </button>
       </AuthCard>
     );
@@ -77,17 +80,19 @@ export default function SurveillantChangerMotDePassePage() {
   return (
     <AuthCard
       icon={<KeyRound className="h-6 w-6" />}
-      title="Changer mon mot de passe"
-      subtitle="Choisissez un mot de passe d'au moins 8 caractères."
-      footer={
+      title={obligatoire ? "Choisissez votre mot de passe" : "Changer mon mot de passe"}
+      subtitle={obligatoire
+        ? "Première connexion : remplacez le mot de passe provisoire reçu par email par un mot de passe personnel d'au moins 8 caractères."
+        : "Choisissez un mot de passe d'au moins 8 caractères."}
+      footer={obligatoire ? undefined : (
         <Link href="/surveillant/accueil" className="text-sm font-medium text-gray-800 hover:text-black hover:underline underline-offset-2">
           ← Retour à l&apos;accueil
         </Link>
-      }
+      )}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {[
-          { label: "Mot de passe actuel", value: current, set: setCurrent, auto: "current-password" },
+          { label: obligatoire ? "Mot de passe provisoire (reçu par email)" : "Mot de passe actuel", value: current, set: setCurrent, auto: "current-password" },
           { label: "Nouveau mot de passe", value: next, set: setNext, auto: "new-password" },
           { label: "Confirmer le nouveau mot de passe", value: confirm, set: setConfirm, auto: "new-password" },
         ].map(({ label, value, set, auto }, i) => (

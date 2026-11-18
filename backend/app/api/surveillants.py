@@ -112,7 +112,7 @@ def import_surveillants(
         else:
             plain = _gen_password()
             s = Surveillant(nom=nom.upper(), prenom=prenom, email=email, actif=True,
-                            password_hash=hash_password(plain, rounds=4))
+                            password_hash=hash_password(plain, rounds=4), mot_de_passe_provisoire=True)
             db.add(s)
             db.flush()
             sid = s.id
@@ -190,6 +190,7 @@ def create_surveillant(body: SurveillantCreate, db: Session = Depends(get_db)):
         email=body.email.strip(),
         actif=body.actif,
         password_hash=hash_password(plain_pwd, rounds=4),
+        mot_de_passe_provisoire=True,
     )
     db.add(s)
     db.commit()
@@ -296,6 +297,7 @@ def envoyer_identifiants(surveillant_id: int, db: Session = Depends(get_db)):
 
     plain_pwd = _gen_password()
     s.password_hash = hash_password(plain_pwd, rounds=4)
+    s.mot_de_passe_provisoire = True
     db.commit()
     db.refresh(s)
 

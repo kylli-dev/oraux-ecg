@@ -1,6 +1,6 @@
 import secrets
 from typing import Optional
-from sqlalchemy import String, ForeignKey, DateTime
+from sqlalchemy import Boolean, String, ForeignKey, DateTime, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -60,6 +60,8 @@ class Candidat(Base):
     departement_etablissement: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     # Réinitialisation de mot de passe
+    # Mot de passe généré par l'admin (envoyé par email) : à changer dès la première connexion
+    mot_de_passe_provisoire: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     reset_token: Mapped[Optional[str]] = mapped_column(String(100), unique=True, nullable=True)
     reset_token_expires_at: Mapped[Optional[DateTime]] = mapped_column(
         DateTime(timezone=True), nullable=True

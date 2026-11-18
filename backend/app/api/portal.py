@@ -84,6 +84,7 @@ class CandidatMeOut(BaseModel):
     email: str
     profil: Optional[str]
     login: Optional[str]
+    mot_de_passe_provisoire: bool = False
 
     class Config:
         from_attributes = True
@@ -224,13 +225,14 @@ def change_password(
     if not c:
         raise HTTPException(status_code=404, detail="Candidat introuvable")
     planning = db.get(Planning, c.planning_id)
-    if planning and planning.interdire_modification_candidat:
+    if planning and planning.interdire_modification_candidat and not c.mot_de_passe_provisoire:
         raise HTTPException(status_code=403, detail="La modification du profil est interdite pour ce planning.")
     if not c.password_hash or not verify_password(body.current_password, c.password_hash):
         raise HTTPException(status_code=401, detail="Mot de passe actuel incorrect")
     if len(body.new_password) < 8:
         raise HTTPException(status_code=422, detail="Le mot de passe doit contenir au moins 8 caractères")
     c.password_hash = hash_password(body.new_password)
+    c.mot_de_passe_provisoire = False
     db.commit()
 
 
@@ -279,6 +281,7 @@ def reset_password(body: ResetPasswordIn, db: Session = Depends(get_db)):
     if len(body.new_password) < 8:
         raise HTTPException(status_code=422, detail="Le mot de passe doit contenir au moins 8 caractères")
     c.password_hash = hash_password(body.new_password)
+    c.mot_de_passe_provisoire = False
     c.reset_token = None
     c.reset_token_expires_at = None
     db.commit()

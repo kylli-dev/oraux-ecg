@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Loader2, CheckCircle2, Eye, EyeOff, KeyRound } from "lucide-react";
 import { RED, AuthCard, Alert, inputClass, inputStyle, primaryButtonClass } from "../_ui";
+import { useMotDePasseProvisoire } from "../../_espace/ui";
 
 const API_BASE = process.env.NEXT_PUBLIC_PORTAL_API_URL ?? "http://localhost:8000";
 
@@ -16,6 +17,8 @@ export default function ChangerMotDePassePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  // Mot de passe provisoire (1re connexion) : changement obligatoire, pas de retour possible
+  const obligatoire = useMotDePasseProvisoire("candidat_token", `${API_BASE}/portal/me`);
   // Un champ visible en clair à la fois n'a pas de sens ici : chacun se montre/masque
   // indépendamment des autres.
   const [visible, setVisible] = useState<Set<number>>(new Set());
@@ -83,7 +86,7 @@ export default function ChangerMotDePassePage() {
           className={primaryButtonClass}
           style={{ backgroundColor: RED }}
         >
-          Retour à l&apos;accueil
+          {obligatoire ? "Accéder à mon espace" : <>Retour à l&apos;accueil</>}
         </button>
       </AuthCard>
     );
@@ -92,13 +95,15 @@ export default function ChangerMotDePassePage() {
   return (
     <AuthCard
       icon={<KeyRound className="h-6 w-6" />}
-      title="Changer mon mot de passe"
-      subtitle="Choisissez un mot de passe d'au moins 8 caractères."
-      footer={retour}
+      title={obligatoire ? "Choisissez votre mot de passe" : "Changer mon mot de passe"}
+      subtitle={obligatoire
+        ? "Première connexion : remplacez le mot de passe provisoire reçu par email par un mot de passe personnel d'au moins 8 caractères."
+        : "Choisissez un mot de passe d'au moins 8 caractères."}
+      footer={obligatoire ? undefined : retour}
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {[
-          { label: "Mot de passe actuel", value: current, set: setCurrent, auto: "current-password" },
+          { label: obligatoire ? "Mot de passe provisoire (reçu par email)" : "Mot de passe actuel", value: current, set: setCurrent, auto: "current-password" },
           { label: "Nouveau mot de passe", value: next, set: setNext, auto: "new-password" },
           { label: "Confirmer le nouveau mot de passe", value: confirm, set: setConfirm, auto: "new-password" },
         ].map(({ label, value, set, auto }, i) => (

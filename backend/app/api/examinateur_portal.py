@@ -72,6 +72,7 @@ class ExaminateurMe(BaseModel):
     email: str
     matieres: List[str]
     a_un_mot_de_passe: bool = False
+    mot_de_passe_provisoire: bool = False
 
     class Config:
         from_attributes = True
@@ -200,6 +201,7 @@ def reinitialiser_mot_de_passe(body: ReinitialiserMotDePasseIn, db: Session = De
     if len(body.new_password) < 8:
         raise HTTPException(status_code=422, detail="Le mot de passe doit contenir au moins 8 caractères")
     ex.password_hash = hash_password(body.new_password)
+    ex.mot_de_passe_provisoire = False
     ex.reset_token = None
     ex.reset_token_expires_at = None
     db.commit()
@@ -217,6 +219,7 @@ def changer_mot_de_passe(
     if len(body.new_password) < 8:
         raise HTTPException(status_code=422, detail="Le mot de passe doit contenir au moins 8 caractères")
     ex.password_hash = hash_password(body.new_password)
+    ex.mot_de_passe_provisoire = False
     db.commit()
 
 
@@ -229,6 +232,7 @@ def me(ex: Examinateur = Depends(get_current_examinateur)):
         email=ex.email,
         matieres=ex.matieres,
         a_un_mot_de_passe=bool(ex.password_hash),
+        mot_de_passe_provisoire=bool(ex.mot_de_passe_provisoire),
     )
 
 

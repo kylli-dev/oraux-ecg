@@ -74,6 +74,7 @@ class SurveillantMe(BaseModel):
     nom: str
     prenom: str
     email: str
+    mot_de_passe_provisoire: bool = False
 
 
 class EpreuveSurveillant(BaseModel):
@@ -167,6 +168,7 @@ def surveillant_reinitialiser(body: SurvReinitialiserIn, db: Session = Depends(g
     if len(body.new_password) < 8:
         raise HTTPException(status_code=422, detail="Le mot de passe doit contenir au moins 8 caractères")
     s.password_hash = hash_password(body.new_password)
+    s.mot_de_passe_provisoire = False
     s.reset_token = None
     s.reset_token_expires_at = None
     db.commit()
@@ -184,12 +186,14 @@ def surveillant_changer_mot_de_passe(
     if len(body.new_password) < 8:
         raise HTTPException(status_code=422, detail="Le mot de passe doit contenir au moins 8 caractères")
     s.password_hash = hash_password(body.new_password)
+    s.mot_de_passe_provisoire = False
     db.commit()
 
 
 @router.get("/me", response_model=SurveillantMe)
 def me(s: Surveillant = Depends(get_current_surveillant)):
-    return SurveillantMe(id=s.id, nom=s.nom, prenom=s.prenom, email=s.email)
+    return SurveillantMe(id=s.id, nom=s.nom, prenom=s.prenom, email=s.email,
+                         mot_de_passe_provisoire=bool(s.mot_de_passe_provisoire))
 
 
 @router.get("/me/epreuves", response_model=List[EpreuveSurveillant])
