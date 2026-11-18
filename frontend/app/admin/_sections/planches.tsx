@@ -543,6 +543,13 @@ export function PlanchesSection() {
   // ── Onglet Sujets ────────────────────────────────────────────────────────────
   const [planches, setPlanches] = useState<PlancheItem[]>([]);
   const [loadingP, setLoadingP] = useState(true);
+  // Filtres de « Gestion des sujets » (mémorisés comme ceux des autres écrans)
+  const [rechSujets, setRechSujets] = useFiltre("sujets:recherche", "");
+  const [fMatSujets, setFMatSujets] = useFiltre("sujets:matiere", "");
+  // "" = tous, "__aucun" = sans auteur, sinon le nom de l'auteur
+  const [fAuteurSujets, setFAuteurSujets] = useFiltre("sujets:auteur", "");
+  const [fStatutSujets, setFStatutSujets] = useFiltre<"" | "ACTIF" | "INACTIF">("sujets:statut", "");
+  const [fAssigneeSujets, setFAssigneeSujets] = useFiltre<"" | "oui" | "non">("sujets:assignee", "");
   const [showUpload, setShowUpload] = useState(false);
 
   // Upload state
@@ -843,6 +850,31 @@ export function PlanchesSection() {
       )
     : [];
 
+  // Recherche par mots dans les sujets : chaque mot doit apparaître (dans le nom, la
+  // matière, l'auteur ou le code P…), sans tenir compte des accents ni des majuscules
+  const sansAccent = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const motsSujets = sansAccent(rechSujets).split(/\s+/).filter(Boolean);
+  const planchesFiltrees = planches.filter((p) => {
+    if (fMatSujets === "__aucune" ? p.matiere_intitule : fMatSujets && p.matiere_intitule !== fMatSujets) return false;
+    if (fAuteurSujets === "__aucun" ? p.examinateur_nom : fAuteurSujets && p.examinateur_nom !== fAuteurSujets) return false;
+    if (fStatutSujets && p.statut !== fStatutSujets) return false;
+    if (fAssigneeSujets === "oui" && !p.assignee) return false;
+    if (fAssigneeSujets === "non" && p.assignee) return false;
+    if (motsSujets.length) {
+      const texte = sansAccent(`${p.nom} ${p.matiere_intitule ?? ""} ${p.examinateur_nom ?? ""} P${p.id} ${p.statut === "ACTIF" ? "actif" : "inactif"}`);
+      if (!motsSujets.every((m) => texte.includes(m))) return false;
+    }
+    return true;
+  });
+  const filtresSujetsActifs = !!(rechSujets || fMatSujets || fAuteurSujets || fStatutSujets || fAssigneeSujets);
+  function resetFiltresSujets() {
+    setRechSujets(""); setFMatSujets(""); setFAuteurSujets(""); setFStatutSujets(""); setFAssigneeSujets("");
+  }
+  const matieresSujets = Array.from(new Set(planches.map((p) => p.matiere_intitule).filter((m): m is string => !!m)))
+    .sort((a, b) => a.localeCompare(b, "fr"));
+  const auteursSujets = Array.from(new Set(planches.map((p) => p.examinateur_nom).filter((m): m is string => !!m)))
+    .sort((a, b) => a.localeCompare(b, "fr"));
+
   // Filtres de l'onglet Assignation — combinables, sur toutes les colonnes du tableau
   const rechAss = rechercheAss.trim().toLowerCase();
   const epreuvesFiltrees = epreuves
@@ -1074,6 +1106,64 @@ export function PlanchesSection() {
           ) : planches.length === 0 ? (
             <Empty message="Aucun sujet chargé" sub="Cliquez sur « Injecter des sujets » pour importer des PDFs." />
           ) : (
+            <>
+            {/* Filtres et recherche par mots */}
+            <div className="bg-white rounded-xl border border-black/10 shadow-sm p-4 space-y-3">
+              <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="sm:col-span-2 lg:col-span-1">
+                  <Field label="Recherche">
+                    <Input
+                      value={rechSujets}
+                      onChange={(e) => setRechSujets(e.target.value)}
+                      placeholder="Mots du nom, auteur…"
+                    />
+                  </Field>
+                </div>
+                <Field label="Matière">
+                  <Select value={fMatSujets} onChange={(e) => setFMatSujets(e.target.value)}>
+                    <option value="">Toutes</option>
+                    {matieresSujets.map((m) => <option key={m} value={m}>{m}</option>)}
+                    {planches.some((p) => !p.matiere_intitule) && <option value="__aucune">— Sans matière —</option>}
+                  </Select>
+                </Field>
+                <Field label="Auteur">
+                  <Select value={fAuteurSujets} onChange={(e) => setFAuteurSujets(e.target.value)}>
+                    <option value="">Tous</option>
+                    {auteursSujets.map((a) => <option key={a} value={a}>{a}</option>)}
+                    {planches.some((p) => !p.examinateur_nom) && <option value="__aucun">— Sans auteur —</option>}
+                  </Select>
+                </Field>
+                <Field label="Statut">
+                  <Select value={fStatutSujets} onChange={(e) => setFStatutSujets(e.target.value as "" | "ACTIF" | "INACTIF")}>
+                    <option value="">Tous</option>
+                    <option value="ACTIF">Actif</option>
+                    <option value="INACTIF">Inactif</option>
+                  </Select>
+                </Field>
+                <Field label="Assignée">
+                  <Select value={fAssigneeSujets} onChange={(e) => setFAssigneeSujets(e.target.value as "" | "oui" | "non")}>
+                    <option value="">Toutes</option>
+                    <option value="oui">Assignée à une épreuve</option>
+                    <option value="non">Pas encore assignée</option>
+                  </Select>
+                </Field>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-900">
+                  <span className="font-semibold">{planchesFiltrees.length}</span> sujet{planchesFiltrees.length > 1 ? "s" : ""}
+                  {filtresSujetsActifs && <> sur {planches.length}</>}
+                </span>
+                {filtresSujetsActifs && (
+                  <button onClick={resetFiltresSujets} className="text-sm font-medium hover:underline" style={{ color: RED }}>
+                    Réinitialiser les filtres
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {planchesFiltrees.length === 0 ? (
+              <Empty message="Aucun sujet ne correspond" sub="Modifiez la recherche ou les filtres." />
+            ) : (
             <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
@@ -1084,7 +1174,7 @@ export function PlanchesSection() {
                   </tr>
                 </thead>
                 <tbody>
-                  {planches.map((p) => (
+                  {planchesFiltrees.map((p) => (
                     <tr key={p.id} className="border-t border-black/5 hover:bg-black/[0.012]">
                       {editRow === p.id ? (
                         <>
@@ -1185,6 +1275,8 @@ export function PlanchesSection() {
                 </tbody>
               </table>
             </div>
+            )}
+            </>
           )}
         </div>
       )}
