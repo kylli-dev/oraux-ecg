@@ -1088,7 +1088,7 @@ export function PlanchesSection() {
                 <Select value={uploadExamId} onChange={(e) => setUploadExamId(e.target.value === "" ? "" : Number(e.target.value))}>
                   <option value="">— Choisir un examinateur</option>
                   {examinateurs.map((ex) => (
-                    <option key={ex.id} value={ex.id}>{ex.prenom} {ex.nom}</option>
+                    <option key={ex.id} value={ex.id}>{ex.prenom} {ex.nom}{ex.matieres?.length ? ` — ${ex.matieres.join(", ")}` : ""}</option>
                   ))}
                 </Select>
               </Field>
@@ -1205,7 +1205,7 @@ export function PlanchesSection() {
                             >
                               <option value="">—</option>
                               {examinateurs.map((ex) => (
-                                <option key={ex.id} value={ex.id}>{ex.prenom} {ex.nom}</option>
+                                <option key={ex.id} value={ex.id}>{ex.prenom} {ex.nom}{ex.matieres?.length ? ` — ${ex.matieres.join(", ")}` : ""}</option>
                               ))}
                             </select>
                           </td>
