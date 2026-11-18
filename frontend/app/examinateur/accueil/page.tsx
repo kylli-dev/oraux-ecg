@@ -40,13 +40,13 @@ const actions = [
     href: "/examinateur/planning",
     icon: <CalendarDays className="h-5 w-5" />,
     label: "Mon planning",
-    desc: "Vos créneaux d'oral, les salles et les sujets, en liste ou en emploi du temps.",
+    desc: "Vos créneaux d'oral, salles et sujets, en liste ou en emploi du temps.",
   },
   {
     href: "/examinateur/notes",
     icon: <PenLine className="h-5 w-5" />,
     label: "Mes notes",
-    desc: "Saisissez et validez les notes de vos candidats, suivez l'avancement.",
+    desc: "Saisissez et validez les notes de vos candidats.",
   },
   {
     href: "/examinateur/changer-mot-de-passe",
@@ -157,7 +157,7 @@ export default function ExaminateurAccueilPage() {
       </div>
 
       {/* ── Accès rapides ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {actions.map((a) => (
           <Link
             key={a.href}
