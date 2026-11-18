@@ -541,10 +541,13 @@ export function ImportExcelModal({
   uploadUrl,
   onSuccess,
   resultRenderer,
+  libelle = "candidat",
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
+  // Ce qui est importé, au singulier (« candidat », « surveillant »…), pour le message final
+  libelle?: string;
   templateUrl: string;
   uploadUrl: string;
   onSuccess: () => void;
@@ -658,12 +661,22 @@ export function ImportExcelModal({
             </ul>
           </div>
         )}
-        {result && result.created > 0 && (
+        {result && (result.created > 0 || !result.errors?.length) && (
           <div className="rounded-xl bg-green-50 border border-green-100 px-4 py-3">
             <p className="text-sm font-semibold text-green-800 mb-2">
-              ✓ Import terminé — {result.created} candidat(s) créé(s)
+              {result.created > 0
+                ? `✓ Import terminé — ${result.created} ${libelle}(s) créé(s)`
+                : `✓ Import terminé — aucun nouveau ${libelle}`}
             </p>
             {resultRenderer && resultRenderer(result)}
+            {result.errors?.length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs font-semibold text-red-700 mb-1">Lignes ignorées :</p>
+                <ul className="text-xs text-red-700 space-y-0.5 max-h-32 overflow-y-auto">
+                  {result.errors.map((e: string, i: number) => <li key={i}>• {e}</li>)}
+                </ul>
+              </div>
+            )}
           </div>
         )}
 
@@ -683,7 +696,7 @@ export function ImportExcelModal({
             </button>
           </div>
         )}
-        {result && result.created > 0 && (
+        {result && (result.created > 0 || !result.errors?.length) && (
           <div className="flex justify-end">
             <button onClick={handleClose} className="text-sm font-semibold bg-[#C62828] text-white px-4 py-2 rounded-lg hover:bg-[#b71c1c] transition">
               Fermer

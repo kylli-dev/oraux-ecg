@@ -13,6 +13,7 @@ import {
   Key,
   Copy,
   Mail,
+  Upload,
 } from "lucide-react";
 import {
   Btn,
@@ -20,6 +21,7 @@ import {
   EpreuveFlat,
   ErrorMsg,
   Field,
+  ImportExcelModal,
   Input,
   Modal,
   NavAffectationContext,
@@ -295,6 +297,7 @@ export function SurveillantsSection() {
   const [surveillants, setSurvaillants] = useState<Surveillant[]>([]);
   const [loading, setLoading] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [credentials, setCredentials] = useState<{
     nom: string; prenom: string; email: string; code_acces: string;
     plainPassword: string; emailSent: boolean;
@@ -402,7 +405,10 @@ export function SurveillantsSection() {
             {plannings.map((p) => <option key={p.id} value={p.id}>{p.nom}</option>)}
           </select>
           {view === "annuaire" && (
-            <Btn label="Nouveau surveillant" icon={Plus} onClick={() => setShowCreate(true)} />
+            <>
+              <Btn label="Importer" icon={Upload} variant="ghost" onClick={() => setShowImport(true)} />
+              <Btn label="Nouveau surveillant" icon={Plus} onClick={() => setShowCreate(true)} />
+            </>
           )}
         </div>
       </div>
@@ -546,6 +552,45 @@ export function SurveillantsSection() {
           onClose={() => setCredentials(null)}
         />
       )}
+
+      <ImportExcelModal
+        open={showImport}
+        onClose={() => setShowImport(false)}
+        title="Importer des surveillants"
+        libelle="surveillant"
+        templateUrl="/api/backend/surveillants/import/template"
+        uploadUrl={`/api/backend/surveillants/import${selectedPlanningId ? `?planning_id=${selectedPlanningId}` : ""}`}
+        onSuccess={load}
+        resultRenderer={(r) => (r.surveillants?.length > 0 || r.deja_presents?.length > 0) && (
+          <div className="mt-3 max-h-48 overflow-y-auto space-y-2">
+            {r.surveillants?.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-green-800 mb-1">Surveillants créés :</p>
+                <ul className="text-xs text-gray-900 space-y-0.5">
+                  {r.surveillants.map((x: { id: number; prenom: string; nom: string; email: string }) => (
+                    <li key={x.id}>{x.prenom} {x.nom} — {x.email}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {r.deja_presents?.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-gray-900 mb-1">Déjà présents (non recréés{selectedPlanningId ? ", associés au planning" : ""}) :</p>
+                <ul className="text-xs text-gray-900 space-y-0.5">
+                  {r.deja_presents.map((x: { id: number; prenom: string; nom: string; email: string }) => (
+                    <li key={x.id}>{x.prenom} {x.nom} — {x.email}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {r.emails_programmes > 0 && (
+              <p className="text-xs text-gray-900">
+                Les identifiants sont envoyés par email à {r.emails_programmes} surveillant{r.emails_programmes > 1 ? "s" : ""}.
+              </p>
+            )}
+          </div>
+        )}
+      />
     </div>
   );
 }

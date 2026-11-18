@@ -1,7 +1,11 @@
+import io
+import re
 import secrets
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+import openpyxl
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.core.admin_guard import require_admin
@@ -26,6 +30,126 @@ router = APIRouter(
 
 def _gen_password() -> str:
     return secrets.token_urlsafe(10)
+
+
+# ── Import Excel ──────────────────────────────────────────────────────────────
+
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+@router.get("/import/template")
+def template_import():
+    """Modèle Excel : nom, prénom, email (une ligne par surveillant)."""
+    from app.services.excel import _autosize, _header_row
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Surveillants"
+    _header_row(ws, ["nom", "prenom", "email"])
+    ws.append(["MARTIN", "Sophie", "sophie.martin@ensae.fr"])
+    ws.append(["DUBOIS", "Marc", "marc.dubois@ensae.fr"])
+    _autosize(ws)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=template_surveillants.xlsx"},
+    )
+
+
+@router.post("/import")
+def import_surveillants(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    planning_id: Optional[int] = None,
+    envoyer_identifiants: bool = True,
+    db: Session = Depends(get_db),
+):
+    """
+    Crée des surveillants depuis un Excel (colonnes A: nom, B: prénom, C: email).
+    Une adresse déjà connue n'est pas recréée (elle est seulement associée au planning).
+    Chaque nouveau surveillant reçoit ses identifiants par email, envoyés en arrière-plan.
+    """
+    if not file.filename or not file.filename.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Fichier Excel (.xlsx) requis")
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(file.file.read()), data_only=True, read_only=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Fichier Excel illisible")
+    ws = wb.active
+
+    existants = {
+        e.lower(): sid for sid, e in db.query(Surveillant.id, Surveillant.email).all() if e
+    }
+    crees: list[dict] = []
+    deja: list[dict] = []
+    erreurs: list[str] = []
+    a_envoyer: list[tuple[str, str, str, str]] = []
+    vus: set[str] = set()
+
+    for i, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        row = tuple(row or ())
+        if not any(c not in (None, "") for c in row):
+            continue
+        nom = str(row[0]).strip() if len(row) > 0 and row[0] is not None else ""
+        prenom = str(row[1]).strip() if len(row) > 1 and row[1] is not None else ""
+        email = str(row[2]).strip() if len(row) > 2 and row[2] is not None else ""
+        if not (nom and prenom and email):
+            erreurs.append(f"Ligne {i} : nom, prénom et email obligatoires")
+            continue
+        if not _EMAIL_RE.match(email):
+            erreurs.append(f"Ligne {i} : adresse email invalide ({email})")
+            continue
+        cle = email.lower()
+        if cle in vus:
+            erreurs.append(f"Ligne {i} : {email} figure déjà plus haut dans le fichier")
+            continue
+        vus.add(cle)
+
+        if cle in existants:
+            sid = existants[cle]
+            deja.append({"id": sid, "nom": nom.upper(), "prenom": prenom, "email": email})
+        else:
+            plain = _gen_password()
+            s = Surveillant(nom=nom.upper(), prenom=prenom, email=email, actif=True,
+                            password_hash=hash_password(plain, rounds=4))
+            db.add(s)
+            db.flush()
+            sid = s.id
+            crees.append({"id": s.id, "nom": s.nom, "prenom": s.prenom, "email": s.email})
+            a_envoyer.append((s.email, s.prenom, s.nom, plain))
+
+        if planning_id:
+            lien = db.query(SurveillantPlanning).filter_by(surveillant_id=sid, planning_id=planning_id).first()
+            if lien:
+                lien.actif = True
+            else:
+                db.add(SurveillantPlanning(surveillant_id=sid, planning_id=planning_id, actif=True))
+    db.commit()
+
+    if envoyer_identifiants:
+        for to, prenom, nom, plain in a_envoyer:
+            background_tasks.add_task(_envoyer_identifiants_import, to, prenom, nom, plain)
+
+    return {
+        "created": len(crees),
+        "surveillants": crees,
+        "deja_presents": deja,
+        "errors": erreurs,
+        "emails_programmes": len(a_envoyer) if envoyer_identifiants else 0,
+    }
+
+
+def _envoyer_identifiants_import(to: str, prenom: str, nom: str, plain: str) -> None:
+    """Tâche de fond : sa propre session (celle de la requête est fermée à ce stade)."""
+    from app.db.session import SessionLocal
+    db = SessionLocal()
+    try:
+        send_credentials_surveillant(to_email=to, prenom=prenom, nom=nom, login=to, plain_password=plain, db=db)
+    except Exception as e:  # un échec d'envoi ne doit pas interrompre les suivants
+        print(f"[import surveillants] email non envoyé à {to} : {e}")
+    finally:
+        db.close()
 
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────
