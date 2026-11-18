@@ -123,7 +123,6 @@ export function Sidebar({
         >
           <Search className="h-4 w-4 shrink-0" />
           <span className="flex-1 text-left">Rechercher…</span>
-          <kbd className="text-[10px] font-semibold border border-white/40 rounded px-1">Ctrl K</kbd>
         </button>
       </div>
 

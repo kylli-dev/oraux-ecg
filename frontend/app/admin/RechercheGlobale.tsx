@@ -156,7 +156,7 @@ export default function RechercheGlobale({ get, sections, onChoisir, onFermer }:
           )}
         </div>
         <div className="px-4 py-2 border-t border-black/10 text-[11px] text-gray-700 flex gap-4">
-          <span>↑ ↓ pour naviguer</span><span>Entrée pour ouvrir</span><span>Ctrl K pour rouvrir</span>
+          <span>↑ ↓ pour naviguer</span><span>Entrée pour ouvrir</span>
         </div>
       </div>
     </div>
