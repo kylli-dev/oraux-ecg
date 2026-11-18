@@ -632,18 +632,51 @@ export function PlanningNotes({ mode }: { mode: ModeExaminateur }) {
                             </div>
                           )}
 
-                          {/* Page planning : renvoi vers la saisie de la note */}
-                          {mode === "planning" && ep.candidat_id && (
-                            <Link
-                              href={`/examinateur/notes?ep=${ep.id}`}
-                              className="inline-flex items-center gap-1 text-sm font-medium hover:underline underline-offset-2"
-                              style={{ color: RED }}
-                            >
-                              <PenLine className="h-4 w-4" />
-                              {locked ? "Voir la note" : "Saisir la note"}
-                              <ChevronRight className="h-4 w-4" />
-                            </Link>
-                          )}
+                          {/* Page planning : état de la note et accès à la saisie */}
+                          {mode === "planning" && ep.candidat_id && (() => {
+                            const etat = etatBloc(ep);
+                            const note = ep.note_valeur !== null ? `${String(ep.note_valeur).replace(".", ",")} / 20` : null;
+                            const v = {
+                              anoter: {
+                                panneau: "bg-red-50 border-red-200",
+                                texte: "Note à saisir",
+                                bouton: "Saisir la note",
+                                cls: "text-white shadow-sm hover:opacity-90",
+                                style: { backgroundColor: RED } as React.CSSProperties,
+                                icone: <PenLine className="h-4 w-4" />,
+                              },
+                              brouillon: {
+                                panneau: "bg-gray-50 border-gray-200",
+                                texte: note ? `Brouillon enregistré : ${note}` : "Brouillon enregistré",
+                                bouton: "Reprendre la saisie",
+                                cls: "bg-white border border-gray-400 text-gray-900 hover:bg-gray-100",
+                                style: undefined,
+                                icone: <PenLine className="h-4 w-4" />,
+                              },
+                              valide: {
+                                panneau: "bg-green-50 border-green-200",
+                                texte: note ? `Note validée : ${note}` : "Note validée",
+                                bouton: "Voir la note",
+                                cls: "bg-white border border-green-300 text-green-800 hover:bg-green-100",
+                                style: undefined,
+                                icone: <Lock className="h-4 w-4" />,
+                              },
+                            }[etat === "libre" ? "anoter" : etat];
+                            return (
+                              <div className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2.5 ${v.panneau}`}>
+                                <p className="text-sm font-semibold text-gray-900 tabular-nums">{v.texte}</p>
+                                <Link
+                                  href={`/examinateur/notes?ep=${ep.id}`}
+                                  className={`inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg font-semibold transition ${v.cls}`}
+                                  style={v.style}
+                                >
+                                  {v.icone}
+                                  {v.bouton}
+                                  <ChevronRight className="h-4 w-4" />
+                                </Link>
+                              </div>
+                            );
+                          })()}
 
                           {/* Zone notation */}
                           {mode === "notes" && ep.candidat_id && (
