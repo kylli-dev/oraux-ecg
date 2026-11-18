@@ -349,7 +349,9 @@ def batch_cartouche(body: BatchCartoucheIn, db: Session = Depends(get_db)):
     if not body.epreuve_ids:
         raise HTTPException(status_code=400, detail="Aucune épreuve sélectionnée")
 
-    zip_buf = io.BytesIO()
+    # ZIP écrit sur disque au-delà de 8 Mo plutôt qu'en mémoire
+    import tempfile
+    zip_buf = tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024)
     errors: List[str] = []
     count = 0
 
@@ -406,6 +408,10 @@ def batch_cartouche(body: BatchCartoucheIn, db: Session = Depends(get_db)):
                 count += 1
             except Exception as e:
                 errors.append(f"Épreuve {epreuve_id}: erreur de génération — {e}")
+            finally:
+                # Libère le PDF d'origine : relu en base s'il resert, au lieu de garder
+                # en mémoire tous les sujets du lot jusqu'à la fin
+                db.expire(planche, ["fichier_data"])
 
     db.commit()  # lignes « IMPRIMEE » du journal
     if count == 0:
@@ -414,7 +420,7 @@ def batch_cartouche(body: BatchCartoucheIn, db: Session = Depends(get_db)):
     zip_buf.seek(0)
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M")
     return StreamingResponse(
-        zip_buf,
+        iter(lambda: zip_buf.read(64 * 1024), b""),
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="planches_{ts}.zip"'},
     )

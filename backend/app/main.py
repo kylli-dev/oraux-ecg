@@ -316,11 +316,24 @@ def _reprise_historique_planches():
         db.close()
 
 
+def _init_messages_types():
+    """Crée les Messages-types manquants dès le démarrage : sans cela, un modèle ajouté
+    dans le code (ex. PLACE_LIBEREE) n'existait en base qu'après l'ouverture de
+    Paramétrages > Messages-type, et l'email correspondant échouait jusque-là."""
+    from app.api.parametrages import init_message_types
+    db = SessionLocal()
+    try:
+        init_message_types(db)
+    finally:
+        db.close()
+
+
 def _init_db():
     try:
         Base.metadata.create_all(bind=engine)
         _run_migrations()
         _bootstrap_admin()
+        _init_messages_types()
         _nettoyer_inscriptions_orphelines()
         _reprise_historique_planches()
         print("[startup] DB init OK", flush=True)

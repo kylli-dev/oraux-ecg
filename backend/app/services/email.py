@@ -120,6 +120,11 @@ def build_from_template(db, code: str, variables: dict) -> Optional[tuple]:
     """
     from app.models.message_type import MessageType
     tpl = db.query(MessageType).filter_by(code=code).first()
+    if not tpl:
+        # Modèle pas encore créé en base : on le crée avec sa valeur par défaut
+        from app.api.parametrages import init_message_types
+        init_message_types(db)
+        tpl = db.query(MessageType).filter_by(code=code).first()
     if not tpl or not tpl.sujet or not tpl.corps_html:
         return None
     try:

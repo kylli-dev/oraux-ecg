@@ -13,7 +13,11 @@ class Planche(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     nom: Mapped[str] = mapped_column(String(200), nullable=False)
     fichier_path: Mapped[str] = mapped_column(String(500), nullable=False)
-    fichier_data: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
+    # Chargé seulement quand on le lit (deferred) : sans cela, chaque requête qui touche
+    # une planche — liste des épreuves d'un planning, planning d'un surveillant… — montait
+    # tous les PDF en mémoire pour n'en afficher que le nom, et faisait dépasser au
+    # serveur sa limite de mémoire.
+    fichier_data: Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True, deferred=True)
 
     matiere_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("matiere.id", ondelete="SET NULL"), nullable=True
