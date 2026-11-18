@@ -23,7 +23,8 @@ export function ExaminateurHeader() {
       logoEnsae
       onglets={[
         { href: "/examinateur/accueil", label: "Accueil" },
-        { href: "/examinateur/planning", label: "Planning & notes" },
+        { href: "/examinateur/planning", label: "Mon planning" },
+        { href: "/examinateur/notes", label: "Mes notes" },
         { href: "/examinateur/changer-mot-de-passe", label: "Mot de passe" },
       ]}
     />

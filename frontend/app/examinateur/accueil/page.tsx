@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { CalendarDays, ChevronRight, KeyRound, Mail } from "lucide-react";
+import { CalendarDays, ChevronRight, KeyRound, Mail, PenLine } from "lucide-react";
 import { RED, PageLoader } from "../_ui";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
@@ -39,8 +39,14 @@ const actions = [
   {
     href: "/examinateur/planning",
     icon: <CalendarDays className="h-5 w-5" />,
-    label: "Mon planning & notes",
-    desc: "Consultez vos créneaux d'oral et saisissez les notes des candidats.",
+    label: "Mon planning",
+    desc: "Vos créneaux d'oral, les salles et les sujets, en liste ou en emploi du temps.",
+  },
+  {
+    href: "/examinateur/notes",
+    icon: <PenLine className="h-5 w-5" />,
+    label: "Mes notes",
+    desc: "Saisissez et validez les notes de vos candidats, suivez l'avancement.",
   },
   {
     href: "/examinateur/changer-mot-de-passe",
@@ -151,7 +157,7 @@ export default function ExaminateurAccueilPage() {
       </div>
 
       {/* ── Accès rapides ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {actions.map((a) => (
           <Link
             key={a.href}
