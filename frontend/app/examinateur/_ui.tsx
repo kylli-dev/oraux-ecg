@@ -24,6 +24,7 @@ export function ExaminateurHeader() {
       onglets={[
         { href: "/examinateur/accueil", label: "Accueil" },
         { href: "/examinateur/planning", label: "Mon planning" },
+        { href: "/examinateur/emploi-du-temps", label: "Emploi du temps" },
         { href: "/examinateur/notes", label: "Mes notes" },
         { href: "/examinateur/changer-mot-de-passe", label: "Mot de passe" },
       ]}

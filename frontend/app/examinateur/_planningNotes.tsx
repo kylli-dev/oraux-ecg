@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Loader2, CheckCircle, Clock, FileText, Download, AlertTriangle, Lock, X, ExternalLink,
-  CalendarDays, MapPin, Search, Users, BarChart3, List, CalendarRange, PenLine, ChevronRight,
+  CalendarDays, MapPin, Search, Users, BarChart3, CalendarRange, PenLine, ChevronRight,
 } from "lucide-react";
 import { RED, PageHeader, Alert } from "./_ui";
 import { EmploiDuTemps, type CreneauEdt, type LegendeEdt, type TeinteEdt } from "../_espace/EmploiDuTemps";
@@ -161,10 +161,11 @@ function StatsBloc({ label, data, accent }: { label: string; data: StatsMatiere;
   );
 }
 
-// Deux pages distinctes partagent ce composant :
-//  - « planning » (/examinateur/planning) : créneaux, salles, sujets, emploi du temps, exports ;
+// Trois pages distinctes partagent ce composant :
+//  - « planning » (/examinateur/planning) : liste des créneaux, salles, sujets, exports ;
+//  - « edt » (/examinateur/emploi-du-temps) : emploi du temps schématique, exports ;
 //  - « notes » (/examinateur/notes) : saisie et validation des notes, avancement, statistiques.
-export type ModeExaminateur = "planning" | "notes";
+export type ModeExaminateur = "planning" | "edt" | "notes";
 
 export function PlanningNotes({ mode }: { mode: ModeExaminateur }) {
   const router = useRouter();
@@ -181,27 +182,14 @@ export function PlanningNotes({ mode }: { mode: ModeExaminateur }) {
   const [searchCandidat, setSearchCandidat] = useState("");
   // Filtre par état de la note (page « notes » uniquement)
   const [filtreNote, setFiltreNote] = useState<"" | "anoter" | "brouillon" | "valide">("");
-  // Vue liste ou emploi du temps schématique (page « planning ») — mémorisée par navigateur
-  const [vuePlanning, setVuePlanning] = useState<"liste" | "edt">("liste");
-  const vue = mode === "planning" ? vuePlanning : "liste";
+  const vue = mode === "edt" ? "edt" : "liste";
   // Créneau mis en évidence après un clic dans l'emploi du temps
   const [surligne, setSurligne] = useState<number | null>(null);
-
-  useEffect(() => {
-    try { if (localStorage.getItem("examinateur_vue") === "edt") setVuePlanning("edt"); } catch { /* stockage indisponible */ }
-  }, []);
-
-  function changerVue(v: "liste" | "edt") {
-    setVuePlanning(v);
-    try { localStorage.setItem("examinateur_vue", v); } catch { /* stockage indisponible */ }
-  }
 
   // Clic sur un bloc de l'emploi du temps : un créneau avec candidat ouvre la page des
   // notes sur ce candidat ; un créneau vide est montré dans la liste du planning.
   function allerAuCreneau(ep: Epreuve) {
-    if (mode === "planning" && ep.candidat_id) { router.push(`/examinateur/notes?ep=${ep.id}`); return; }
-    if (mode === "planning") changerVue("liste");
-    mettreEnEvidence(ep);
+    router.push(ep.candidat_id ? `/examinateur/notes?ep=${ep.id}` : `/examinateur/planning?ep=${ep.id}`);
   }
 
   // Journée du créneau, défilement jusqu'à lui et mise en évidence pendant quelques secondes
@@ -268,11 +256,11 @@ export function PlanningNotes({ mode }: { mode: ModeExaminateur }) {
 
   useEffect(() => { load(); }, [load]);
 
-  // Arrivée depuis le planning (« Saisir la note » ou clic dans l'emploi du temps) :
-  // ?ep=<id> désigne le créneau à mettre en évidence, une seule fois après le chargement.
+  // Arrivée depuis le planning (« Saisir la note ») ou l'emploi du temps (clic sur un
+  // créneau) : ?ep=<id> désigne le créneau à mettre en évidence, une fois après le chargement.
   const cibleTraitee = useRef(false);
   useEffect(() => {
-    if (mode !== "notes" || loading || cibleTraitee.current) return;
+    if (mode === "edt" || loading || cibleTraitee.current) return;
     cibleTraitee.current = true;
     const id = Number(new URLSearchParams(window.location.search).get("ep"));
     const ep = epreuves.find((e) => e.id === id);
@@ -364,10 +352,13 @@ export function PlanningNotes({ mode }: { mode: ModeExaminateur }) {
     // L'emploi du temps prend toute la largeur de l'écran (une colonne par salle)
     <div className={`${vue === "edt" ? "max-w-[1800px]" : "max-w-4xl"} mx-auto px-4 sm:px-6 py-10`}>
       <PageHeader
-        icon={mode === "planning" ? <CalendarDays className="h-6 w-6" /> : <PenLine className="h-6 w-6" />}
-        title={mode === "planning" ? "Mon planning" : "Mes notes"}
+        icon={mode === "planning" ? <CalendarDays className="h-6 w-6" />
+          : mode === "edt" ? <CalendarRange className="h-6 w-6" /> : <PenLine className="h-6 w-6" />}
+        title={mode === "planning" ? "Mon planning" : mode === "edt" ? "Emploi du temps" : "Mes notes"}
         subtitle={mode === "planning"
-          ? "Vos créneaux d'oral, les salles et les sujets, en liste ou en emploi du temps."
+          ? "Vos créneaux d'oral un par un, avec les salles et les sujets."
+          : mode === "edt"
+          ? "Vue d'ensemble de vos créneaux, jour par jour et salle par salle."
           : "Saisissez, enregistrez et validez les notes de vos candidats."}
         actions={mode === "notes" ? undefined : (["pdf", "xlsx"] as const).map((f) => (
           <button
@@ -425,26 +416,6 @@ export function PlanningNotes({ mode }: { mode: ModeExaminateur }) {
         {/* ── Filtres ── */}
         {!loading && base.length > 0 && (
           <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-4 space-y-3">
-            {mode === "planning" && (
-            <div className="inline-flex rounded-lg border border-gray-300 p-0.5 bg-gray-50">
-              {([
-                ["liste", "Liste", <List key="l" className="h-4 w-4" />],
-                ["edt", "Emploi du temps", <CalendarRange key="e" className="h-4 w-4" />],
-              ] as const).map(([v, label, icone]) => (
-                <button
-                  key={v}
-                  onClick={() => changerVue(v)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition ${
-                    vue === v ? "text-white shadow-sm" : "text-gray-900 hover:bg-white"
-                  }`}
-                  style={vue === v ? { backgroundColor: RED } : undefined}
-                >
-                  {icone}
-                  {label}
-                </button>
-              ))}
-            </div>
-            )}
             {mode === "notes" && (
               <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap">
                 {([

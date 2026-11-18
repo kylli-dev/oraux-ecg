@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { CalendarDays, ChevronRight, KeyRound, Mail, PenLine } from "lucide-react";
+import { CalendarDays, CalendarRange, ChevronRight, KeyRound, Mail, PenLine } from "lucide-react";
 import { RED, PageLoader } from "../_ui";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8002";
@@ -40,7 +40,13 @@ const actions = [
     href: "/examinateur/planning",
     icon: <CalendarDays className="h-5 w-5" />,
     label: "Mon planning",
-    desc: "Vos créneaux d'oral, salles et sujets, en liste ou en emploi du temps.",
+    desc: "Vos créneaux d'oral un par un, avec les salles et les sujets.",
+  },
+  {
+    href: "/examinateur/emploi-du-temps",
+    icon: <CalendarRange className="h-5 w-5" />,
+    label: "Emploi du temps",
+    desc: "Vue d'ensemble de vos créneaux, jour par jour.",
   },
   {
     href: "/examinateur/notes",
