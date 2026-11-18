@@ -370,6 +370,90 @@ export function SallesSection() {
   // Rangs proposés dans la barre : jusqu'au plus grand nombre de salles parallèles sélectionnées
   const maxRangSelection = Math.max(0, ...Array.from(selected).map((k) => tailleCreneau.get(k) ?? 0));
 
+  // ── Occupations simultanées ──────────────────────────────────────────────────
+  // Une salle d'examen ne reçoit qu'une épreuve à la fois (et ne peut pas servir en même
+  // temps de salle de préparation), un surveillant ne surveille qu'une épreuve à la fois.
+  // Les salles de préparation peuvent en revanche être partagées entre candidats.
+  // Calculé sur tout le planning (pas seulement les lignes filtrées) : les choix qui
+  // créeraient un conflit sont grisés dans les listes déroulantes.
+  const enMin = (h: string | null | undefined) => {
+    const [hh, mm] = (h ?? "00:00").slice(0, 5).split(":").map(Number);
+    return hh * 60 + (mm || 0);
+  };
+  const epreuvesParDate = epreuves.reduce<Record<string, EpreuveFlat[]>>((acc, e) => {
+    (acc[e.date] ??= []).push(e);
+    return acc;
+  }, {});
+  const seChevauchent = (a1: number, a2: number, b1: number, b2: number) => a1 < b2 && b1 < a2;
+  const libelleOccupation = (o: EpreuveFlat) =>
+    `${o.matiere} ${o.heure_debut.slice(0, 5)}${(tailleCreneau.get(`${o.date}||${o.matiere}||${o.heure_debut}`) ?? 0) > 1 ? ` #${rangParallele.get(o.id)}` : ""}`;
+
+  type Occupation = { salles: Map<number, string>; prepas: Map<number, string>; survs: Map<number, string> };
+  // Ce qui est déjà pris, sur le créneau de chacune des épreuves `cibles`, par les AUTRES
+  // épreuves : salles (pour la salle d'examen), salles (pour la préparation), surveillants
+  function occupations(cibles: EpreuveFlat[]): Occupation {
+    const occ: Occupation = { salles: new Map(), prepas: new Map(), survs: new Map() };
+    const ids = new Set(cibles.map((c) => c.id));
+    for (const ep of cibles) {
+      const d = enMin(ep.heure_debut);
+      const f = enMin(ep.heure_fin);
+      const p = d - (ep.preparation_minutes ?? 0);
+      for (const o of epreuvesParDate[ep.date] ?? []) {
+        if (ids.has(o.id)) continue;
+        const od = enMin(o.heure_debut);
+        const of = enMin(o.heure_fin);
+        const op = od - (o.preparation_minutes ?? 0);
+        const lib = libelleOccupation(o);
+        if (seChevauchent(d, f, od, of)) {
+          if (o.salle_id) occ.salles.set(o.salle_id, `examen ${lib}`);
+          if (o.surveillant_id) occ.survs.set(o.surveillant_id, lib);
+          if (o.surveillant2_id) occ.survs.set(o.surveillant2_id, lib);
+        }
+        // Salle de préparation d'une autre épreuve pendant le passage de celle-ci
+        if (o.salle_preparation_id && op < od && seChevauchent(d, f, op, od) && !occ.salles.has(o.salle_preparation_id)) {
+          occ.salles.set(o.salle_preparation_id, `préparation ${lib}`);
+        }
+        // Salle d'examen d'une autre épreuve pendant la préparation de celle-ci
+        if (o.salle_id && p < d && seChevauchent(p, d, od, of)) occ.prepas.set(o.salle_id, `examen ${lib}`);
+      }
+    }
+    return occ;
+  }
+
+  // Les cibles se chevauchent-elles entre elles ? (même jour, horaires qui se recouvrent) :
+  // une même salle d'examen ou un même surveillant ne peut alors pas leur être donné à toutes
+  function ciblesSeChevauchent(cibles: EpreuveFlat[]) {
+    const parJour = cibles.reduce<Record<string, EpreuveFlat[]>>((acc, e) => { (acc[e.date] ??= []).push(e); return acc; }, {});
+    return Object.values(parJour).some((eps) => {
+      const tries = [...eps].sort((a, b) => enMin(a.heure_debut) - enMin(b.heure_debut));
+      return tries.some((e, i) => i > 0 && enMin(e.heure_debut) < enMin(tries[i - 1].heure_fin));
+    });
+  }
+
+  // Options d'une liste : grisées (non sélectionnables) si déjà prises sur le créneau ;
+  // la valeur actuelle reste choisie, signalée « conflit » si elle en crée un.
+  function optionsOccupees<T extends { id: number }>(liste: T[], libelle: (x: T) => string, prises: Map<number, string>, courant: number | null, toutBloquer = false) {
+    return liste.map((x) => {
+      const raison = prises.get(x.id);
+      const bloquee = x.id !== courant && (toutBloquer || !!raison);
+      return (
+        <option key={x.id} value={x.id} disabled={bloquee}>
+          {libelle(x)}
+          {raison ? (x.id === courant ? ` ⚠ conflit (${raison})` : ` — pris (${raison})`) : ""}
+        </option>
+      );
+    });
+  }
+  const nomSalle = (x: Salle) => x.intitule;
+  const nomSurv = (x: SurveillantItem) => `${x.nom} ${x.prenom}`;
+
+  // Barre d'affectation groupée : épreuves visées et ce qui est pris autour d'elles
+  const ciblesBulk = selected.size > 0
+    ? epreuves.filter((e) => selected.has(`${e.date}||${e.matiere}||${e.heure_debut}`) && estDansRang(e))
+    : [];
+  const occBulk = occupations(ciblesBulk);
+  const chevauchementBulk = ciblesSeChevauchent(ciblesBulk);
+
   const matieres = Array.from(new Set(epreuves.map((e) => e.matiere))).sort();
   const heures = Array.from(new Set(epreuves.map((e) => e.heure_debut))).sort();
   const filtered = epreuves
@@ -815,7 +899,7 @@ export function SallesSection() {
               >
                 <option value="">— Salle d'examen —</option>
                 <option value="null">Aucune</option>
-                {activeSalles.map((s) => <option key={s.id} value={s.id}>{s.intitule}</option>)}
+                {optionsOccupees(activeSalles, nomSalle, occBulk.salles, null, chevauchementBulk)}
               </select>
               <select
                 value={bulkSallePrepId}
@@ -824,7 +908,7 @@ export function SallesSection() {
               >
                 <option value="">— Salle de préparation —</option>
                 <option value="null">Aucune</option>
-                {activeSalles.map((s) => <option key={s.id} value={s.id}>{s.intitule}</option>)}
+                {optionsOccupees(activeSalles, nomSalle, occBulk.prepas, null)}
               </select>
               <select
                 value={bulkSurvId}
@@ -833,7 +917,7 @@ export function SallesSection() {
               >
                 <option value="">— Surveillant —</option>
                 <option value="null">Aucun</option>
-                {surveillants.filter((s) => s.actif).map((s) => <option key={s.id} value={s.id}>{s.nom} {s.prenom}</option>)}
+                {optionsOccupees(surveillants.filter((s) => s.actif), nomSurv, occBulk.survs, null, chevauchementBulk)}
               </select>
               <select
                 value={bulkSurv2Id}
@@ -842,7 +926,9 @@ export function SallesSection() {
               >
                 <option value="">— Surveillant 2 —</option>
                 <option value="null">Aucun</option>
-                {surveillants.filter((s) => s.actif).map((s) => <option key={s.id} value={s.id}>{s.nom} {s.prenom}</option>)}
+                {optionsOccupees(
+                  surveillants.filter((s) => s.actif && String(s.id) !== bulkSurvId), nomSurv, occBulk.survs, null, chevauchementBulk,
+                )}
               </select>
               <button
                 onClick={applyBulkSelection}
@@ -855,6 +941,12 @@ export function SallesSection() {
               <button onClick={() => { setSelected(new Set()); setBulkRang(""); }} className="text-xs text-gray-700 hover:text-black transition ml-auto">
                 Annuler
               </button>
+              {chevauchementBulk && (
+                <p className="basis-full text-xs text-amber-900">
+                  Les créneaux sélectionnés ont lieu en même temps : une même salle d&apos;examen ou un même surveillant ne peut pas leur être donné à tous
+                  (choix grisés).{maxRangSelection > 1 ? " Choisissez « Salle #N uniquement » pour affecter un jury à la fois, ou réduisez la sélection." : " Réduisez la sélection."}
+                </p>
+              )}
             </div>
           )}
 
@@ -954,7 +1046,11 @@ export function SallesSection() {
                             : "—";
                           const rowSpan = g.epreuves.length;
 
-                          return g.epreuves.map((ep, epIdx) => (
+                          return g.epreuves.map((ep, epIdx) => {
+                            const occ = occupations([ep]);
+                            const conflit = (prises: Map<number, string>, v: number | null) => v != null && prises.has(v);
+                            const bordure = (en: boolean) => (en ? "border-amber-500 bg-amber-50" : "bg-white");
+                            return (
                             <tr key={ep.id} className={`border-b border-black/[0.04] last:border-0 ${isSelected ? "bg-amber-50/60" : "hover:bg-black/[0.01]"}`}>
                               {epIdx === 0 && (
                                 <>
@@ -1012,12 +1108,11 @@ export function SallesSection() {
                                   value={ep.salle_id ?? ""}
                                   onChange={(ev) => assignSalleSingle(ep.id, "salle_id", ev.target.value ? Number(ev.target.value) : null)}
                                   disabled={saving === -1}
-                                  className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[120px]"
+                                  title={conflit(occ.salles, ep.salle_id) ? `Salle déjà utilisée sur ce créneau (${occ.salles.get(ep.salle_id!)})` : undefined}
+                                  className={`border rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[120px] ${bordure(conflit(occ.salles, ep.salle_id))}`}
                                 >
                                   <option value="">— Aucune —</option>
-                                  {activeSalles.map((s) => (
-                                    <option key={s.id} value={s.id}>{s.intitule}</option>
-                                  ))}
+                                  {optionsOccupees(activeSalles, nomSalle, occ.salles, ep.salle_id)}
                                 </select>
                               </td>
                               <td className="px-4 py-2.5">
@@ -1025,12 +1120,11 @@ export function SallesSection() {
                                   value={ep.salle_preparation_id ?? ""}
                                   onChange={(ev) => assignSalleSingle(ep.id, "salle_preparation_id", ev.target.value ? Number(ev.target.value) : null)}
                                   disabled={saving === -1}
-                                  className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[120px]"
+                                  title={conflit(occ.prepas, ep.salle_preparation_id) ? `Salle utilisée pour un examen pendant la préparation (${occ.prepas.get(ep.salle_preparation_id!)})` : undefined}
+                                  className={`border rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[120px] ${bordure(conflit(occ.prepas, ep.salle_preparation_id))}`}
                                 >
                                   <option value="">— Aucune —</option>
-                                  {activeSalles.map((s) => (
-                                    <option key={s.id} value={s.id}>{s.intitule}</option>
-                                  ))}
+                                  {optionsOccupees(activeSalles, nomSalle, occ.prepas, ep.salle_preparation_id)}
                                 </select>
                               </td>
                               <td className="px-4 py-2.5">
@@ -1038,12 +1132,12 @@ export function SallesSection() {
                                   value={ep.surveillant_id ?? ""}
                                   onChange={(ev) => assignSalleSingle(ep.id, "surveillant_id", ev.target.value ? Number(ev.target.value) : null)}
                                   disabled={saving === -1}
-                                  className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[140px]"
+                                  title={conflit(occ.survs, ep.surveillant_id) ? `Surveillant déjà pris sur ce créneau (${occ.survs.get(ep.surveillant_id!)})` : undefined}
+                                  className={`border rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[140px] ${bordure(conflit(occ.survs, ep.surveillant_id))}`}
                                 >
                                   <option value="">— Aucun —</option>
-                                  {surveillants.filter((s) => s.actif).map((s) => (
-                                    <option key={s.id} value={s.id}>{s.nom} {s.prenom}</option>
-                                  ))}
+                                  {/* Le 2ᵉ surveillant de la même épreuve n'est pas proposé en 1er */}
+                                  {optionsOccupees(surveillants.filter((s) => s.actif && s.id !== ep.surveillant2_id), nomSurv, occ.survs, ep.surveillant_id)}
                                 </select>
                               </td>
                               <td className="px-4 py-2.5">
@@ -1051,16 +1145,16 @@ export function SallesSection() {
                                   value={ep.surveillant2_id ?? ""}
                                   onChange={(ev) => assignSalleSingle(ep.id, "surveillant2_id", ev.target.value ? Number(ev.target.value) : null)}
                                   disabled={saving === -1}
-                                  className="border rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[140px]"
+                                  title={conflit(occ.survs, ep.surveillant2_id) ? `Surveillant déjà pris sur ce créneau (${occ.survs.get(ep.surveillant2_id!)})` : undefined}
+                                  className={`border rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-black/15 min-w-[140px] ${bordure(conflit(occ.survs, ep.surveillant2_id))}`}
                                 >
                                   <option value="">— Aucun —</option>
-                                  {surveillants.filter((s) => s.actif).map((s) => (
-                                    <option key={s.id} value={s.id}>{s.nom} {s.prenom}</option>
-                                  ))}
+                                  {optionsOccupees(surveillants.filter((s) => s.actif && s.id !== ep.surveillant_id), nomSurv, occ.survs, ep.surveillant2_id)}
                                 </select>
                               </td>
                             </tr>
-                          ));
+                            );
+                          });
                           }),
                         ];
                         })}
