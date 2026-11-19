@@ -64,6 +64,36 @@ app = FastAPI(title="Oraux Platform")
 # Journal d'activité (onglet Monitoring) — ajouté avant CORS, donc exécuté à l'intérieur
 app.add_middleware(JournalActiviteMiddleware)
 
+
+class EntetesSecuriteMiddleware:
+    """En-têtes de protection sur toutes les réponses de l'API (ASGI pur : compatible avec
+    les réponses en flux, ZIP et PDF). L'API ne sert pas de pages : rien à afficher en cadre."""
+    ENTETES = [
+        (b"x-content-type-options", b"nosniff"),
+        (b"x-frame-options", b"DENY"),
+        (b"referrer-policy", b"no-referrer"),
+    ]
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        async def envoyer(message):
+            if message["type"] == "http.response.start":
+                presents = {k.lower() for k, _ in message.get("headers", [])}
+                message["headers"] = list(message.get("headers", [])) + [
+                    (k, v) for k, v in self.ENTETES if k not in presents
+                ]
+            await send(message)
+
+        await self.app(scope, receive, envoyer)
+
+
+app.add_middleware(EntetesSecuriteMiddleware)
+
 _extra_origins = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
