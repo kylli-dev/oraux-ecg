@@ -35,6 +35,9 @@ type Epreuve = {
   presence_le?: string | null; // heure d'arrivée pointée (ISO UTC)
   incident?: string | null;
   incident_le?: string | null;
+  // Créneau à deux surveillants : rôle de la personne connectée et son binôme
+  est_second_surveillant?: boolean;
+  co_surveillant?: string | null;
 };
 
 function authHeaders() {
@@ -478,9 +481,17 @@ export function PlanningSurveillant({ vue }: { vue: "liste" | "edt" }) {
                             )}
                           </div>
 
-                          {/* Examinateur + sujet */}
-                          {(ep.examinateur_nom || ep.planche_nom) && (
+                          {/* Examinateur + sujet (+ rôle et binôme quand le créneau a deux surveillants) */}
+                          {(ep.examinateur_nom || ep.planche_nom || ep.est_second_surveillant || ep.co_surveillant) && (
                             <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-800">
+                              {(ep.est_second_surveillant || ep.co_surveillant) && (
+                                <span className="inline-flex items-center gap-1.5">
+                                  <span className="rounded-full border border-gray-300 bg-gray-50 px-2 py-0.5 text-xs font-semibold text-gray-900">
+                                    {ep.est_second_surveillant ? "2ᵉ surveillant" : "1er surveillant"}
+                                  </span>
+                                  {ep.co_surveillant && <>avec <span className="font-semibold text-gray-900">{ep.co_surveillant}</span></>}
+                                </span>
+                              )}
                               {ep.examinateur_nom && (
                                 <span className="inline-flex items-center gap-1.5">
                                   <User className="h-4 w-4 shrink-0 text-gray-700" />

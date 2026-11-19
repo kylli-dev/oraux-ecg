@@ -36,6 +36,9 @@ type Epreuve = {
   presence_le?: string | null;
   incident?: string | null;
   incident_le?: string | null;
+  // Créneau à deux surveillants : rôle de la personne connectée et son binôme
+  est_second_surveillant?: boolean;
+  co_surveillant?: string | null;
 };
 
 // Où en est un créneau à l'heure actuelle
@@ -162,6 +165,13 @@ export default function SurveillantAujourdhuiPage() {
         )}
         {e.examinateur_nom && (
           <p><span className="text-gray-700">Examinateur :</span> <strong>{e.examinateur_prenom} {e.examinateur_nom}</strong></p>
+        )}
+        {(e.est_second_surveillant || e.co_surveillant) && (
+          <p>
+            <span className="text-gray-700">Surveillance :</span>{" "}
+            <strong>{e.est_second_surveillant ? "2ᵉ surveillant" : "1er surveillant"}</strong>
+            {e.co_surveillant && <>, avec <strong>{e.co_surveillant}</strong></>}
+          </p>
         )}
         {e.planche_nom && <p><span className="text-gray-700">Planche :</span> <strong>{e.planche_nom}</strong></p>}
       </div>

@@ -13,6 +13,7 @@ from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jwt import PyJWTError as JWTError
 from pydantic import BaseModel, Field
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, aliased
 
 from app.core.auth import (
@@ -97,6 +98,18 @@ class EpreuveSurveillant(BaseModel):
     presence_le: Optional[str] = None  # heure d'arrivée pointée (ISO UTC), None si pas pointé
     incident: Optional[str] = None
     incident_le: Optional[str] = None  # ISO UTC
+    # Créneau à deux surveillants : rôle de la personne connectée et nom de son binôme
+    est_second_surveillant: bool = False
+    co_surveillant: Optional[str] = None
+
+
+def _de_ce_surveillant(s: Surveillant):
+    """Créneaux où il est 1er OU 2e surveillant."""
+    return or_(Epreuve.surveillant_id == s.id, Epreuve.surveillant2_id == s.id)
+
+
+def _lui_est_affectee(ep, s: Surveillant) -> bool:
+    return bool(ep) and s.id in (ep.surveillant_id, ep.surveillant2_id)
 
 
 class IncidentIn(BaseModel):
@@ -212,21 +225,26 @@ def mes_epreuves(
     # une centaine de créneaux, l'ancienne boucle faisait ~500 allers-retours vers la
     # base et la page « Mon planning » mettait très longtemps à se charger.
     SallePrep = aliased(Salle)
+    Surv1, Surv2 = aliased(Surveillant), aliased(Surveillant)
     rows = (
-        db.query(Epreuve, DemiJournee, Candidat, Salle, SallePrep, Planche, Examinateur)
+        db.query(Epreuve, DemiJournee, Candidat, Salle, SallePrep, Planche, Examinateur, Surv1, Surv2)
         .join(DemiJournee, Epreuve.demi_journee_id == DemiJournee.id)
         .outerjoin(Candidat, Epreuve.candidat_id == Candidat.id)
         .outerjoin(Salle, Epreuve.salle_id == Salle.id)
         .outerjoin(SallePrep, Epreuve.salle_preparation_id == SallePrep.id)
         .outerjoin(Planche, Epreuve.planche_id == Planche.id)
         .outerjoin(Examinateur, Epreuve.examinateur_id == Examinateur.id)
-        .filter(Epreuve.surveillant_id == s.id)
+        .outerjoin(Surv1, Epreuve.surveillant_id == Surv1.id)
+        .outerjoin(Surv2, Epreuve.surveillant2_id == Surv2.id)
+        .filter(_de_ce_surveillant(s))
         .order_by(DemiJournee.date, Epreuve.heure_debut)
         .all()
     )
 
     result = []
-    for ep, dj, candidat, salle, salle_prep, planche, exam in rows:
+    for ep, dj, candidat, salle, salle_prep, planche, exam, surv1, surv2 in rows:
+        second = ep.surveillant_id != s.id
+        binome = surv1 if second else surv2
         result.append(EpreuveSurveillant(
             id=ep.id,
             date=dj.date,
@@ -246,6 +264,8 @@ def mes_epreuves(
             presence_le=_iso_utc(ep.presence_le),
             incident=ep.incident,
             incident_le=_iso_utc(ep.incident_le),
+            est_second_surveillant=second,
+            co_surveillant=f"{binome.prenom} {binome.nom}".strip() if binome and binome.id != s.id else None,
         ))
     return result
 
@@ -284,7 +304,7 @@ def _photo_affectations(s: Surveillant, db: Session) -> dict:
         .outerjoin(Candidat, Epreuve.candidat_id == Candidat.id)
         .outerjoin(Salle, Epreuve.salle_id == Salle.id)
         .outerjoin(SallePrep, Epreuve.salle_preparation_id == SallePrep.id)
-        .filter(Epreuve.surveillant_id == s.id)
+        .filter(_de_ce_surveillant(s))
         .all()
     )
     return {
@@ -366,7 +386,7 @@ def marquer_absent(
     db: Session = Depends(get_db),
 ):
     ep = db.get(Epreuve, epreuve_id)
-    if not ep or ep.surveillant_id != s.id:
+    if not _lui_est_affectee(ep, s):
         raise HTTPException(status_code=404, detail="Épreuve introuvable")
     if not ep.candidat_id:
         raise HTTPException(status_code=400, detail="Aucun candidat assigné")
@@ -384,7 +404,7 @@ def annuler_absent(
     db: Session = Depends(get_db),
 ):
     ep = db.get(Epreuve, epreuve_id)
-    if not ep or ep.surveillant_id != s.id:
+    if not _lui_est_affectee(ep, s):
         raise HTTPException(status_code=404, detail="Épreuve introuvable")
     if ep.statut != "ABSENT":
         raise HTTPException(status_code=400, detail="L'épreuve n'est pas marquée absente")
@@ -401,7 +421,7 @@ def marquer_present(
     """Pointe le candidat arrivé (heure d'arrivée = maintenant). Un candidat marqué absent
     par erreur repasse présent."""
     ep = db.get(Epreuve, epreuve_id)
-    if not ep or ep.surveillant_id != s.id:
+    if not _lui_est_affectee(ep, s):
         raise HTTPException(status_code=404, detail="Épreuve introuvable")
     if not ep.candidat_id:
         raise HTTPException(status_code=400, detail="Aucun candidat assigné")
@@ -419,7 +439,7 @@ def annuler_present(
 ):
     """Annule le pointage (candidat pointé par erreur) : il redevient « pas encore pointé »."""
     ep = db.get(Epreuve, epreuve_id)
-    if not ep or ep.surveillant_id != s.id:
+    if not _lui_est_affectee(ep, s):
         raise HTTPException(status_code=404, detail="Épreuve introuvable")
     ep.presence_le = None
     db.commit()
@@ -436,7 +456,7 @@ def signaler_incident(
     """Enregistre (ou retire, texte vide) l'incident du créneau. Un incident nouveau ou
     modifié prévient les admins (cloche et email)."""
     ep = db.get(Epreuve, epreuve_id)
-    if not ep or ep.surveillant_id != s.id:
+    if not _lui_est_affectee(ep, s):
         raise HTTPException(status_code=404, detail="Épreuve introuvable")
     texte = body.texte.strip()
     if not texte:
@@ -477,7 +497,7 @@ def export_planning(
     ws = wb.active
     ws.title = "Planning surveillance"
 
-    headers = ["Date", "Matière", "Heure prépa", "Heure passage", "Candidat", "Salle prépa", "Salle", "Examinateur", "Sujet", "Statut", "Présence", "Incident"]
+    headers = ["Date", "Matière", "Heure prépa", "Heure passage", "Candidat", "Salle prépa", "Salle", "Examinateur", "Sujet", "Statut", "Présence", "Incident", "Rôle", "Binôme"]
     ws.append(headers)
     for cell in ws[1]:
         cell.font = Font(bold=True, color="FFFFFF")
@@ -511,6 +531,7 @@ def export_planning(
             date_str, ep.matiere, heure_prep, ep.heure_debut,
             candidat_str, ep.salle_preparation_intitule or "—", ep.salle_intitule or "—",
             exam_str, ep.planche_nom or "—", ep.statut, presence, ep.incident or "",
+            "2e surveillant" if ep.est_second_surveillant else "1er surveillant", ep.co_surveillant or "—",
         ])
 
     for col in ws.columns:
