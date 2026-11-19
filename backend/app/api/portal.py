@@ -189,8 +189,7 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
         or db.query(Candidat).filter_by(email=identifier).first()
     )
     if not c or not c.password_hash or not verify_password(body.password, c.password_hash):
-        limitation.noter(cles)
-        raise HTTPException(status_code=401, detail="Identifiants incorrects")
+        limitation.echec(cles, "Identifiants incorrects. Vérifiez votre login et votre mot de passe.")
     limitation.effacer(cles[0][0])
     signaler_acteur(request, "candidat", c.id)
     return TokenOut(access_token=create_access_token(c.id))

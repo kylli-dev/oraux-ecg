@@ -31,7 +31,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: d?.detail ?? "Trop de tentatives. Réessayez plus tard." }, { status: 429 });
     }
     if (!backendRes.ok) {
-      return NextResponse.json({ error: "Identifiants incorrects" }, { status: 401 });
+      // Message du serveur seulement pour un refus d'identifiants (il annonce les essais
+      // restants) ; tout autre refus (clé admin, configuration) reste générique
+      const d = await backendRes.json().catch(() => null);
+      const detail = typeof d?.detail === "string" && d.detail.startsWith("Identifiants") ? d.detail : null;
+      return NextResponse.json({ error: detail ?? "Identifiants incorrects" }, { status: 401 });
     }
     const admin = await backendRes.json();
 

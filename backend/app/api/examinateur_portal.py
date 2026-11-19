@@ -163,8 +163,7 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
         _func.lower(Examinateur.email) == body.email.strip().lower()
     ).first()
     if not ex or not ex.password_hash or not verify_password(body.password, ex.password_hash):
-        limitation.noter(cles)
-        raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
+        limitation.echec(cles, "Email ou mot de passe incorrect.")
     limitation.effacer(cles[0][0])
     token = create_examinateur_token(ex.id)
     signaler_acteur(request, "examinateur", ex.id)

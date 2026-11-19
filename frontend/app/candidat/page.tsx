@@ -28,8 +28,9 @@ export default function CandidatLoginPage() {
         body: JSON.stringify({ login: login.trim(), password }),
       });
       if (!res.ok) {
-        const d = res.status === 429 ? await res.json().catch(() => null) : null;
-        setError(d?.detail ?? "Identifiants incorrects. Vérifiez votre login et mot de passe.");
+        // Message du serveur : essais restants avant blocage, ou délai si bloqué
+        const d = res.status === 429 || res.status === 401 ? await res.json().catch(() => null) : null;
+        setError(typeof d?.detail === "string" ? d.detail : "Identifiants incorrects. Vérifiez votre login et mot de passe.");
         return;
       }
       const data = await res.json();

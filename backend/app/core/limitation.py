@@ -41,6 +41,15 @@ def _purger(cle: str, maintenant: float) -> deque:
     return q
 
 
+def _bloque(q: deque, maintenant: float) -> HTTPException:
+    attente = int(q[0] + FENETRE_S - maintenant) + 1
+    minutes = max(1, (attente + 59) // 60)
+    return HTTPException(
+        status_code=429,
+        detail=f"Trop de tentatives. Réessayez dans {minutes} minute{'s' if minutes > 1 else ''}.",
+    )
+
+
 def verifier(cles: Iterable[Tuple[str, int]]) -> None:
     """Refuse (429) si l'une des clés a atteint son maximum. cles : (clé, maximum)."""
     maintenant = time.monotonic()
@@ -48,12 +57,28 @@ def verifier(cles: Iterable[Tuple[str, int]]) -> None:
         for cle, maximum in cles:
             q = _purger(cle, maintenant)
             if len(q) >= maximum:
-                attente = int(q[0] + FENETRE_S - maintenant) + 1
-                minutes = max(1, (attente + 59) // 60)
-                raise HTTPException(
-                    status_code=429,
-                    detail=f"Trop de tentatives. Réessayez dans {minutes} minute{'s' if minutes > 1 else ''}.",
-                )
+                raise _bloque(q, maintenant)
+
+
+def echec(cles, message: str) -> None:
+    """Connexion refusée : compte l'essai puis lève l'erreur à afficher. Annonce les essais
+    restants avant le blocage ; le dernier essai raté bloque aussitôt (429). Même réponse
+    qu'un compte existe ou non : le décompte ne révèle rien sur les comptes."""
+    cles = list(cles)
+    maintenant = time.monotonic()
+    with _verrou:
+        restants = None
+        for cle, maximum in cles:
+            q = _purger(cle, maintenant)
+            q.append(maintenant)
+            r = maximum - len(q)
+            if r <= 0:
+                raise _bloque(q, maintenant)
+            restants = r if restants is None else min(restants, r)
+    if restants is not None and restants <= 3:
+        message += (f" Il vous reste {restants} tentative{'s' if restants > 1 else ''}"
+                    f" avant un blocage de {FENETRE_S // 60} minutes.")
+    raise HTTPException(status_code=401, detail=message)
 
 
 def noter(cles: Iterable[Tuple[str, int]]) -> None:

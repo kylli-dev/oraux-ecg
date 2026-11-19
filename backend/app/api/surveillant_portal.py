@@ -117,8 +117,7 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
         Surveillant.email == body.email.strip().lower()
     ).first()
     if not s or not s.password_hash or not verify_password(body.password, s.password_hash):
-        limitation.noter(cles)
-        raise HTTPException(status_code=401, detail="Identifiants invalides")
+        limitation.echec(cles, "Email ou mot de passe incorrect.")
     limitation.effacer(cles[0][0])
     signaler_acteur(request, "surveillant", s.id)
     return LoginOut(access_token=create_surveillant_token(s.id))

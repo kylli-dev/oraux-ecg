@@ -31,9 +31,8 @@ def login(body: AdminLoginIn, request: Request, db: Session = Depends(get_db)):
     limitation.verifier(cles)
     a = db.query(Admin).filter_by(username=body.username.strip()).first()
     if not a or not a.actif or not verify_password(body.password, a.password_hash):
-        limitation.noter(cles)
         signaler_detail(request, f"Connexion refusée pour l'identifiant « {body.username.strip()[:100]} »")
-        raise HTTPException(status_code=401, detail="Identifiants incorrects")
+        limitation.echec(cles, "Identifiants incorrects.")
     limitation.effacer(cles[0][0])
     signaler_acteur(request, "admin", a.id, a.username)
     return a
