@@ -485,23 +485,23 @@ export function PlanningSurveillant({ vue }: { vue: "liste" | "edt" }) {
                           {(ep.examinateur_nom || ep.planche_nom || ep.est_second_surveillant || ep.co_surveillant) && (
                             <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-800">
                               {(ep.est_second_surveillant || ep.co_surveillant) && (
-                                <span className="inline-flex items-center gap-1.5">
-                                  <span className="rounded-full border border-gray-300 bg-gray-50 px-2 py-0.5 text-xs font-semibold text-gray-900">
+                                <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                                  <span className="rounded-full border border-gray-300 bg-gray-50 px-2 py-0.5 text-xs font-semibold text-gray-900 whitespace-nowrap">
                                     {ep.est_second_surveillant ? "2ᵉ surveillant" : "1er surveillant"}
                                   </span>
-                                  {ep.co_surveillant && <>avec <span className="font-semibold text-gray-900">{ep.co_surveillant}</span></>}
+                                  {ep.co_surveillant && <span>avec <span className="font-semibold text-gray-900">{ep.co_surveillant}</span></span>}
                                 </span>
                               )}
                               {ep.examinateur_nom && (
                                 <span className="inline-flex items-center gap-1.5">
                                   <User className="h-4 w-4 shrink-0 text-gray-700" />
-                                  Examinateur : <span className="font-semibold text-gray-900">{ep.examinateur_prenom} {ep.examinateur_nom}</span>
+                                  <span>Examinateur : <span className="font-semibold text-gray-900">{ep.examinateur_prenom} {ep.examinateur_nom}</span></span>
                                 </span>
                               )}
                               {ep.planche_nom && (
                                 <span className="inline-flex items-center gap-1.5">
                                   <FileText className="h-4 w-4 shrink-0 text-gray-700" />
-                                  Sujet : <span className="font-semibold text-gray-900">{ep.planche_nom}</span>
+                                  <span>Sujet : <span className="font-semibold text-gray-900">{ep.planche_nom}</span></span>
                                 </span>
                               )}
                             </div>

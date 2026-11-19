@@ -187,7 +187,7 @@ export default function SurveillantAujourdhuiPage() {
       <PageHeader
         icon={<CalendarCheck className="h-6 w-6" />}
         title="Aujourd'hui"
-        subtitle={<span className="capitalize">{titreJour} · il est {enHeure(minutes)}</span>}
+        subtitle={<><span className="capitalize">{titreJour}</span> · il est {enHeure(minutes)}</>}
         actions={
           <button
             onClick={() => charger()}

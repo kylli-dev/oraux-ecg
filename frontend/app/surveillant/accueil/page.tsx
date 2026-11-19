@@ -117,7 +117,7 @@ export default function SurveillantAccueilPage() {
             >
               {initiales}
             </div>
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 basis-40">
               <p className="text-sm text-gray-700">Bonjour,</p>
               <h1 className="text-2xl font-bold text-gray-900 truncate">
                 {me.prenom} {me.nom}

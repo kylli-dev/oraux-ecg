@@ -343,8 +343,8 @@ export function PlanningNotes({ mode }: { mode: ModeExaminateur }) {
   const nbValidees = avecCandidat.filter((e) => isLocked(e.note_statut)).length;
   const pctValidees = avecCandidat.length ? Math.round((nbValidees / avecCandidat.length) * 100) : 0;
 
-  const pastille = (actif: boolean) =>
-    `shrink-0 px-3 py-1.5 rounded-full text-sm font-medium border transition capitalize ${
+  const pastille = (actif: boolean, majuscule = true) =>
+    `shrink-0 px-3 py-1.5 rounded-full text-sm font-medium border transition${majuscule ? " capitalize" : ""} ${
       actif ? "text-white shadow-sm" : "bg-white text-gray-900 border-gray-300 hover:border-gray-400"
     }`;
 
@@ -417,7 +417,7 @@ export function PlanningNotes({ mode }: { mode: ModeExaminateur }) {
         {!loading && base.length > 0 && (
           <div className="bg-white rounded-2xl border border-black/5 shadow-sm p-4 space-y-3">
             {mode === "notes" && (
-              <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap">
+              <div className="flex flex-wrap gap-2">
                 {([
                   ["", "Toutes"],
                   ["anoter", "À noter"],
@@ -430,7 +430,7 @@ export function PlanningNotes({ mode }: { mode: ModeExaminateur }) {
                     <button
                       key={v || "tous"}
                       onClick={() => setFiltreNote(v)}
-                      className={pastille(actif)}
+                      className={pastille(actif, false)}
                       style={actif ? { backgroundColor: RED, borderColor: RED } : undefined}
                     >
                       {label} <span className="tabular-nums">({n})</span>
@@ -451,7 +451,7 @@ export function PlanningNotes({ mode }: { mode: ModeExaminateur }) {
               />
             </div>
             {dates.length > 1 && (
-              <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap">
+              <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => setFilterDate("")}
                   className={pastille(!filterDate)}

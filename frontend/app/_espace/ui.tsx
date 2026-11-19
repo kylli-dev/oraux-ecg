@@ -165,7 +165,7 @@ export function EspaceHeader({
           </div>
         </Link>
         {connecte && !provisoire && onglets.length > 0 && (
-          <nav aria-label={libelle} className="order-3 lg:order-none w-full lg:w-auto min-w-0 mt-2 lg:mt-0 flex items-center gap-1 overflow-x-auto">
+          <nav aria-label={libelle} className="order-3 lg:order-none w-full lg:w-auto min-w-0 mt-2 lg:mt-0 flex flex-wrap lg:flex-nowrap items-center gap-1 lg:overflow-x-auto">
             {onglets.map((o) => {
               const actif = pathname === o.href || pathname.startsWith(`${o.href}/`);
               return (
@@ -173,7 +173,7 @@ export function EspaceHeader({
                   key={o.href}
                   href={o.href}
                   aria-current={actif ? "page" : undefined}
-                  className={`text-sm px-3 py-1.5 rounded-lg whitespace-nowrap transition ${
+                  className={`text-sm px-3 py-2 lg:py-1.5 rounded-lg whitespace-nowrap transition ${
                     actif ? "bg-white font-semibold" : "font-medium text-white hover:bg-white/15"
                   }`}
                   style={actif ? { color: RED } : undefined}
@@ -237,11 +237,11 @@ export function PageHeader({
         >
           {icon}
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-48">
           <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
           {subtitle && <p className="text-sm text-gray-700 mt-1">{subtitle}</p>}
         </div>
-        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+        {actions && <div className="w-full sm:w-auto flex flex-wrap items-center gap-2">{actions}</div>}
       </div>
     </div>
   );
