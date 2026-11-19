@@ -25,6 +25,11 @@ export async function POST(req: NextRequest) {
       }
       throw e;
     }
+    if (backendRes.status === 429) {
+      // Trop d'échecs pour cet identifiant : message du serveur (« Réessayez dans … »)
+      const d = await backendRes.json().catch(() => null);
+      return NextResponse.json({ error: d?.detail ?? "Trop de tentatives. Réessayez plus tard." }, { status: 429 });
+    }
     if (!backendRes.ok) {
       return NextResponse.json({ error: "Identifiants incorrects" }, { status: 401 });
     }

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from app.core import limitation
 from app.services.monitoring import signaler_acteur, signaler_detail
 from sqlalchemy.orm import Session
 
@@ -26,10 +27,14 @@ router = APIRouter(prefix="/admin/auth", tags=["admin-auth"], dependencies=[Depe
 @router.post("/login", response_model=AdminOut)
 def login(body: AdminLoginIn, request: Request, db: Session = Depends(get_db)):
     """Vérifie les identifiants d'un compte admin (username + mot de passe)."""
+    cles = limitation.cles_connexion("admin", body.username, request, par_ip=False)
+    limitation.verifier(cles)
     a = db.query(Admin).filter_by(username=body.username.strip()).first()
     if not a or not a.actif or not verify_password(body.password, a.password_hash):
+        limitation.noter(cles)
         signaler_detail(request, f"Connexion refusée pour l'identifiant « {body.username.strip()[:100]} »")
         raise HTTPException(status_code=401, detail="Identifiants incorrects")
+    limitation.effacer(cles[0][0])
     signaler_acteur(request, "admin", a.id, a.username)
     return a
 
@@ -49,7 +54,7 @@ def change_password(body: AdminChangePasswordIn, db: Session = Depends(get_db)):
 
 @router.post("/forgot-password", status_code=204)
 def admin_mot_de_passe_oublie(
-    body: AdminMotDePasseOublieIn, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
+    body: AdminMotDePasseOublieIn, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
 ):
     """
     Envoie un lien de réinitialisation à l'adresse email du compte admin (identifié par son
@@ -57,6 +62,9 @@ def admin_mot_de_passe_oublie(
     c'est alors au super-administrateur de réinitialiser le mot de passe. Réponse toujours
     204 (pas d'énumération des comptes), envoi en tâche de fond.
     """
+    cles = limitation.cles_connexion("admin-mdp", body.identifiant, request, par_ip=False)
+    limitation.verifier(cles)
+    limitation.noter(cles)
     from sqlalchemy import func as _func, or_
     from app.services.email import build_reset_password_candidat, send_reset_password_candidat
     saisie = body.identifiant.strip().lower()

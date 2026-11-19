@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { CalendarClock, CheckCircle2, ChevronRight, Info, KeyRound, ListChecks, Star, AlertTriangle } from "lucide-react";
 import { RED, PageLoader } from "../_ui";
+import { nettoyerHtml } from "../../_espace/nettoyerHtml";
 
 const API_BASE = process.env.NEXT_PUBLIC_PORTAL_API_URL ?? "http://localhost:8000";
 
@@ -85,7 +86,8 @@ export default function AccueilCandidatPage() {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => setConsignes(data?.corps_html?.trim() || null))
+      // HTML saisi dans l'admin : nettoyé avant d'être injecté (balises de mise en forme seules)
+      .then((data) => setConsignes(nettoyerHtml(data?.corps_html ?? "").trim() || null))
       .catch(() => {});
 
     // Résumé de l'inscription en tête de page, chargé lui aussi indépendamment

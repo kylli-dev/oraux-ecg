@@ -18,6 +18,7 @@ def _ensure_naive(dt: datetime) -> datetime:
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from app.core import limitation
 from app.services.monitoring import signaler_acteur
 from pydantic import BaseModel
 from sqlalchemy import func, or_
@@ -113,10 +114,6 @@ class PortalPlanningOut(BaseModel):
     epreuves: List[PortalEpreuveOut]
 
 
-class InscriptionIn(BaseModel):
-    epreuve_id: int
-
-
 class TripletInscrireIn(BaseModel):
     date: Date
     heure_debut: time  # nouveau
@@ -185,12 +182,16 @@ class InscriptionActiveOut(BaseModel):
 def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
     """Authentification candidat par login ou email / mot de passe."""
     identifier = body.login.strip()
+    cles = limitation.cles_connexion("candidat", identifier, request)
+    limitation.verifier(cles)
     c = (
         db.query(Candidat).filter_by(login=identifier).first()
         or db.query(Candidat).filter_by(email=identifier).first()
     )
     if not c or not c.password_hash or not verify_password(body.password, c.password_hash):
+        limitation.noter(cles)
         raise HTTPException(status_code=401, detail="Identifiants incorrects")
+    limitation.effacer(cles[0][0])
     signaler_acteur(request, "candidat", c.id)
     return TokenOut(access_token=create_access_token(c.id))
 
@@ -237,7 +238,7 @@ def change_password(
 
 
 @router.post("/forgot-password", status_code=204)
-def forgot_password(body: ForgotPasswordIn, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+def forgot_password(body: ForgotPasswordIn, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """
     Génère un token de réinitialisation et envoie automatiquement au candidat un email
     contenant le lien pour choisir un nouveau mot de passe (Message-type REINITIALISATION_MDP).
@@ -250,6 +251,9 @@ def forgot_password(body: ForgotPasswordIn, background_tasks: BackgroundTasks, d
     et l'envoi SMTP part en tâche de fond : le temps de réponse ne trahit pas non plus
     l'existence du compte.
     """
+    cles = limitation.cles_connexion("candidat-mdp", body.login, request)
+    limitation.verifier(cles)
+    limitation.noter(cles)
     saisie = body.login.strip().lower()
     if not saisie:
         return
@@ -287,23 +291,9 @@ def reset_password(body: ResetPasswordIn, db: Session = Depends(get_db)):
     db.commit()
 
 
-# ── Vue planning (legacy code_acces + nouveau JWT) ─────────────────────────────
-
-@router.get("/planning", response_model=PortalPlanningOut)
-def get_portal(
-    code: Optional[str] = Query(default=None),
-    candidat_id: Optional[int] = Depends(require_candidat) if False else None,
-    db: Session = Depends(get_db),
-):
-    """
-    Retourne la vue du candidat identifié par son code d'accès (legacy).
-    Utiliser GET /portal/me/planning pour l'auth JWT.
-    """
-    c = db.query(Candidat).filter_by(code_acces=code.upper()).first() if code else None
-    if not c:
-        raise HTTPException(status_code=404, detail="Code invalide")
-    return _build_planning_out(c, db)
-
+# ── Vue planning (auth JWT) ────────────────────────────────────────────────────
+# Les anciennes routes par code d'accès seul (sans mot de passe : /portal/planning,
+# /portal/inscription) ont été supprimées — un code de 8 caractères se devine par essais.
 
 @router.get("/me/planning", response_model=PortalPlanningOut)
 def get_my_planning(
@@ -952,41 +942,3 @@ def update_liste_attente(
             background_tasks.add_task(send_email, c.email, *message)
 
 
-# ── Inscription (legacy code) ──────────────────────────────────────────────────
-
-@router.post("/inscription")
-def s_inscrire(body: InscriptionIn, code: str = Query(...), db: Session = Depends(get_db)):
-    c = db.query(Candidat).filter_by(code_acces=code.upper()).first()
-    if not c:
-        raise HTTPException(status_code=404, detail="Code invalide")
-
-    e = db.get(Epreuve, body.epreuve_id)
-    if not e:
-        raise HTTPException(status_code=404, detail="Épreuve introuvable")
-    if e.statut != "LIBRE" or not epreuve_publiable(e):
-        raise HTTPException(status_code=409, detail="Ce créneau n'est plus disponible")
-
-    dj = db.get(DemiJournee, e.demi_journee_id)
-    if dj.planning_id != c.planning_id:
-        raise HTTPException(status_code=403, detail="Accès refusé")
-
-    e.candidat_id = c.id
-    e.statut = "ATTRIBUEE"
-    db.commit()
-    return {"epreuve_id": e.id, "statut": "ATTRIBUEE"}
-
-
-@router.delete("/inscription/{epreuve_id}")
-def se_desinscrire(epreuve_id: int, code: str = Query(...), db: Session = Depends(get_db)):
-    c = db.query(Candidat).filter_by(code_acces=code.upper()).first()
-    if not c:
-        raise HTTPException(status_code=404, detail="Code invalide")
-
-    e = db.get(Epreuve, epreuve_id)
-    if not e or e.candidat_id != c.id:
-        raise HTTPException(status_code=404, detail="Inscription introuvable")
-
-    e.candidat_id = None
-    e.statut = "LIBRE"
-    db.commit()
-    return {"epreuve_id": e.id, "statut": "LIBRE"}

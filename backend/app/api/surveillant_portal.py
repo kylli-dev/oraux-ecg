@@ -7,6 +7,7 @@ from datetime import date as Date, datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Security, Request
+from app.core import limitation
 from app.services.monitoring import signaler_acteur
 from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -110,11 +111,15 @@ def _iso_utc(dt) -> Optional[str]:
 
 @router.post("/login", response_model=LoginOut)
 def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
+    cles = limitation.cles_connexion("surveillant", body.email, request)
+    limitation.verifier(cles)
     s = db.query(Surveillant).filter(
         Surveillant.email == body.email.strip().lower()
     ).first()
     if not s or not s.password_hash or not verify_password(body.password, s.password_hash):
+        limitation.noter(cles)
         raise HTTPException(status_code=401, detail="Identifiants invalides")
+    limitation.effacer(cles[0][0])
     signaler_acteur(request, "surveillant", s.id)
     return LoginOut(access_token=create_surveillant_token(s.id))
 
@@ -137,9 +142,12 @@ class SurvChangerMotDePasseIn(BaseModel):
 
 @router.post("/forgot-password", status_code=204)
 def surveillant_mot_de_passe_oublie(
-    body: SurvMotDePasseOublieIn, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
+    body: SurvMotDePasseOublieIn, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db),
 ):
     """Envoie un lien de réinitialisation (réponse toujours 204, envoi en tâche de fond)."""
+    cles = limitation.cles_connexion("surveillant-mdp", body.email, request)
+    limitation.verifier(cles)
+    limitation.noter(cles)
     from sqlalchemy import func as _func
     from app.services.email import build_reset_password_candidat, send_reset_password_candidat
     saisie = body.email.strip().lower()

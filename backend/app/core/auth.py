@@ -8,7 +8,16 @@ from datetime import datetime, timedelta, timezone
 import bcrypt
 from jose import JWTError, jwt
 
-SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production")
+# Clé de signature des jetons candidat, examinateur et surveillant. Sans elle, n'importe qui
+# pourrait fabriquer un jeton valide : en production (base autre que SQLite), le serveur
+# refuse de démarrer si elle manque ou garde l'ancienne valeur d'exemple.
+_CLE_EXEMPLE = "change-me-in-production"
+SECRET_KEY = os.getenv("SECRET_KEY") or ""
+_base = os.getenv("DATABASE_URL") or ""
+if not SECRET_KEY or SECRET_KEY == _CLE_EXEMPLE:
+    if _base and not _base.startswith("sqlite"):
+        raise RuntimeError("SECRET_KEY doit être défini (valeur longue et aléatoire) en production.")
+    SECRET_KEY = _CLE_EXEMPLE  # développement local uniquement
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8  # 8 heures
 RESET_TOKEN_EXPIRE_MINUTES = 30

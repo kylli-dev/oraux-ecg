@@ -5,6 +5,7 @@ from typing import List, Optional
 from datetime import date as Date
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Security, Request
+from app.core import limitation
 from app.services.monitoring import signaler_acteur
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError
@@ -136,10 +137,10 @@ class ChangerMotDePasseIn(BaseModel):
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.post("/code-perdu")
-def code_perdu(body: CodePerduIn, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+def code_perdu(body: CodePerduIn, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Ancienne route « code perdu » : redirigée vers « mot de passe oublié » (réponse neutre)."""
     # Les codes d'accès ne servent plus : on envoie le lien pour (re)définir le mot de passe.
-    mot_de_passe_oublie(MotDePasseOublieIn(email=body.email), background_tasks, db)
+    mot_de_passe_oublie(MotDePasseOublieIn(email=body.email), request, background_tasks, db)
     return {"sent": True}
 
 
@@ -156,23 +157,30 @@ def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
         )
     if not body.email or not body.password:
         raise HTTPException(status_code=422, detail="Saisissez votre email et votre mot de passe")
+    cles = limitation.cles_connexion("examinateur", body.email, request)
+    limitation.verifier(cles)
     ex = db.query(Examinateur).filter(
         _func.lower(Examinateur.email) == body.email.strip().lower()
     ).first()
     if not ex or not ex.password_hash or not verify_password(body.password, ex.password_hash):
+        limitation.noter(cles)
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
+    limitation.effacer(cles[0][0])
     token = create_examinateur_token(ex.id)
     signaler_acteur(request, "examinateur", ex.id)
     return LoginOut(access_token=token)
 
 
 @router.post("/forgot-password", status_code=204)
-def mot_de_passe_oublie(body: MotDePasseOublieIn, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+def mot_de_passe_oublie(body: MotDePasseOublieIn, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """
     Envoie à l'examinateur un lien pour choisir un (nouveau) mot de passe — sert aussi à
     créer son premier mot de passe. Réponse toujours 204 (pas d'énumération des comptes),
     envoi en tâche de fond. Même fonctionnement que l'espace candidat.
     """
+    cles = limitation.cles_connexion("examinateur-mdp", body.email, request)
+    limitation.verifier(cles)
+    limitation.noter(cles)
     from sqlalchemy import func as _func
     from app.services.email import build_reset_password_candidat, send_reset_password_candidat
     saisie = body.email.strip().lower()
