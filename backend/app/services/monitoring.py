@@ -23,7 +23,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 from urllib.parse import unquote
 
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError as JWTError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 

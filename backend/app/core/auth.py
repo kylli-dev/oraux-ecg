@@ -6,7 +6,8 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError as JWTError
 
 # Clé de signature des jetons candidat, examinateur et surveillant. Sans elle, n'importe qui
 # pourrait fabriquer un jeton valide : en production (base autre que SQLite), le serveur

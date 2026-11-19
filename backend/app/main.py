@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 import os
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -59,7 +60,17 @@ from app.api.monitoring import router as monitoring_router
 from app.api.notifications import router as notifications_router
 from app.services.monitoring import JournalActiviteMiddleware
 
-app = FastAPI(title="Oraux Platform")
+@asynccontextmanager
+async def _cycle_de_vie(_app):
+    # Initialisation de la base en arrière-plan : le serveur répond tout de suite (Render
+    # attend /health), les migrations et l'amorçage se font pendant ce temps
+    if engine is not None:
+        import threading
+        threading.Thread(target=_init_db, daemon=True).start()
+    yield
+
+
+app = FastAPI(title="Oraux Platform", lifespan=_cycle_de_vie)
 
 # Journal d'activité (onglet Monitoring) — ajouté avant CORS, donc exécuté à l'intérieur
 app.add_middleware(JournalActiviteMiddleware)
@@ -361,8 +372,3 @@ def _init_db():
         print(f"[startup] DB init error: {e}", flush=True)
 
 
-@app.on_event("startup")
-def on_startup():
-    if engine is not None:
-        import threading
-        threading.Thread(target=_init_db, daemon=True).start()

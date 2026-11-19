@@ -1,14 +1,14 @@
-fastapi==0.115.12
-starlette==0.41.3
+fastapi==0.162.0
+starlette==1.8.0
 uvicorn==0.34.0
-python-dotenv==1.0.1
+python-dotenv==1.2.4
 SQLAlchemy==2.0.36
 psycopg2-binary==2.9.10
 alembic==1.14.0
 openpyxl==3.1.5
-python-multipart==0.0.20
+python-multipart==0.0.32
 bcrypt==4.2.1
-python-jose[cryptography]==3.3.0
-pypdf==5.1.0
+PyJWT==2.15.1
+pypdf==6.21.4
 reportlab==4.2.5
 tzdata; sys_platform == "win32"

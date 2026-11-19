@@ -3,7 +3,7 @@ Dependency FastAPI qui vérifie le JWT du portail candidat.
 Usage : def route(candidat_id: int = Depends(require_candidat))
 """
 from fastapi import Depends, HTTPException, Header
-from jose import JWTError
+from jwt import PyJWTError as JWTError
 
 from app.core.auth import decode_access_token
 

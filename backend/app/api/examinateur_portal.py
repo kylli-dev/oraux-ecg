@@ -8,7 +8,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Security
 from app.core import limitation
 from app.services.monitoring import signaler_acteur
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError
+from jwt import PyJWTError as JWTError
 from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session

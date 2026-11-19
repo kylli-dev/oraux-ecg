@@ -11,7 +11,7 @@ from app.core import limitation
 from app.services.monitoring import signaler_acteur
 from fastapi.responses import Response, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError
+from jwt import PyJWTError as JWTError
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, aliased
 
